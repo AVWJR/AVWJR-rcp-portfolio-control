@@ -51,7 +51,7 @@ export async function ReportShell({
 }: {
   searchParams: ReportSearch;
   pathname: string;
-  children: (ctx: Awaited<ReturnType<typeof loadReportContext>>) => ReactNode;
+  children: (ctx: Awaited<ReturnType<typeof loadReportContext>>) => ReactNode | Promise<ReactNode>;
 }) {
   let ctx: Awaited<ReturnType<typeof loadReportContext>>;
   try {
@@ -85,7 +85,7 @@ export async function ReportShell({
         entityCode={ctx.entity.code}
         period={`${ctx.year}-${String(ctx.month).padStart(2, "0")}`}
       />
-      {children(ctx)}
+      {await children(ctx)}
     </Shell>
   );
 }

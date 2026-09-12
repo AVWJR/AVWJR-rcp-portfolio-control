@@ -38,6 +38,9 @@ export default async function PropertyDetailPage({
                 period close. Occupancy KPIs are gated as rent-roll sourced.
               </p>
               <div className="mt-3 flex flex-wrap gap-3 text-sm">
+                <Link className="text-navy-700 underline" href={`/dashboard/${code}?entity=${code}&period=${period}`}>
+                  Property dashboard
+                </Link>
                 <Link className="text-navy-700 underline" href={`/reports/operating-statement?entity=${code}&period=${period}`}>
                   Full NOI bridge
                 </Link>

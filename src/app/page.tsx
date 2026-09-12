@@ -50,6 +50,8 @@ export default async function HomePage({
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {[
+                { href: "/dashboard", title: "OpCo / property dashboards", copy: "Live ratio tiles with formula drill-down. Combined roll-up is not GAAP consolidation." },
+                { href: "/dashboard/ratios", title: "Ratio dictionary", copy: "Formulas, units, and NOI definition labels (period vs T12 vs annualized period)." },
                 { href: "/reports/operating-statement", title: "Operating Statement", copy: "NOI bridge with budget variance and prior-period (MoM) columns." },
                 { href: "/properties", title: "Properties / rent roll", copy: "Unit master, occupancy, loss-to-lease, CSV import." },
                 { href: "/debt", title: "Debt / covenants", copy: "Loan file, maturity schedule, DSCR and debt yield vs thresholds." },

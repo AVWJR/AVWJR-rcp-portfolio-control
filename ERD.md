@@ -1,4 +1,4 @@
-# Phase A–C Entity-Relationship Diagram
+# Phase A–D Entity-Relationship Diagram
 
 Roche Capital Partners ledger + unit master + debt + CIP + close — book basis, USD cents (`BigInt`), `America/New_York`.
 

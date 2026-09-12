@@ -51,4 +51,4 @@ npm run dev
 
 ## Out of scope (must remain undone)
 
-Phase D ratio dashboards beyond these covenants. Phase E narratives/PDF. Phase F tax. No live bank/PMS. No promote waterfall. No LTV from book cost.
+Phase E narratives/PDF. Phase F tax. No live bank/PMS. No promote waterfall. No LTV from book cost.
