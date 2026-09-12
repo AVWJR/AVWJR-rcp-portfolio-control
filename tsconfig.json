@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@rcp/ledger": ["./packages/ledger/src/index.ts"],
+      "@rcp/entities": ["./packages/entities/src/index.ts"],
+      "@rcp/properties": ["./packages/properties/src/index.ts"],
+      "@rcp/debt": ["./packages/debt/src/index.ts"],
+      "@rcp/analytics": ["./packages/analytics/src/index.ts"],
+      "@rcp/reporting": ["./packages/reporting/src/index.ts"],
+      "@rcp/tax-bridge": ["./packages/tax-bridge/src/index.ts"],
+      "@rcp/documents": ["./packages/documents/src/index.ts"],
+      "@rcp/rcp-brand": ["./packages/rcp-brand/src/index.ts"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}

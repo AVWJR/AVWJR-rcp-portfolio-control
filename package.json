@@ -1,0 +1,58 @@
+{
+  "name": "rcp-portfolio-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Roche Capital Partners — Portfolio Control / OpCo Accounting System (Phase A)",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma db push && tsx prisma/seed.ts",
+    "verify": "tsx scripts/verify-phase-a.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.1",
+    "@rcp/analytics": "file:packages/analytics",
+    "@rcp/debt": "file:packages/debt",
+    "@rcp/documents": "file:packages/documents",
+    "@rcp/entities": "file:packages/entities",
+    "@rcp/ledger": "file:packages/ledger",
+    "@rcp/properties": "file:packages/properties",
+    "@rcp/rcp-brand": "file:packages/rcp-brand",
+    "@rcp/reporting": "file:packages/reporting",
+    "@rcp/tax-bridge": "file:packages/tax-bridge",
+    "next": "^15.5.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.1",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.35.0",
+    "eslint-config-next": "^15.5.3",
+    "postcss": "^8.5.6",
+    "prisma": "^6.16.1",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

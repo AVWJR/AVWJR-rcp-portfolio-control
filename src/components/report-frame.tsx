@@ -1,0 +1,91 @@
+import { Shell } from "@/components/shell";
+import { listEntities } from "@/lib/queries";
+import { buildAllStatements } from "@/lib/reports-server";
+import type { ReactNode } from "react";
+
+export type ReportSearch = {
+  entity?: string;
+  period?: string;
+  view?: string;
+};
+
+export async function loadReportContext(searchParams: ReportSearch) {
+  const entities = await listEntities();
+  if (entities.length === 0) {
+    throw new Error("NO_SEED");
+  }
+  const entityCode = searchParams.entity ?? entities.find((e) => e.type === "OPCO")?.code ?? entities[0]?.code;
+  const entity = entities.find((e) => e.code === entityCode) ?? entities[0];
+  const [yearStr, monthStr] = (searchParams.period ?? "2026-08").split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const consolidated = searchParams.view === "consolidated";
+
+  if (!entity) {
+    throw new Error("No entities seeded. Run npm run db:reset");
+  }
+
+  const statements = await buildAllStatements({
+    entityId: entity.id,
+    year,
+    month,
+    consolidated,
+  });
+
+  return {
+    entities,
+    entity,
+    year,
+    month,
+    consolidated: statements.consolidated,
+    canConsolidate: statements.canConsolidate,
+    statements,
+  };
+}
+
+export async function ReportShell({
+  searchParams,
+  pathname,
+  children,
+}: {
+  searchParams: ReportSearch;
+  pathname: string;
+  children: (ctx: Awaited<ReturnType<typeof loadReportContext>>) => ReactNode;
+}) {
+  let ctx: Awaited<ReturnType<typeof loadReportContext>>;
+  try {
+    ctx = await loadReportContext(searchParams);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "NO_SEED" || message.includes("No entities")) {
+      return (
+        <div className="mx-auto max-w-xl px-6 py-24 text-center">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">Roche Capital Partners</p>
+          <h1 className="mt-2 font-display text-4xl text-navy-900">Ledger not seeded</h1>
+          <p className="mt-3 text-sm text-ink-700">
+            Run <code className="bg-cream-200 px-1">npm run db:reset</code> then reload this page.
+          </p>
+        </div>
+      );
+    }
+    throw error;
+  }
+  return (
+    <Shell
+      entities={ctx.entities}
+      activeEntity={ctx.entity.code}
+      year={ctx.year}
+      month={ctx.month}
+      consolidated={ctx.consolidated}
+      pathname={pathname}
+    >
+      {children(ctx)}
+    </Shell>
+  );
+}
+
+export function reportSubtitle(ctx: Awaited<ReturnType<typeof loadReportContext>>) {
+  const units = ctx.entity.unitCount ? ` · ${ctx.entity.unitCount} units` : "";
+  const view = ctx.consolidated ? " · Consolidated" : " · Standalone";
+  return `${ctx.entity.name}${units}${view} · ${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
+}
