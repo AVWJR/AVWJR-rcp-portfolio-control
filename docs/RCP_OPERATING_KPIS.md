@@ -59,3 +59,5 @@ The 2026-07 seed has opening balances only, so August MoM prior operating activi
 ## Combined roll-up
 
 OpCo **combined roll-up** (not a GAAP consolidation) sums wholly owned SPE books plus OpCo and eliminates IC `1310`/`2310` and AM `6310`/`7010`. Rent-roll KPIs on that view are the SPE unit file stacked together.
+
+Phase D dashboards (`/dashboard`, `/dashboard/[entityCode]`) consume these formulas plus the live [RCP Ratio Dictionary](./RCP_RATIO_DICTIONARY_STUB.md). T12 vs period vs annualized-period NOI labels are required on every NOI-based tile. Delinquency remains stubbed.

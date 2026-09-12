@@ -35,6 +35,15 @@ export function EntitySwitcher({
     });
     const view = next.view ?? (consolidated ? "combined" : "standalone");
     if (view === "combined" || view === "consolidated") params.set("view", "combined");
+    const entity = next.entity ?? activeEntity;
+    if (pathname === "/dashboard" || pathname.startsWith("/dashboard/SPE-") || pathname === "/dashboard/RCP-OPCO") {
+      const dest =
+        entity.startsWith("SPE-") || entity === "RCP-OPCO"
+          ? `/dashboard/${entity}`
+          : "/dashboard";
+      router.push(`${dest}?${params.toString()}`);
+      return;
+    }
     router.push(`${pathname}?${params.toString()}`);
   }
 

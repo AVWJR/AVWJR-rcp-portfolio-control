@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { EntitySwitcher } from "./entity-switcher";
 
 const NAV = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard/ratios", label: "Ratios" },
   { href: "/", label: "Overview" },
   { href: "/reports/operating-statement", label: "Operating Statement" },
   { href: "/properties", label: "Properties" },
@@ -72,7 +74,12 @@ export function Shell({
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-3 lg:flex-row lg:items-center lg:justify-between">
           <nav className="flex flex-wrap gap-1 text-[12px] uppercase tracking-[0.14em]">
             {NAV.map((item) => {
-              const active = pathname === item.href;
+              const active =
+                item.href === "/dashboard"
+                  ? pathname === "/dashboard" || /^\/dashboard\/SPE-/.test(pathname) || pathname === "/dashboard/RCP-OPCO"
+                  : item.href === "/dashboard/ratios"
+                    ? pathname.startsWith("/dashboard/ratios")
+                    : pathname === item.href;
               return (
                 <Link
                   key={item.href}
@@ -102,7 +109,7 @@ export function Shell({
       <footer className="border-t border-cream-300 bg-cream-200">
         <div className="mx-auto flex max-w-7xl justify-between px-6 py-4 text-[11px] uppercase tracking-[0.14em] text-ink-500">
           <span>{RCP_CONFIDENTIAL}</span>
-          <span>Phase C Debt / CapEx / Close · Book basis</span>
+          <span>Phase D OpCo / property ratios · Book basis</span>
         </div>
       </footer>
     </div>
