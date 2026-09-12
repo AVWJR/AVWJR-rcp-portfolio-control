@@ -7,6 +7,9 @@ const NAV = [
   { href: "/", label: "Overview" },
   { href: "/reports/operating-statement", label: "Operating Statement" },
   { href: "/properties", label: "Properties" },
+  { href: "/debt", label: "Debt" },
+  { href: "/capex", label: "CapEx" },
+  { href: "/close", label: "Close" },
   { href: "/reports/trial-balance", label: "Trial Balance" },
   { href: "/reports/income-statement", label: "Income Statement" },
   { href: "/reports/balance-sheet", label: "Balance Sheet" },
@@ -99,7 +102,7 @@ export function Shell({
       <footer className="border-t border-cream-300 bg-cream-200">
         <div className="mx-auto flex max-w-7xl justify-between px-6 py-4 text-[11px] uppercase tracking-[0.14em] text-ink-500">
           <span>{RCP_CONFIDENTIAL}</span>
-          <span>Phase B Operating · Book basis</span>
+          <span>Phase C Debt / CapEx / Close · Book basis</span>
         </div>
       </footer>
     </div>

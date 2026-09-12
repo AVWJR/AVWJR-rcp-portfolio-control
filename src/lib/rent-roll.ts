@@ -1,5 +1,6 @@
 import type { UnitStatus } from "@prisma/client";
 import { parseRentRollCsv, serializeRentRollCsv, type UnitSnapshot } from "@rcp/properties";
+import { assertReplaceConfirmed } from "./import-guard";
 import { prisma } from "./prisma";
 
 export function unitToSnapshot(row: {
@@ -71,7 +72,10 @@ export async function importRentRollCsv(opts: {
   entityId: string;
   csv: string;
   asOfDate?: Date;
+  confirmReplace?: boolean;
 }) {
+  const existingCount = await prisma.unit.count({ where: { entityId: opts.entityId } });
+  assertReplaceConfirmed({ existingCount, confirmReplace: opts.confirmReplace, kind: "rent-roll" });
   const units = parseRentRollCsv(opts.csv);
   await replaceRentRoll({
     entityId: opts.entityId,

@@ -45,16 +45,19 @@ export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
   let code = "";
   let csv = "";
+  let confirmReplace = false;
   if (contentType.includes("multipart/form-data")) {
     const form = await request.formData();
     code = String(form.get("entity") ?? "");
     const file = form.get("file");
     if (file instanceof File) csv = await file.text();
     else csv = String(form.get("csv") ?? "");
+    confirmReplace = String(form.get("confirmReplace") ?? "") === "true";
   } else {
-    const body = (await request.json()) as { entity?: string; csv?: string };
+    const body = (await request.json()) as { entity?: string; csv?: string; confirmReplace?: boolean };
     code = body.entity ?? "";
     csv = body.csv ?? "";
+    confirmReplace = Boolean(body.confirmReplace);
   }
 
   const resolved = await resolveSpe(code);
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
   const entity = resolved.entity!;
 
   try {
-    const units = await importRentRollCsv({ entityId: entity.id, csv });
+    const units = await importRentRollCsv({ entityId: entity.id, csv, confirmReplace });
     return NextResponse.json({ imported: units.length, entity: entity.code });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Import failed";

@@ -1,6 +1,7 @@
 import { ELIMINATION_CODES } from "@rcp/ledger";
 import { parseBudgetCsv, serializeBudgetCsv, type BudgetCsvRow } from "@rcp/properties";
 import type { BudgetByCode } from "@rcp/reporting";
+import { assertReplaceConfirmed } from "./import-guard";
 import { prisma } from "./prisma";
 
 export async function loadBudgetMap(opts: {
@@ -53,7 +54,12 @@ export async function importBudgetCsv(opts: {
   month: number;
   csv: string;
   source?: string;
+  confirmReplace?: boolean;
 }) {
+  const existingCount = await prisma.budgetLine.count({
+    where: { entityId: opts.entityId, year: opts.year, month: opts.month },
+  });
+  assertReplaceConfirmed({ existingCount, confirmReplace: opts.confirmReplace, kind: "budget" });
   const rows = parseBudgetCsv(opts.csv);
   await replaceBudget({ ...opts, rows });
   return rows;

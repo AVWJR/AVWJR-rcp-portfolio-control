@@ -1,4 +1,5 @@
 import {
+  OPEX_GROUPS,
   buildIncomeStatement,
   type IncomeStatement,
   type ReportInput,
@@ -6,18 +7,7 @@ import {
 } from "@rcp/ledger";
 import { pairVariance, type VariancePair } from "./variance";
 
-export const OPEX_GROUPS: { key: string; label: string; code: string }[] = [
-  { key: "opex_payroll", label: "Payroll", code: "5110" },
-  { key: "opex_rm", label: "Repairs & Maintenance", code: "5210" },
-  { key: "opex_util", label: "Utilities", code: "5310" },
-  { key: "opex_contracts", label: "Contract Services", code: "5410" },
-  { key: "opex_marketing", label: "Marketing", code: "5510" },
-  { key: "opex_admin", label: "Administrative", code: "5610" },
-  { key: "opex_ins", label: "Insurance", code: "5710" },
-  { key: "opex_tax", label: "Real Estate Taxes", code: "5810" },
-  { key: "opex_pm", label: "Property Management Fees", code: "5910" },
-  { key: "opex_other", label: "Other Operating Expenses", code: "5990" },
-];
+export { OPEX_GROUPS };
 
 /** Budget stored as natural-magnitude cents by CoA code. */
 export type BudgetByCode = Map<string, bigint>;

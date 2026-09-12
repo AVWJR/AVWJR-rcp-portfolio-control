@@ -14,8 +14,9 @@ async function main() {
   const code = arg("entity");
   const file = arg("file");
   const period = arg("period") ?? "2026-08";
+  const replace = process.argv.includes("--replace");
   if (!code || !file) {
-    console.error("Required: --entity=SPE-WBG --file=path.csv [--period=2026-08]");
+    console.error("Required: --entity=SPE-WBG --file=path.csv [--period=2026-08] [--replace]");
     process.exit(1);
   }
   const [year, month] = period.split("-").map(Number);
@@ -26,7 +27,15 @@ async function main() {
     process.exit(1);
   }
   const csv = readFileSync(file, "utf8");
-  const rows = await importBudgetCsv({ entityId: entity.id, year, month, csv, source: "cli" });
+  console.warn("WARNING: budget import replaces every line for this entity/period.");
+  const rows = await importBudgetCsv({
+    entityId: entity.id,
+    year,
+    month,
+    csv,
+    source: "cli",
+    confirmReplace: replace,
+  });
   console.log(`Imported ${rows.length} budget lines into ${code} ${period}`);
   await prisma.$disconnect();
 }

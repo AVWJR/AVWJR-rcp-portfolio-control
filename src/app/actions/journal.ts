@@ -10,6 +10,7 @@ export async function postJournalAction(input: {
   memo: string;
   source?: string;
   lines: JournalDraftLine[];
+  allowControllerAdjustment?: boolean;
 }) {
   return postJournal({
     ...input,

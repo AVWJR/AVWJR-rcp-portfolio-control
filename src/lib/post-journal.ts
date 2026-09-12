@@ -1,5 +1,9 @@
-import { PeriodStatus } from "@prisma/client";
-import { assertJournalBalanced, type JournalDraftLine } from "@rcp/ledger";
+import {
+  assertCanPostToPeriod,
+  assertJournalBalanced,
+  type JournalDraftLine,
+  type PeriodCloseStatus,
+} from "@rcp/ledger";
 import { prisma } from "./prisma";
 
 export async function postJournal(input: {
@@ -9,6 +13,7 @@ export async function postJournal(input: {
   memo: string;
   source?: string;
   lines: JournalDraftLine[];
+  allowControllerAdjustment?: boolean;
 }) {
   assertJournalBalanced(input.lines);
 
@@ -16,9 +21,9 @@ export async function postJournal(input: {
   if (!period || period.entityId !== input.entityId) {
     throw new Error("Period does not belong to entity");
   }
-  if (period.status === PeriodStatus.CLOSED) {
-    throw new Error("Cannot post to a closed period");
-  }
+  assertCanPostToPeriod(period.status as PeriodCloseStatus, {
+    allowControllerAdjustment: input.allowControllerAdjustment,
+  });
 
   const accounts = await prisma.account.findMany({
     where: { entityId: input.entityId, code: { in: input.lines.map((l) => l.accountCode) } },

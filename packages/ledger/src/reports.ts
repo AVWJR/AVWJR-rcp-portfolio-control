@@ -173,8 +173,9 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
   const bldgImp = netByCode(balances, "1430");
   const site = netByCode(balances, "1440");
   const ffe = netByCode(balances, "1450");
+  const cip = netByCode(balances, "1460");
   const accumDep = netByCode(balances, "1490");
-  const netPpe = land + building + bldgImp + site + ffe + accumDep;
+  const netPpe = land + building + bldgImp + site + ffe + cip + accumDep;
   const currentAssets = cash + ar + prepaid + icFrom;
   const totalAssets = currentAssets + investment + netPpe;
 
@@ -218,6 +219,7 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
     { key: "bi", label: "Building Improvements", amount: bldgImp, indent: 1, code: "1430" },
     { key: "site", label: "Site Improvements", amount: site, indent: 1, code: "1440" },
     { key: "ffe", label: "Furniture, Fixtures & Equipment", amount: ffe, indent: 1, code: "1450" },
+    { key: "cip", label: "Construction in Progress", amount: cip, indent: 1, code: "1460" },
     { key: "ad", label: "Accumulated Depreciation", amount: accumDep, indent: 1, code: "1490" },
     { key: "nppe", label: "Net Property and Equipment", amount: netPpe, indent: 0, emphasis: "subtotal" },
     { key: "ta", label: "Total Assets", amount: totalAssets, indent: 0, emphasis: "total" },
@@ -282,7 +284,7 @@ export function buildCashFlow(input: ReportInput): CashFlowStatement {
   const cfo =
     is.netIncome + dep + dAr + dPrepaid + dIcFrom + dAp + dAccrual + dPrepaidRent + dDeposits + dIcTo;
 
-  const ppeCodes = ["1410", "1420", "1430", "1440", "1450"];
+  const ppeCodes = ["1410", "1420", "1430", "1440", "1450", "1460"];
   const capex = ppeCodes.reduce((acc, code) => {
     const s = start.find((b) => b.code === code)?.net ?? 0n;
     const e = end.find((b) => b.code === code)?.net ?? 0n;

@@ -1,7 +1,8 @@
 /**
  * Analytics gates. Occupancy and loss-to-lease require a rent roll (Phase B).
  * Delinquency still requires charge/receipt data and must not be inferred from
- * GL account 1110. LTL (loan-to-value / loan-to-cost) remains Phase C.
+ * GL account 1110. LTV/LTC stays gated without an appraisal even though the
+ * Phase C loan file is present (UPB, rate, DSCR, debt yield).
  */
 
 export type GatedRatio = "occupancy" | "loss_to_lease" | "ltl" | "delinquency";
@@ -43,9 +44,10 @@ export function ratioAvailability(
   }
   return {
     ready: false,
-    phase: "C",
+    phase: "D",
     source: "none",
-    reason: "Loan-to-value / loan-to-cost requires a debt instrument file (Phase C).",
+    reason:
+      "Loan file exists (UPB, rate, covenants). LTV/LTC still needs appraisal — do not divide UPB by book cost.",
   };
 }
 
