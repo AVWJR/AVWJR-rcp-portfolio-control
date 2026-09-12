@@ -14,7 +14,7 @@ export default async function IncomeStatementPage({
           title="Income Statement"
           subtitle={reportSubtitle(ctx)}
           rows={ctx.statements.is.rows}
-          footer="Locked policy: OpCo asset management fees sit below NOI on the SPE. Occupancy is not derived from this statement."
+          footer="Locked policy: OpCo asset management fees sit below NOI on the SPE. Budget variance and rent-roll KPIs live on the Operating Statement."
         />
       )}
     </ReportShell>

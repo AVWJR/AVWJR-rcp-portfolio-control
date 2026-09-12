@@ -1,6 +1,6 @@
-# Phase A Entity-Relationship Diagram
+# Phase A / B Entity-Relationship Diagram
 
-Roche Capital Partners ledger — book basis, USD cents (`BigInt`), `America/New_York`.
+Roche Capital Partners ledger + unit master — book basis, USD cents (`BigInt`), `America/New_York`.
 
 ```mermaid
 erDiagram
@@ -8,6 +8,8 @@ erDiagram
   Entity ||--o{ Account : has
   Entity ||--o{ Period : has
   Entity ||--o{ Journal : posts
+  Entity ||--o{ Unit : rent-roll
+  Entity ||--o{ BudgetLine : budgets
   Period ||--o{ Journal : contains
   Journal ||--|{ JournalLine : splits
   Account ||--o{ JournalLine : posted-to
@@ -68,6 +70,32 @@ erDiagram
     bigint debit "USD cents"
     bigint credit "USD cents"
   }
+
+  Unit {
+    string id PK
+    string entityId FK
+    string unitCode
+    string floorplan
+    int beds
+    int bathsTenths "10 = 1.0"
+    int sqft
+    enum status "OCCUPIED | VACANT | DOWN"
+    bigint marketRent
+    bigint inPlaceRent
+    datetime leaseStart
+    datetime leaseEnd
+    bigint concessionCents
+    datetime asOfDate
+  }
+
+  BudgetLine {
+    string id PK
+    string entityId FK
+    int year
+    int month
+    string accountCode
+    bigint amount "natural-magnitude cents"
+  }
 ```
 
 ## Tree
@@ -80,7 +108,7 @@ Roche Capital Partners HoldCo
     └── Harbor Court Residences LLC      (SPE, 84 units, light rehab, 100%)
 ```
 
-Wholly owned SPEs consolidate into OpCo. Intercompany `1310`/`2310` and AM fee `6310`/`7010` eliminate on the OpCo consolidated view.
+Wholly owned SPEs roll into OpCo as a **combined roll-up**. Intercompany `1310`/`2310` and AM fee `6310`/`7010` eliminate on that view. Occupancy KPIs come from `Unit`, never from the GL.
 
 ## Posting rule
 

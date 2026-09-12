@@ -1,17 +1,19 @@
-/** Reporting package. Phase A statements live in @rcp/ledger; this stub is the future packager. */
+/** Reporting package. Phase A statements live in @rcp/ledger; Phase B adds the NOI bridge + variance. */
 
-export type StatementKind = "TB" | "IS" | "BS" | "CF";
+export type StatementKind = "TB" | "IS" | "BS" | "CF" | "OS";
 
-export const PHASE_A_STATEMENTS: StatementKind[] = ["TB", "IS", "BS", "CF"];
+export const PHASE_B_STATEMENTS: StatementKind[] = ["TB", "IS", "OS", "BS", "CF"];
 
-// TODO(Phase D): packaged PDF/Excel, variance to budget, T-12 vs T-3
-// TODO(Phase E): investor pack, lender pack
 export function statementPath(kind: StatementKind): string {
   const map: Record<StatementKind, string> = {
     TB: "/reports/trial-balance",
     IS: "/reports/income-statement",
+    OS: "/reports/operating-statement",
     BS: "/reports/balance-sheet",
     CF: "/reports/cash-flow",
   };
   return map[kind];
 }
+
+export * from "./variance";
+export * from "./operating-statement";

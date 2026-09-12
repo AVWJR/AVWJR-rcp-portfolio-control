@@ -51,12 +51,14 @@ export type IncomeStatement = {
   vacancy: bigint;
   concessions: bigint;
   otherIncome: bigint;
+  egr: bigint;
   egi: bigint;
   opex: bigint;
   noi: bigint;
   interest: bigint;
   depreciation: bigint;
   amFees: bigint;
+  amIncome: bigint;
   netIncome: bigint;
 };
 

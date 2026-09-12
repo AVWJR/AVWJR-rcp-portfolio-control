@@ -64,6 +64,19 @@ export function buildTrialBalance(input: ReportInput): {
   return { rows, totalDebit, totalCredit, balanced: totalDebit === totalCredit };
 }
 
+export const OPEX_GROUPS: { key: string; label: string; code: string }[] = [
+  { key: "opex_payroll", label: "Payroll", code: "5110" },
+  { key: "opex_rm", label: "Repairs & Maintenance", code: "5210" },
+  { key: "opex_util", label: "Utilities", code: "5310" },
+  { key: "opex_contracts", label: "Contract Services", code: "5410" },
+  { key: "opex_marketing", label: "Marketing", code: "5510" },
+  { key: "opex_admin", label: "Administrative", code: "5610" },
+  { key: "opex_ins", label: "Insurance", code: "5710" },
+  { key: "opex_tax", label: "Real Estate Taxes", code: "5810" },
+  { key: "opex_pm", label: "Property Management Fees", code: "5910" },
+  { key: "opex_other", label: "Other Operating Expenses", code: "5990" },
+];
+
 export function buildIncomeStatement(input: ReportInput): IncomeStatement {
   const activity = applyEliminations(input.inPeriod ?? input.throughEnd, input.eliminate);
   const balances = rollupBalances(activity, input.accounts ?? cloneMasterCoa());
@@ -76,18 +89,7 @@ export function buildIncomeStatement(input: ReportInput): IncomeStatement {
   const egr = gpr - vacancy - concessions;
   const egi = egr + otherIncome;
 
-  const opexGroups: { key: string; label: string }[] = [
-    { key: "opex_payroll", label: "Payroll" },
-    { key: "opex_rm", label: "Repairs & Maintenance" },
-    { key: "opex_util", label: "Utilities" },
-    { key: "opex_contracts", label: "Contract Services" },
-    { key: "opex_marketing", label: "Marketing" },
-    { key: "opex_admin", label: "Administrative" },
-    { key: "opex_ins", label: "Insurance" },
-    { key: "opex_tax", label: "Real Estate Taxes" },
-    { key: "opex_pm", label: "Property Management Fees" },
-    { key: "opex_other", label: "Other Operating Expenses" },
-  ];
+  const opexGroups = OPEX_GROUPS;
 
   const opexRows = opexGroups.map((g) => ({
     key: g.key,
@@ -143,12 +145,14 @@ export function buildIncomeStatement(input: ReportInput): IncomeStatement {
     vacancy,
     concessions,
     otherIncome,
+    egr,
     egi,
     opex,
     noi,
     interest,
     depreciation,
     amFees,
+    amIncome,
     netIncome,
   };
 }
@@ -325,4 +329,20 @@ export function buildCashFlow(input: ReportInput): CashFlowStatement {
   ];
 
   return { rows, cfo, cfi, cff, netChange, beginningCash, endingCash, tiesToBalanceSheet };
+}
+
+/**
+ * Mortgage principal paydown in the period = increase in debit-net on
+ * current + long-term mortgage (i.e. decrease in credit UPB). Draws that
+ * increase UPB are ignored (treated as 0) for breakeven occupancy.
+ */
+export function principalPaydownFromLines(
+  throughStart: PostedLine[],
+  throughEnd: PostedLine[],
+  accounts?: AccountDef[],
+): bigint {
+  const start = rollupBalances(throughStart, accounts ?? cloneMasterCoa());
+  const end = rollupBalances(throughEnd, accounts ?? cloneMasterCoa());
+  const delta = groupDelta(start, end, "debt_current") + groupDelta(start, end, "debt_lt");
+  return delta > 0n ? delta : 0n;
 }

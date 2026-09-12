@@ -4,6 +4,7 @@ import {
   buildIncomeStatement,
   buildTrialBalance,
 } from "@rcp/ledger";
+import { buildOperatingPackage } from "./operating";
 import { consolidationEntityIds, loadPostedLines } from "./queries";
 import { prisma } from "./prisma";
 
@@ -63,11 +64,15 @@ export async function buildAllStatements(opts: {
     inPeriod: scope.inPeriod,
     eliminate: scope.consolidated,
   };
+  const operating = await buildOperatingPackage(opts);
   return {
     ...scope,
     tb: buildTrialBalance(input),
     is: buildIncomeStatement(input),
     bs: buildBalanceSheet(input),
     cf: buildCashFlow(input),
+    os: operating.operating,
+    kpis: operating.kpis,
+    units: operating.units,
   };
 }

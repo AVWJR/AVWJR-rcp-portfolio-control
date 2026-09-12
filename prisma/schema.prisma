@@ -1,4 +1,4 @@
-// Roche Capital Partners — Phase A ledger schema
+// Roche Capital Partners — Phase A ledger + Phase B property operating schema
 // Local demo: SQLite via DATABASE_URL="file:./dev.db"
 // Production: change provider to "postgresql" and point DATABASE_URL at Postgres.
 // Amounts are integer USD cents (BigInt) to keep trial-balance math exact.
@@ -54,6 +54,12 @@ enum JournalStatus {
   POSTED
 }
 
+enum UnitStatus {
+  OCCUPIED
+  VACANT
+  DOWN
+}
+
 model Entity {
   id           String       @id @default(cuid())
   code         String       @unique
@@ -71,9 +77,11 @@ model Entity {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  accounts Account[]
-  periods  Period[]
-  journals Journal[]
+  accounts    Account[]
+  periods     Period[]
+  journals    Journal[]
+  units       Unit[]
+  budgetLines BudgetLine[]
 }
 
 /// Master template rows use entityId = null. Entity CoA is cloned from the template.
@@ -146,4 +154,46 @@ model JournalLine {
   memo      String?
 
   @@index([accountId])
+}
+
+/// Unit master / rent-roll snapshot. Occupancy KPIs are computed from these rows,
+/// never from the GL. DOWN units are offline (rehab) and excluded from rentable.
+model Unit {
+  id              String     @id @default(cuid())
+  entityId        String
+  entity          Entity     @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  unitCode        String
+  floorplan       String
+  beds            Int
+  bathsTenths     Int // 10 = 1.0 bath, 15 = 1.5
+  sqft            Int
+  status          UnitStatus
+  marketRent      BigInt
+  inPlaceRent     BigInt     @default(0)
+  leaseStart      DateTime?
+  leaseEnd        DateTime?
+  concessionCents BigInt     @default(0)
+  asOfDate        DateTime
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([entityId, unitCode])
+  @@index([entityId, status])
+}
+
+/// Monthly operating budget by CoA account, integer cents, natural magnitude
+/// (GPR / other income / expenses / vacancy / concessions are stored positive).
+model BudgetLine {
+  id          String   @id @default(cuid())
+  entityId    String
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year        Int
+  month       Int
+  accountCode String
+  amount      BigInt
+  source      String   @default("seed")
+  createdAt   DateTime @default(now())
+
+  @@unique([entityId, year, month, accountCode])
+  @@index([entityId, year, month])
 }

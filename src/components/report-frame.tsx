@@ -19,7 +19,7 @@ export async function loadReportContext(searchParams: ReportSearch) {
   const [yearStr, monthStr] = (searchParams.period ?? "2026-08").split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
-  const consolidated = searchParams.view === "consolidated";
+  const consolidated = searchParams.view === "consolidated" || searchParams.view === "combined";
 
   if (!entity) {
     throw new Error("No entities seeded. Run npm run db:reset");
@@ -86,6 +86,6 @@ export async function ReportShell({
 
 export function reportSubtitle(ctx: Awaited<ReturnType<typeof loadReportContext>>) {
   const units = ctx.entity.unitCount ? ` · ${ctx.entity.unitCount} units` : "";
-  const view = ctx.consolidated ? " · Consolidated" : " · Standalone";
+  const view = ctx.consolidated ? " · Combined roll-up" : " · Standalone";
   return `${ctx.entity.name}${units}${view} · ${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
 }

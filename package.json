@@ -2,7 +2,7 @@
   "name": "rcp-portfolio-control",
   "version": "0.1.0",
   "private": true,
-  "description": "Roche Capital Partners — Portfolio Control / OpCo Accounting System (Phase A)",
+  "description": "Roche Capital Partners — Portfolio Control / OpCo Accounting System (Phase B operating package)",
   "workspaces": [
     "packages/*"
   ],
@@ -16,9 +16,13 @@
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma db push && tsx prisma/seed.ts",
-    "verify": "tsx scripts/verify-phase-a.ts"
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "db:reset": "prisma db push && tsx --env-file=.env prisma/seed.ts",
+    "verify": "tsx --env-file=.env scripts/verify-phase-a.ts && tsx --env-file=.env scripts/verify-phase-b.ts",
+    "verify:a": "tsx --env-file=.env scripts/verify-phase-a.ts",
+    "verify:b": "tsx --env-file=.env scripts/verify-phase-b.ts",
+    "import:rent-roll": "tsx --env-file=.env scripts/import-rent-roll.ts",
+    "import:budget": "tsx --env-file=.env scripts/import-budget.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
