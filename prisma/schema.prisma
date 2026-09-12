@@ -1,0 +1,149 @@
+// Roche Capital Partners — Phase A ledger schema
+// Local demo: SQLite via DATABASE_URL="file:./dev.db"
+// Production: change provider to "postgresql" and point DATABASE_URL at Postgres.
+// Amounts are integer USD cents (BigInt) to keep trial-balance math exact.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum EntityType {
+  HOLDCO
+  OPCO
+  SPE
+}
+
+enum SpeStrategy {
+  VALUE_ADD_GARDEN
+  STABILIZED
+  LIGHT_REHAB
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum CashFlowClass {
+  OPERATING
+  INVESTING
+  FINANCING
+  NONE
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+}
+
+model Entity {
+  id           String       @id @default(cuid())
+  code         String       @unique
+  name         String
+  type         EntityType
+  parentId     String?
+  parent       Entity?      @relation("EntityTree", fields: [parentId], references: [id])
+  children     Entity[]     @relation("EntityTree")
+  ownershipBps Int          @default(10000) // 10000 = 100.00% wholly owned
+  unitCount    Int?
+  strategy     SpeStrategy?
+  currency     String       @default("USD")
+  locale       String       @default("en-US")
+  timezone     String       @default("America/New_York")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  accounts Account[]
+  periods  Period[]
+  journals Journal[]
+}
+
+/// Master template rows use entityId = null. Entity CoA is cloned from the template.
+model Account {
+  id            String         @id @default(cuid())
+  entityId      String?
+  entity        Entity?        @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  type          AccountType
+  normalBalance NormalBalance
+  isContra      Boolean        @default(false)
+  isTemplate    Boolean        @default(false)
+  isBelowNoi    Boolean        @default(false)
+  isCash        Boolean        @default(false)
+  reportGroup   String
+  sortOrder     Int
+  cashFlowClass CashFlowClass  @default(NONE)
+  createdAt     DateTime       @default(now())
+
+  lines JournalLine[]
+
+  @@unique([entityId, code])
+  @@index([entityId, reportGroup])
+}
+
+model Period {
+  id        String       @id @default(cuid())
+  entityId  String
+  entity    Entity       @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year      Int
+  month     Int
+  label     String
+  startDate DateTime
+  endDate   DateTime
+  status    PeriodStatus @default(OPEN)
+  createdAt DateTime     @default(now())
+
+  journals Journal[]
+
+  @@unique([entityId, year, month])
+}
+
+model Journal {
+  id          String        @id @default(cuid())
+  entityId    String
+  entity      Entity        @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  periodId    String
+  period      Period        @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  date        DateTime
+  memo        String
+  source      String        @default("manual")
+  status      JournalStatus @default(DRAFT)
+  postedAt    DateTime?
+  createdAt   DateTime      @default(now())
+
+  lines JournalLine[]
+
+  @@index([entityId, periodId, status])
+}
+
+model JournalLine {
+  id        String  @id @default(cuid())
+  journalId String
+  journal   Journal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id])
+  debit     BigInt  @default(0)
+  credit    BigInt  @default(0)
+  memo      String?
+
+  @@index([accountId])
+}

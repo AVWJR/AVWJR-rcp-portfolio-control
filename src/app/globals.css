@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --rcp-navy: #0b1f3a;
+  --rcp-gold: #c4a46a;
+  --rcp-cream: #f7f3ea;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: var(--rcp-cream);
+  color: #1a1f26;
+}
+
+.rcp-hairline {
+  background-image: linear-gradient(to right, #c4a46a, #e2d8c4 40%, #c4a46a);
+  height: 1px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
