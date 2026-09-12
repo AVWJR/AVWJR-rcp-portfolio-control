@@ -19,6 +19,7 @@ export function CsvImportForm({
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,11 +29,16 @@ export function CsvImportForm({
       setMessage("Choose a CSV file.");
       return;
     }
+    if (!confirmReplace) {
+      setMessage("Check the box to confirm this replaces the entire current file.");
+      return;
+    }
     setBusy(true);
     setMessage(null);
     const body = new FormData();
     body.set("file", file);
     body.set("entity", entity);
+    body.set("confirmReplace", "true");
     if (period) body.set("period", period);
     const res = await fetch(action, { method: "POST", body });
     const json = (await res.json()) as { error?: string; imported?: number };
@@ -41,8 +47,9 @@ export function CsvImportForm({
       setMessage(json.error ?? "Import failed");
       return;
     }
-    setMessage(`Imported ${json.imported ?? 0} rows`);
+    setMessage(`Imported ${json.imported ?? 0} rows (full replace)`);
     form.reset();
+    setConfirmReplace(false);
     router.refresh();
   }
 
@@ -52,6 +59,14 @@ export function CsvImportForm({
         <label className="block text-[11px] uppercase tracking-[0.14em] text-ink-500">{label}</label>
         <input type="file" name="file" accept=".csv,text/csv" className="mt-1 text-sm" />
       </div>
+      <label className="flex items-center gap-2 text-xs text-ink-700">
+        <input
+          type="checkbox"
+          checked={confirmReplace}
+          onChange={(event) => setConfirmReplace(event.target.checked)}
+        />
+        Replace existing rows (cannot undo)
+      </label>
       <button
         type="submit"
         disabled={busy}

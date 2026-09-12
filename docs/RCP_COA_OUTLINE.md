@@ -19,6 +19,7 @@ Master template cloned onto every HoldCo, OpCo, and SPE. Numbered practical mult
 | 1430 | Building Improvements | Asset | |
 | 1440 | Site Improvements | Asset | |
 | 1450 | Furniture, Fixtures & Equipment | Asset | |
+| 1460 | Construction in Progress | Asset | CapEx until placed in service |
 | 1490 | Accumulated Depreciation | Contra-asset | |
 | **2000s Liabilities** | | | |
 | 2010 | Accounts Payable | Liability | |

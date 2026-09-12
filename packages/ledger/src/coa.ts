@@ -175,6 +175,18 @@ export const MASTER_COA: AccountDef[] = [
     cashFlowClass: "INVESTING",
   },
   {
+    code: "1460",
+    name: "Construction in Progress",
+    type: "ASSET",
+    normalBalance: "DEBIT",
+    isContra: false,
+    isBelowNoi: false,
+    isCash: false,
+    reportGroup: "cip",
+    sortOrder: 1460,
+    cashFlowClass: "INVESTING",
+  },
+  {
     code: "1490",
     name: "Accumulated Depreciation",
     type: "ASSET",

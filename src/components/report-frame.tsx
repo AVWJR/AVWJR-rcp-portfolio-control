@@ -1,3 +1,4 @@
+import { PeriodBanner } from "@/components/period-banner";
 import { Shell } from "@/components/shell";
 import { listEntities } from "@/lib/queries";
 import { buildAllStatements } from "@/lib/reports-server";
@@ -79,6 +80,11 @@ export async function ReportShell({
       consolidated={ctx.consolidated}
       pathname={pathname}
     >
+      <PeriodBanner
+        status={ctx.statements.period.status}
+        entityCode={ctx.entity.code}
+        period={`${ctx.year}-${String(ctx.month).padStart(2, "0")}`}
+      />
       {children(ctx)}
     </Shell>
   );

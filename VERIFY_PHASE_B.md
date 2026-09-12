@@ -57,4 +57,4 @@ Re-seed after a sample import if you want the full 264-unit roll back: `npm run 
 
 ## Out of scope (must remain undone)
 
-Phase C debt file / LTV. Phase D ratio dashboards. Phase E narratives/PDF. Phase F tax. No live PMS. No promote waterfall. No delinquency from GL `1110`.
+Phase D ratio dashboards (beyond Phase C DSCR / debt yield). Phase E narratives/PDF. Phase F tax. No live PMS. No promote waterfall. No delinquency from GL `1110`. No LTV from book cost.

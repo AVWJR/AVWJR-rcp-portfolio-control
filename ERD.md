@@ -1,6 +1,6 @@
-# Phase A / B Entity-Relationship Diagram
+# Phase A–C Entity-Relationship Diagram
 
-Roche Capital Partners ledger + unit master — book basis, USD cents (`BigInt`), `America/New_York`.
+Roche Capital Partners ledger + unit master + debt + CIP + close — book basis, USD cents (`BigInt`), `America/New_York`.
 
 ```mermaid
 erDiagram
@@ -10,7 +10,13 @@ erDiagram
   Entity ||--o{ Journal : posts
   Entity ||--o{ Unit : rent-roll
   Entity ||--o{ BudgetLine : budgets
+  Entity ||--o{ Loan : mortgages
+  Entity ||--o{ CapexProject : capex
   Period ||--o{ Journal : contains
+  Period ||--o{ CloseChecklistItem : checklist
+  Period ||--o{ PeriodCloseEvent : audit
+  Loan ||--o{ LoanPayment : schedule
+  CapexProject ||--o{ CapexCost : costs
   Journal ||--|{ JournalLine : splits
   Account ||--o{ JournalLine : posted-to
 
@@ -50,7 +56,35 @@ erDiagram
     int month
     datetime startDate
     datetime endDate
-    enum status "OPEN | CLOSED"
+    enum status "OPEN | SOFT_CLOSED | CLOSED"
+    datetime softClosedAt
+    datetime lockedAt
+    string reopenReason
+    string reopenTicket
+  }
+
+  Loan {
+    string id PK
+    string entityId FK
+    string lenderName
+    bigint originalPrincipalCents
+    bigint currentUpbCents
+    int interestRateBps
+    bigint paymentCents
+    datetime maturityDate
+    int dscrThresholdBps
+    int debtYieldThresholdBps
+  }
+
+  CapexProject {
+    string id PK
+    string entityId FK
+    enum classification "CAPEX | REPAIRS_MAINTENANCE"
+    enum status "OPEN | CIP | PLACED_IN_SERVICE | CLOSED"
+    bigint budgetCents
+    bigint spentCents
+    bigint cipCents
+    bigint placedInServiceCents
   }
 
   Journal {
@@ -118,6 +152,6 @@ A journal may move from `DRAFT` to `POSTED` only when:
 - no line carries both a debit and a credit
 - `sum(debit) == sum(credit)` (integer cents)
 - every account belongs to the journal’s entity CoA
-- the period is `OPEN`
+- the period is `OPEN` (soft-closed periods allow controller adjustments only; `CLOSED` rejects all posts)
 
 Master CoA template rows have `entityId = null` and `isTemplate = true`. Creating an entity clones the template onto that entity.

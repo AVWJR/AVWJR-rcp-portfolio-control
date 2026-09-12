@@ -2,6 +2,7 @@ import { MASTER_COA_BY_CODE } from "@rcp/ledger";
 import { parseBudgetCsv } from "@rcp/properties";
 import { prisma } from "@/lib/prisma";
 import { exportBudgetCsv, loadBudgetMap, replaceBudget } from "@/lib/budgets";
+import { assertReplaceConfirmed } from "@/lib/import-guard";
 import { serialize } from "@/lib/serialize";
 import { NextResponse } from "next/server";
 
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
   let code = "";
   let csv = "";
   let period = "2026-08";
+  let confirmReplace = false;
   if (contentType.includes("multipart/form-data")) {
     const form = await request.formData();
     code = String(form.get("entity") ?? "");
@@ -53,11 +55,18 @@ export async function POST(request: Request) {
     const file = form.get("file");
     if (file instanceof File) csv = await file.text();
     else csv = String(form.get("csv") ?? "");
+    confirmReplace = String(form.get("confirmReplace") ?? "") === "true";
   } else {
-    const body = (await request.json()) as { entity?: string; csv?: string; period?: string };
+    const body = (await request.json()) as {
+      entity?: string;
+      csv?: string;
+      period?: string;
+      confirmReplace?: boolean;
+    };
     code = body.entity ?? "";
     csv = body.csv ?? "";
     period = body.period ?? "2026-08";
+    confirmReplace = Boolean(body.confirmReplace);
   }
 
   const entity = await prisma.entity.findUnique({ where: { code } });
@@ -73,6 +82,10 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    const existingCount = await prisma.budgetLine.count({
+      where: { entityId: entity.id, year, month },
+    });
+    assertReplaceConfirmed({ existingCount, confirmReplace, kind: "budget" });
     await replaceBudget({ entityId: entity.id, year, month, rows, source: "import" });
     return NextResponse.json({ imported: rows.length, entity: entity.code, period });
   } catch (error) {

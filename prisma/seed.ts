@@ -12,6 +12,7 @@ import { cloneCoaToEntity, createEntityWithCoa, seedMasterCoaTemplate } from "..
 import { postJournal } from "../src/lib/journals";
 import { replaceBudget } from "../src/lib/budgets";
 import { replaceRentRoll } from "../src/lib/rent-roll";
+import { seedCapexProjects, seedCloseDemo, seedLoansAndRolls } from "./seed-phase-c";
 
 const prisma = new PrismaClient();
 
@@ -329,6 +330,12 @@ async function seedBudgets(byCode: Record<string, string>) {
 }
 
 async function main() {
+  await prisma.periodCloseEvent.deleteMany();
+  await prisma.closeChecklistItem.deleteMany();
+  await prisma.loanPayment.deleteMany();
+  await prisma.loan.deleteMany();
+  await prisma.capexCost.deleteMany();
+  await prisma.capexProject.deleteMany();
   await prisma.budgetLine.deleteMany();
   await prisma.unit.deleteMany();
   await prisma.journalLine.deleteMany();
@@ -396,13 +403,20 @@ async function main() {
   };
   await seedRentRolls(byCode);
   await seedBudgets(byCode);
+  await seedLoansAndRolls(prisma, byCode, post);
+  await seedCapexProjects(prisma, byCode, post);
+  await seedCloseDemo(prisma, byCode);
 
   const journals = await prisma.journal.count();
   const lines = await prisma.journalLine.count();
   const units = await prisma.unit.count();
   const budgets = await prisma.budgetLine.count();
+  const loans = await prisma.loan.count();
+  const projects = await prisma.capexProject.count();
+  const locked = await prisma.period.count({ where: { status: "CLOSED" } });
   console.log(`Seeded ${journals} journals / ${lines} lines`);
   console.log(`Seeded ${units} rent-roll units / ${budgets} budget lines`);
+  console.log(`Seeded ${loans} loans / ${projects} capex projects / ${locked} hard-locked period(s)`);
   console.log("Entities:");
   console.log("  Roche Capital Partners HoldCo (RCP-HOLD)");
   console.log("  RCP Operating Company LLC (RCP-OPCO)");

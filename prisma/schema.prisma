@@ -1,4 +1,4 @@
-// Roche Capital Partners — Phase A ledger + Phase B property operating schema
+// Roche Capital Partners — Phase A–C ledger, operating, debt, capex, close
 // Local demo: SQLite via DATABASE_URL="file:./dev.db"
 // Production: change provider to "postgresql" and point DATABASE_URL at Postgres.
 // Amounts are integer USD cents (BigInt) to keep trial-balance math exact.
@@ -46,6 +46,31 @@ enum CashFlowClass {
 
 enum PeriodStatus {
   OPEN
+  SOFT_CLOSED
+  CLOSED
+}
+
+enum ChecklistItemStatus {
+  PENDING
+  DONE
+  NA
+}
+
+enum PeriodCloseAction {
+  SOFT_CLOSE
+  HARD_LOCK
+  REOPEN
+}
+
+enum CapexClassification {
+  CAPEX
+  REPAIRS_MAINTENANCE
+}
+
+enum CapexProjectStatus {
+  OPEN
+  CIP
+  PLACED_IN_SERVICE
   CLOSED
 }
 
@@ -77,11 +102,13 @@ model Entity {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  accounts    Account[]
-  periods     Period[]
-  journals    Journal[]
-  units       Unit[]
-  budgetLines BudgetLine[]
+  accounts      Account[]
+  periods       Period[]
+  journals      Journal[]
+  units         Unit[]
+  budgetLines   BudgetLine[]
+  loans         Loan[]
+  capexProjects CapexProject[]
 }
 
 /// Master template rows use entityId = null. Entity CoA is cloned from the template.
@@ -117,10 +144,17 @@ model Period {
   label     String
   startDate DateTime
   endDate   DateTime
-  status    PeriodStatus @default(OPEN)
-  createdAt DateTime     @default(now())
+  status         PeriodStatus @default(OPEN)
+  softClosedAt   DateTime?
+  lockedAt       DateTime?
+  reopenedAt     DateTime?
+  reopenReason   String?
+  reopenTicket   String?
+  createdAt      DateTime     @default(now())
 
-  journals Journal[]
+  journals  Journal[]
+  checklist CloseChecklistItem[]
+  closeEvents PeriodCloseEvent[]
 
   @@unique([entityId, year, month])
 }
@@ -196,4 +230,120 @@ model BudgetLine {
 
   @@unique([entityId, year, month, accountCode])
   @@index([entityId, year, month])
+}
+
+/// First-mortgage loan file. UPB and payment amounts are integer cents.
+/// Rate is annual basis points (568 = 5.68%). Covenant thresholds are also bps
+/// (DSCR 12500 = 1.25x; debt yield 800 = 8.00%). Do not invent LTV from book cost.
+model Loan {
+  id                      String   @id @default(cuid())
+  entityId                String
+  entity                  Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  name                    String
+  lenderName              String
+  originalPrincipalCents  BigInt
+  currentUpbCents         BigInt
+  interestRateBps         Int
+  paymentCents            BigInt
+  originationDate         DateTime
+  maturityDate            DateTime
+  reserveRequirementCents BigInt   @default(0)
+  reserveAccountCode      String   @default("1020")
+  dscrThresholdBps        Int      @default(12500)
+  debtYieldThresholdBps   Int      @default(800)
+  notes                   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  payments LoanPayment[]
+
+  @@index([entityId])
+}
+
+/// Scheduled or posted debt-service row. August seed rows match GL 6110 / principal.
+model LoanPayment {
+  id                 String    @id @default(cuid())
+  loanId             String
+  loan               Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  year               Int
+  month              Int
+  dueDate            DateTime
+  interestCents      BigInt
+  principalCents     BigInt
+  reserveCents       BigInt    @default(0)
+  endingUpbCents     BigInt
+  currentPortionCents BigInt
+  longTermPortionCents BigInt
+  posted             Boolean   @default(false)
+  journalId          String?
+  source             String    @default("schedule")
+  createdAt          DateTime  @default(now())
+
+  @@unique([loanId, year, month])
+  @@index([loanId])
+}
+
+/// CapEx project or R&M tracker. CapEx spends hit CIP (1460) until placed in service.
+/// R&M is operating (5210) and stays in NOI — never capitalize it.
+model CapexProject {
+  id                     String              @id @default(cuid())
+  entityId               String
+  entity                 Entity              @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  name                   String
+  classification         CapexClassification
+  status                 CapexProjectStatus  @default(OPEN)
+  budgetCents            BigInt
+  spentCents             BigInt              @default(0)
+  cipCents               BigInt              @default(0)
+  placedInServiceCents   BigInt              @default(0)
+  placedInServiceAt      DateTime?
+  fixedAssetAccountCode  String              @default("1430")
+  notes                  String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  costs CapexCost[]
+
+  @@index([entityId])
+}
+
+model CapexCost {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     CapexProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date        DateTime
+  amountCents BigInt
+  kind        String
+  accountCode String
+  memo        String?
+  journalId   String?
+  createdAt   DateTime     @default(now())
+
+  @@index([projectId])
+}
+
+model CloseChecklistItem {
+  id         String               @id @default(cuid())
+  periodId   String
+  period     Period               @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  code       String
+  label      String
+  sortOrder  Int
+  status     ChecklistItemStatus  @default(PENDING)
+  notes      String?
+  reviewedAt DateTime?
+
+  @@unique([periodId, code])
+}
+
+model PeriodCloseEvent {
+  id        String            @id @default(cuid())
+  periodId  String
+  period    Period            @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  action    PeriodCloseAction
+  reason    String?
+  ticket    String?
+  createdAt DateTime          @default(now())
+
+  @@index([periodId])
 }

@@ -1,11 +1,9 @@
-/** Debt module stub. Phase A carries current + LT mortgage balances on the SPE CoA only. */
+/** Debt + capex journal helpers. Loan-file DSCR / debt yield are Phase C. LTV stays gated. */
 
-export type DebtInstrumentStub = {
-  speCode: string;
-  currentBalanceCents: bigint;
-  longTermBalanceCents: bigint;
-};
+export * from "./types";
+export * from "./amortize";
+export * from "./covenants";
+export * from "./journals";
 
-// TODO(Phase C): note-level amortization, rate, lender, covenant tests, LTL from loan file
-export const PHASE_C_DEBT_TODO =
-  "Loan-to-value / loan-to-cost and amortization schedules are Phase C. Do not fake LTL from the GL.";
+export const PHASE_C_LTV_POLICY =
+  "Loan-to-value / loan-to-cost still needs an appraisal (or an explicit cost-basis policy). Do not divide UPB by book cost and label it LTV.";

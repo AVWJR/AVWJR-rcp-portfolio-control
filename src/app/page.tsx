@@ -34,7 +34,8 @@ export default async function HomePage({
                 Book-basis ledger for Roche Capital Partners HoldCo, OpCo, and wholly owned property
                 SPEs. Physical occupancy and loss-to-lease are rent-roll sourced. Book economic
                 occupancy is EGI / GPR. Delinquency is not invented from GL AR. OpCo{" "}
-                <strong>combined roll-up</strong> sums wholly owned SPEs and eliminates IC / AM.
+                <strong>combined roll-up</strong> sums wholly owned SPEs and eliminates IC / AM —
+                it is not a GAAP consolidation.
               </p>
             </div>
             {ctx.entity.type === "SPE" || ctx.consolidated ? <KpiStrip kpis={ctx.statements.kpis} /> : null}
@@ -51,6 +52,9 @@ export default async function HomePage({
               {[
                 { href: "/reports/operating-statement", title: "Operating Statement", copy: "NOI bridge with budget variance and prior-period (MoM) columns." },
                 { href: "/properties", title: "Properties / rent roll", copy: "Unit master, occupancy, loss-to-lease, CSV import." },
+                { href: "/debt", title: "Debt / covenants", copy: "Loan file, maturity schedule, DSCR and debt yield vs thresholds." },
+                { href: "/capex", title: "CapEx / CIP", copy: "CapEx vs R&M. CIP 1460 until placed in service." },
+                { href: "/close", title: "Period close", copy: "Soft close, controller checklist, hard lock. Reopen needs a ticket." },
                 { href: "/reports/trial-balance", title: "Trial Balance", copy: "As-of posted activity. Debits equal credits." },
                 { href: "/reports/income-statement", title: "Income Statement", copy: "Book P/L: GPR → NOI → interest, depreciation, AM fees." },
                 { href: "/reports/balance-sheet", title: "Balance Sheet", copy: "Assets, liabilities, and members' equity including unclosed NI." },

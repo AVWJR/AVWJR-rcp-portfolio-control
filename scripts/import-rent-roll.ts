@@ -13,8 +13,9 @@ function arg(name: string): string | undefined {
 async function main() {
   const code = arg("entity");
   const file = arg("file");
+  const replace = process.argv.includes("--replace");
   if (!code || !file) {
-    console.error("Required: --entity=SPE-WBG --file=path.csv");
+    console.error("Required: --entity=SPE-WBG --file=path.csv [--replace]");
     process.exit(1);
   }
   const prisma = new PrismaClient();
@@ -24,7 +25,8 @@ async function main() {
     process.exit(1);
   }
   const csv = readFileSync(file, "utf8");
-  const units = await importRentRollCsv({ entityId: entity.id, csv });
+  console.warn("WARNING: rent-roll import replaces every unit on this SPE.");
+  const units = await importRentRollCsv({ entityId: entity.id, csv, confirmReplace: replace });
   console.log(`Imported ${units.length} units into ${code}`);
   await prisma.$disconnect();
 }
