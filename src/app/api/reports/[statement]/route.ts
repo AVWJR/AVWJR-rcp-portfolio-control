@@ -1,15 +1,7 @@
 import { buildAllStatements } from "@/lib/reports-server";
 import { prisma } from "@/lib/prisma";
+import { serialize } from "@/lib/serialize";
 import { NextResponse } from "next/server";
-
-function serialize(value: unknown): unknown {
-  if (typeof value === "bigint") return value.toString();
-  if (Array.isArray(value)) return value.map(serialize);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, serialize(v)]));
-  }
-  return value;
-}
 
 export async function GET(
   request: Request,
@@ -20,7 +12,8 @@ export async function GET(
   const code = url.searchParams.get("entity") ?? "RCP-OPCO";
   const period = url.searchParams.get("period") ?? "2026-08";
   const [year, month] = period.split("-").map(Number);
-  const consolidated = url.searchParams.get("view") === "consolidated";
+  const view = url.searchParams.get("view");
+  const consolidated = view === "consolidated" || view === "combined";
 
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
@@ -41,10 +34,14 @@ export async function GET(
           ? all.bs
           : statement === "cf"
             ? all.cf
-            : null;
+            : statement === "os"
+              ? all.os
+              : statement === "kpis"
+                ? all.kpis
+                : null;
 
   if (!payload) {
-    return NextResponse.json({ error: "Use tb | is | bs | cf" }, { status: 400 });
+    return NextResponse.json({ error: "Use tb | is | os | bs | cf | kpis" }, { status: 400 });
   }
 
   return NextResponse.json(

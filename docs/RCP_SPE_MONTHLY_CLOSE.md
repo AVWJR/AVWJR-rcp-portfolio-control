@@ -1,4 +1,4 @@
-# SPE Monthly Close (Phase A)
+# SPE Monthly Close (Phase A / B)
 
 Timezone: `America/New_York`. Currency: USD.
 
@@ -16,15 +16,18 @@ Timezone: `America/New_York`. Currency: USD.
 7. Print Income Statement. Confirm AM fees appear below NOI.
 8. Print Balance Sheet. Assets must equal liabilities + equity (unclosed NI is added to equity).
 9. Print Cash Flow. Beginning cash + net change must equal ending cash.
-10. Close the period (`Period.status = CLOSED`) once reviewers sign off. Posted journals cannot be added to a closed period.
+10. Import or confirm the rent roll (unit master) for occupancy, loss-to-lease, and rent-roll vacancy / concessions. Do not derive physical occupancy from `4020`.
+11. Import or confirm the monthly operating budget. Print the operating statement variance.
+12. Review breakeven occupancy: `(OpEx + interest + principal − other income) / GPR`.
+13. Close the period (`Period.status = CLOSED`) once reviewers sign off. Posted journals cannot be added to a closed period.
 
 ## Out of scope this phase
 
-- Live PMS rent-roll import
-- Bank feed / reconciliation
+- Live PMS / bank feed
 - Promote / waterfall
 - BigBrainRE underwriting
-- Occupancy, LTL, delinquency (see `RCP_RATIO_DICTIONARY_STUB.md`)
+- Delinquency / AR aging (no charge/receipt subledger)
+- Loan-file LTV (Phase C)
 
 ## Close is not year-end
 

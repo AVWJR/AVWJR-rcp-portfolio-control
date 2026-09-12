@@ -5,6 +5,8 @@ import { EntitySwitcher } from "./entity-switcher";
 
 const NAV = [
   { href: "/", label: "Overview" },
+  { href: "/reports/operating-statement", label: "Operating Statement" },
+  { href: "/properties", label: "Properties" },
   { href: "/reports/trial-balance", label: "Trial Balance" },
   { href: "/reports/income-statement", label: "Income Statement" },
   { href: "/reports/balance-sheet", label: "Balance Sheet" },
@@ -39,7 +41,7 @@ export function Shell({
       entity: activeEntity,
       period: `${year}-${String(month).padStart(2, "0")}`,
     });
-    if (consolidated) params.set("view", "consolidated");
+    if (consolidated) params.set("view", "combined");
     return `${path}?${params.toString()}`;
   };
 
@@ -97,7 +99,7 @@ export function Shell({
       <footer className="border-t border-cream-300 bg-cream-200">
         <div className="mx-auto flex max-w-7xl justify-between px-6 py-4 text-[11px] uppercase tracking-[0.14em] text-ink-500">
           <span>{RCP_CONFIDENTIAL}</span>
-          <span>Phase A Ledger · Book basis</span>
+          <span>Phase B Operating · Book basis</span>
         </div>
       </footer>
     </div>

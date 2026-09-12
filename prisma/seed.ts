@@ -1,7 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 import { dollars, type JournalDraftLine } from "@rcp/ledger";
+import {
+  SPE_BUDGETS_2026_08,
+  SPE_RENT_ROLL_SPECS,
+  assertBudgetCodes,
+  assertDemoRentRoll,
+  buildDemoRentRoll,
+  demoAsOfDate,
+} from "@rcp/properties";
 import { cloneCoaToEntity, createEntityWithCoa, seedMasterCoaTemplate } from "../src/lib/entities";
 import { postJournal } from "../src/lib/journals";
+import { replaceBudget } from "../src/lib/budgets";
+import { replaceRentRoll } from "../src/lib/rent-roll";
 
 const prisma = new PrismaClient();
 
@@ -298,7 +308,29 @@ async function seedHoldCo(entityId: string) {
   ]);
 }
 
+async function seedRentRolls(byCode: Record<string, string>) {
+  const asOfDate = demoAsOfDate();
+  for (const spec of SPE_RENT_ROLL_SPECS) {
+    const entityId = byCode[spec.speCode];
+    if (!entityId) throw new Error(`Missing entity ${spec.speCode}`);
+    const units = buildDemoRentRoll(spec);
+    assertDemoRentRoll(units, spec);
+    await replaceRentRoll({ entityId, units, asOfDate });
+  }
+}
+
+async function seedBudgets(byCode: Record<string, string>) {
+  for (const [code, rows] of Object.entries(SPE_BUDGETS_2026_08)) {
+    const entityId = byCode[code];
+    if (!entityId) continue;
+    assertBudgetCodes(rows);
+    await replaceBudget({ entityId, year: 2026, month: 8, rows, source: "seed" });
+  }
+}
+
 async function main() {
+  await prisma.budgetLine.deleteMany();
+  await prisma.unit.deleteMany();
   await prisma.journalLine.deleteMany();
   await prisma.journal.deleteMany();
   await prisma.period.deleteMany();
@@ -355,9 +387,22 @@ async function main() {
   await seedCrestview(cvc.id);
   await seedHarborCourt(hcr.id);
 
+  const byCode = {
+    "RCP-HOLD": hold.id,
+    "RCP-OPCO": opco.id,
+    "SPE-WBG": wbg.id,
+    "SPE-CVC": cvc.id,
+    "SPE-HCR": hcr.id,
+  };
+  await seedRentRolls(byCode);
+  await seedBudgets(byCode);
+
   const journals = await prisma.journal.count();
   const lines = await prisma.journalLine.count();
+  const units = await prisma.unit.count();
+  const budgets = await prisma.budgetLine.count();
   console.log(`Seeded ${journals} journals / ${lines} lines`);
+  console.log(`Seeded ${units} rent-roll units / ${budgets} budget lines`);
   console.log("Entities:");
   console.log("  Roche Capital Partners HoldCo (RCP-HOLD)");
   console.log("  RCP Operating Company LLC (RCP-OPCO)");

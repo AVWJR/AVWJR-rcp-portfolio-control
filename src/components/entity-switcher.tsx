@@ -33,8 +33,8 @@ export function EntitySwitcher({
       entity: next.entity ?? activeEntity,
       period: next.period ?? period,
     });
-    const view = next.view ?? (consolidated ? "consolidated" : "standalone");
-    if (view === "consolidated") params.set("view", "consolidated");
+    const view = next.view ?? (consolidated ? "combined" : "standalone");
+    if (view === "combined" || view === "consolidated") params.set("view", "combined");
     router.push(`${pathname}?${params.toString()}`);
   }
 
@@ -68,11 +68,11 @@ export function EntitySwitcher({
       {canConsolidate ? (
         <select
           className="border border-navy-700 bg-navy-800 px-2 py-1.5 text-cream-100"
-          value={consolidated ? "consolidated" : "standalone"}
+          value={consolidated ? "combined" : "standalone"}
           onChange={(e) => go({ view: e.target.value })}
         >
           <option value="standalone">Standalone</option>
-          <option value="consolidated">Consolidated SPEs</option>
+          <option value="combined">Combined roll-up</option>
         </select>
       ) : null}
     </div>

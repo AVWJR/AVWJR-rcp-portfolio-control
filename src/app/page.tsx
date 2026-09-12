@@ -1,3 +1,4 @@
+import { KpiStrip } from "@/components/kpi-strip";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { formatUsd } from "@rcp/ledger";
 import Link from "next/link";
@@ -22,7 +23,7 @@ export default async function HomePage({
           entity: ctx.entity.code,
           period: `${ctx.year}-${String(ctx.month).padStart(2, "0")}`,
         });
-        if (ctx.consolidated) q.set("view", "consolidated");
+        if (ctx.consolidated) q.set("view", "combined");
 
         return (
           <div className="space-y-8">
@@ -31,10 +32,12 @@ export default async function HomePage({
               <h1 className="font-display text-4xl text-navy-900">Portfolio Control</h1>
               <p className="mt-2 max-w-2xl text-sm text-ink-700">
                 Book-basis ledger for Roche Capital Partners HoldCo, OpCo, and wholly owned property
-                SPEs. Occupancy, LTL, and delinquency are gated on Phase B+ operational feeds and are
-                not inferred from the GL.
+                SPEs. Physical occupancy and loss-to-lease are rent-roll sourced. Book economic
+                occupancy is EGI / GPR. Delinquency is not invented from GL AR. OpCo{" "}
+                <strong>combined roll-up</strong> sums wholly owned SPEs and eliminates IC / AM.
               </p>
             </div>
+            {ctx.entity.type === "SPE" || ctx.consolidated ? <KpiStrip kpis={ctx.statements.kpis} /> : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {cards.map((card) => (
                 <div key={card.label} className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
@@ -46,8 +49,10 @@ export default async function HomePage({
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {[
+                { href: "/reports/operating-statement", title: "Operating Statement", copy: "NOI bridge with budget variance and prior-period (MoM) columns." },
+                { href: "/properties", title: "Properties / rent roll", copy: "Unit master, occupancy, loss-to-lease, CSV import." },
                 { href: "/reports/trial-balance", title: "Trial Balance", copy: "As-of posted activity. Debits equal credits." },
-                { href: "/reports/income-statement", title: "Income Statement", copy: "GPR → NOI → below-the-line interest, depreciation, AM fees." },
+                { href: "/reports/income-statement", title: "Income Statement", copy: "Book P/L: GPR → NOI → interest, depreciation, AM fees." },
                 { href: "/reports/balance-sheet", title: "Balance Sheet", copy: "Assets, liabilities, and members' equity including unclosed NI." },
                 { href: "/reports/cash-flow", title: "Cash Flow", copy: "Indirect method. Ending cash ties to the balance sheet." },
               ].map((item) => (
