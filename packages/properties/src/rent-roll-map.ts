@@ -21,6 +21,7 @@ export type RentRollColumnMap = Partial<Record<RentRollField | RentRollExtraFiel
 
 const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
   unit: [
+    "unitid",
     "unit_id",
     "unit id",
     "unit designation",
@@ -48,6 +49,8 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
     "unit design",
     "floorplan name",
     "plan name",
+    "planid",
+    "plan id",
     "plan",
     "fp",
     "type",
@@ -56,10 +59,12 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
   baths: ["bathrooms", "bathroom", "baths", "bath", "bas", "ba"],
   beds_baths: ["bd ba", "beds baths", "bed bath", "br ba", "bds bas", "brs bas", "bed/bath", "bd/ba"],
   bldg: ["building", "bldg", "bld", "bldg no", "building number"],
-  sqft: ["square footage", "square feet", "unit sf", "sq ft", "sqft", "sf", "nra", "nsa"],
+  sqft: ["square footage", "square feet", "unit sf", "net sf", "netsf", "sq ft", "sqft", "sf", "nra", "nsa"],
   status: [
     "occupancy status",
+    "status occupancy",
     "unit status",
+    "occstatus",
     "occ status",
     "occupancy",
     "occupied",
@@ -68,10 +73,12 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
   ],
   market_rent: [
     "market rent",
+    "rent market",
     "asking rent",
     "street rent",
     "proforma rent",
     "mkt rent",
+    "mktrent",
     "scheduled market",
     "market",
     "asking",
@@ -79,7 +86,9 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
   ],
   in_place_rent: [
     "in_place_rent",
+    "inplacerent",
     "in place rent",
+    "rent contractual",
     "leased rent",
     "lease rent",
     "current rent",
@@ -169,6 +178,19 @@ export function mapRentRollHeaders(headers: string[]): {
   return { map, missing, detected: headers.filter((h) => h.trim()) };
 }
 
+/** redIQ machine row (R9): UnitID / OccStatus / MktRent / InPlaceRent beats human R8. */
+export function rediqMachineHeaderBonus(headers: string[]): number {
+  const compact = headers.map((h) => normalizeHeader(h).replace(/\s+/g, ""));
+  let bonus = 0;
+  if (compact.includes("unitid")) bonus += 12;
+  if (compact.includes("occstatus")) bonus += 6;
+  if (compact.includes("mktrent")) bonus += 6;
+  if (compact.includes("inplacerent")) bonus += 6;
+  if (compact.includes("netsf")) bonus += 3;
+  if (compact.includes("planid")) bonus += 2;
+  return bonus;
+}
+
 export function scoreRentRollHeaderRow(headers: string[]): number {
   const { map } = mapRentRollHeaders(headers);
   let score = 0;
@@ -180,7 +202,7 @@ export function scoreRentRollHeaderRow(headers: string[]): number {
   if (map.beds != null || map.beds_baths != null) score += 1;
   if (map.sqft != null) score += 1;
   if (map.lease_start != null || map.lease_end != null) score += 1;
-  return score;
+  return score + rediqMachineHeaderBonus(headers);
 }
 
 export function mergeHeaderRows(top: string[], bottom: string[]): string[] {
@@ -212,6 +234,9 @@ export function resolveRentRollHeader(rows: string[][], maxScan = 80): ResolvedR
     if (!best || singleScore > best.score) {
       best = { index: i, headers: single, dataStart: i + 1, score: singleScore };
     }
+    // Do not merge a redIQ machine row with the human row above it — "Unit No. UnitID"
+    // fails to map as unit, which is how a 175-unit Rent Roll becomes 0 units.
+    if (rediqMachineHeaderBonus(single) >= 12) continue;
     const next = rows[i + 1];
     if (!next) continue;
     const merged = mergeHeaderRows(single, next);
@@ -289,6 +314,13 @@ function looksLikeSummary(unitCode: string, cols: string[]): boolean {
   return /^(total|average|avg|subtotal|grand total)/.test(unitCode.toLowerCase()) || /\b(total|average)\b/.test(hay) && !/\d/.test(unitCode);
 }
 
+function looksLikeHeaderRepeat(unitCode: string): boolean {
+  const compact = unitCode.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return /^(unit|unitid|unitno|unitnbr|unitnumber|propname|planid|bldg|building|status|occstatus|renstatus|resident|market|mktrent|inplacerent|charges|netsf|type)$/.test(
+    compact,
+  );
+}
+
 export function parseMappedRentRollRows(
   headers: string[],
   rows: string[][],
@@ -308,7 +340,7 @@ export function parseMappedRentRollRows(
     const unitCode = bldg && rawUnit && !rawUnit.startsWith(`${bldg}-`) && !rawUnit.startsWith(`${bldg}/`)
       ? `${bldg}-${rawUnit}`
       : rawUnit;
-    if (!unitCode || looksLikeSummary(unitCode, cols)) return;
+    if (!unitCode || looksLikeSummary(unitCode, cols) || looksLikeHeaderRepeat(unitCode)) return;
 
     if (seen.has(unitCode)) {
       throw new CsvParseError(line, `duplicate unit_id ${unitCode}`);

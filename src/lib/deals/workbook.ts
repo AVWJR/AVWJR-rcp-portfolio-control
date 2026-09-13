@@ -95,8 +95,11 @@ function sheetRows(sheet: WorkSheet): string[][] {
 }
 
 function sheetNameScore(name: string): number {
-  const lower = name.toLowerCase();
-  if (/cover|instr|toc|summary|index|check|t12|t-12|p&l|pnl|profit/.test(lower)) return -8;
+  const lower = name.trim().toLowerCase();
+  if (lower === "rent roll" || lower === "rentroll") return 24;
+  if (lower === "source data" || lower === "sourcedata") return 4;
+  if (/^(floor plan|floorplan|about|sheet\d+|cover)$/.test(lower)) return -12;
+  if (/cover|instr|toc|summary|index|check|t12|t-12|p&l|pnl|profit|about/.test(lower)) return -8;
   if (/mix/.test(lower) && !/rent|roll/.test(lower)) return -6;
   if (/rent|roll|resi/.test(lower)) return 8;
   if (/\bunit/.test(lower) && !/mix/.test(lower)) return 4;
@@ -107,7 +110,7 @@ function sheetNameScore(name: string): number {
 function countLikelyUnitRows(headers: string[], body: string[][]): number {
   const unitIdx = headers.findIndex((h) => {
     const n = h.toLowerCase().replace(/[_/\\-]+/g, " ").trim();
-    return /^(unit|unit id|unit number|unit nbr|unit no|unit code|apt|apt no|bldg unit|space)\b/.test(n) && !/type|mix|design|count/.test(n);
+    return /^(unitid|unit id|unit|unit number|unit nbr|unit no|unit code|apt|apt no|bldg unit|space)\b/.test(n) && !/type|mix|design|count/.test(n);
   });
   if (unitIdx < 0) return 0;
   return body.filter((row) => {
