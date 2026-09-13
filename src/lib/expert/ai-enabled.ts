@@ -2,11 +2,11 @@
 
 import type { ExpertBannerKind, ExpertModelProvider } from "./types";
 
-/** Default Grok text model via Vercel AI Gateway (`provider/model`, not openai/gpt-*). */
-export const DEFAULT_GROK_GATEWAY_MODEL = "xai/grok-4.5";
+/** Direct xAI Chat Completions flagship id (https://api.x.ai/v1). Go-live default. */
+export const DEFAULT_GROK_DIRECT_MODEL = "grok-4";
 
-/** Direct xAI Chat Completions id when only XAI_API_KEY / GROK_API_KEY is set. */
-export const DEFAULT_GROK_DIRECT_MODEL = "grok-4.5";
+/** Optional Vercel AI Gateway slug if they add a Gateway key later. */
+export const DEFAULT_GROK_GATEWAY_MODEL = "xai/grok-4.5";
 
 export const XAI_API_BASE = "https://api.x.ai/v1";
 
@@ -39,19 +39,10 @@ type EnvMap = Record<string, string | undefined>;
 
 export function resolveExpertProvider(env: EnvMap = process.env): ExpertProviderResolution {
   const explicit = env.EXPERT_MODEL?.trim() || "";
-  const gatewayKey = firstTrimmed(env.AI_GATEWAY_API_KEY, env.VERCEL_OIDC_TOKEN);
   const xaiKey = firstTrimmed(env.XAI_API_KEY, env.GROK_API_KEY);
+  const gatewayKey = firstTrimmed(env.AI_GATEWAY_API_KEY);
   const openaiKey = firstTrimmed(env.OPENAI_API_KEY);
   const anthropicKey = firstTrimmed(env.ANTHROPIC_API_KEY);
-
-  if (gatewayKey) {
-    return {
-      provider: "gateway",
-      modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
-      banner: "grok",
-      apiKey: gatewayKey,
-    };
-  }
 
   if (xaiKey) {
     return {
@@ -62,10 +53,19 @@ export function resolveExpertProvider(env: EnvMap = process.env): ExpertProvider
     };
   }
 
+  if (gatewayKey) {
+    return {
+      provider: "gateway",
+      modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
+      banner: "grok",
+      apiKey: gatewayKey,
+    };
+  }
+
   if (openaiKey) {
     return {
       provider: "openai",
-      modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
+      modelId: explicit || DEFAULT_GROK_DIRECT_MODEL,
       banner: "grok",
       apiKey: openaiKey,
     };
@@ -74,7 +74,7 @@ export function resolveExpertProvider(env: EnvMap = process.env): ExpertProvider
   if (anthropicKey) {
     return {
       provider: "anthropic",
-      modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
+      modelId: explicit || DEFAULT_GROK_DIRECT_MODEL,
       banner: "grok",
       apiKey: anthropicKey,
     };
@@ -82,7 +82,7 @@ export function resolveExpertProvider(env: EnvMap = process.env): ExpertProvider
 
   return {
     provider: "none",
-    modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
+    modelId: explicit || DEFAULT_GROK_DIRECT_MODEL,
     banner: "offline",
     apiKey: null,
   };
