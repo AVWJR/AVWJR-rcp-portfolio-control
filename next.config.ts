@@ -13,7 +13,14 @@ const nextConfig: NextConfig = {
     "@rcp/documents",
     "@rcp/rcp-brand",
   ],
-  serverExternalPackages: ["@prisma/client", "pdfkit", "pptxgenjs"],
+  serverExternalPackages: [
+    "@prisma/client",
+    "@prisma/adapter-neon",
+    "@neondatabase/serverless",
+    "ws",
+    "pdfkit",
+    "pptxgenjs",
+  ],
 };
 
 export default nextConfig;

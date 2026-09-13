@@ -1,16 +1,15 @@
-// Roche Capital Partners — Phase A–F ledger, operating, debt, dashboards, tax, vault
-// Local demo (this file): SQLite via DATABASE_URL="file:./dev.db"
-// Production: scripts/prisma-prepare.mjs writes schema.prod.prisma (postgresql + DIRECT_URL)
-// when DATABASE_URL is postgres:// or when Vercel builds. Do not switch this file by hand.
-// Amounts are integer USD cents (BigInt) to keep trial-balance math exact.
+// Roche Capital Partners — Phase A–F (PostgreSQL / Neon production schema)
+// Generated from prisma/schema.prisma by scripts/prisma-prepare.mjs — edit models there.
+// DATABASE_URL = Neon pooled (-pooler). DIRECT_URL = Neon unpooled (prisma db push).
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum EntityType {
