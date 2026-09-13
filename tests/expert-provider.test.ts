@@ -38,14 +38,14 @@ function bareEnv(extra: Record<string, string | undefined> = {}): Record<string,
 }
 
 describe("expert model provider selection", () => {
-  it("uses direct xAI grok-4 when XAI_API_KEY is present", () => {
+  it("uses direct xAI grok-4.6 when XAI_API_KEY is present", () => {
     const resolved = resolveExpertProvider(bareEnv({ XAI_API_KEY: "xai_test" }));
     expect(resolved.provider).toBe("xai");
     expect(resolved.modelId).toBe(DEFAULT_GROK_DIRECT_MODEL);
-    expect(resolved.modelId).toBe("grok-4");
+    expect(resolved.modelId).toBe("grok-4.6");
     expect(resolved.banner).toBe("grok");
     expect(expertAiEnabled(bareEnv({ XAI_API_KEY: "xai_test" }))).toBe(true);
-    expect(expertModelId(bareEnv({ XAI_API_KEY: "xai_test" }))).toBe("grok-4");
+    expect(expertModelId(bareEnv({ XAI_API_KEY: "xai_test" }))).toBe("grok-4.6");
   });
 
   it("accepts GROK_API_KEY as an xAI alias and maps Gateway slugs", () => {
@@ -59,9 +59,9 @@ describe("expert model provider selection", () => {
   });
 
   it("honors EXPERT_MODEL on the direct xAI path", () => {
-    const resolved = resolveExpertProvider(bareEnv({ XAI_API_KEY: "xai_test", EXPERT_MODEL: "grok-4" }));
+    const resolved = resolveExpertProvider(bareEnv({ XAI_API_KEY: "xai_test", EXPERT_MODEL: "grok-4.6" }));
     expect(resolved.provider).toBe("xai");
-    expect(resolved.modelId).toBe("grok-4");
+    expect(resolved.modelId).toBe("grok-4.6");
   });
 
   it("uses Gateway only when AI_GATEWAY_API_KEY is set and xAI is unset", () => {
@@ -83,7 +83,7 @@ describe("expert model provider selection", () => {
     const resolved = resolveExpertProvider(bareEnv());
     expect(resolved.provider).toBe("none");
     expect(resolved.banner).toBe("offline");
-    expect(resolved.modelId).toBe("grok-4");
+    expect(resolved.modelId).toBe("grok-4.6");
     expect(expertAiEnabled(bareEnv())).toBe(false);
     expect(expertBannerCopy("grok")).toBe("Grok connected");
     expect(expertBannerCopy("live")).toBe("Grok connected");
@@ -95,7 +95,7 @@ describe("expert model provider selection", () => {
       bareEnv({ AI_GATEWAY_API_KEY: "gw", XAI_API_KEY: "xai" }),
     );
     expect(resolved.provider).toBe("xai");
-    expect(resolved.modelId).toBe("grok-4");
+    expect(resolved.modelId).toBe("grok-4.6");
   });
 });
 
@@ -181,13 +181,13 @@ describe("expert suggested actions + stream parse", () => {
         type: "start",
         aiEnabled: true,
         provider: "gateway",
-        modelId: "grok-4",
+        modelId: "grok-4.6",
         banner: "grok",
         mode: "ai",
       }),
     );
     expect(start?.type).toBe("start");
-    if (start?.type === "start") expect(start.modelId).toBe("grok-4");
+    if (start?.type === "start") expect(start.modelId).toBe("grok-4.6");
   });
 });
 
@@ -226,7 +226,7 @@ describe("expert chat API validation (still 400 on bad body)", () => {
 
 describe("expert system prompt mastery", () => {
   it("locks Grok coach rules and the CRE audience matrix", () => {
-    expect(EXPERT_SYSTEM_PROMPT).toMatch(/grok-4/);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/grok-4\.6/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/api\.x\.ai/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/read-only/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/LP/);

@@ -3,7 +3,7 @@
 import type { ExpertBannerKind, ExpertModelProvider } from "./types";
 
 /** Direct xAI Chat Completions flagship id (https://api.x.ai/v1). Go-live default. */
-export const DEFAULT_GROK_DIRECT_MODEL = "grok-4";
+export const DEFAULT_GROK_DIRECT_MODEL = "grok-4.6";
 
 /** Optional Vercel AI Gateway slug if they add a Gateway key later. */
 export const DEFAULT_GROK_GATEWAY_MODEL = "xai/grok-4.5";
