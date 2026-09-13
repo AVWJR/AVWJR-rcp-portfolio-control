@@ -18,6 +18,7 @@ afterAll(async () => {
   if (idsToDelete.length) {
     await prisma.dealIntake.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.vaultDocument.deleteMany({ where: { entityId: { in: idsToDelete } } });
+    await prisma.storedBlob.deleteMany({ where: { key: { contains: "_intake/" } } });
     await prisma.loan.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.unit.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.budgetLine.deleteMany({ where: { entityId: { in: idsToDelete } } });

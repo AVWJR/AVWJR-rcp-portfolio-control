@@ -1,5 +1,6 @@
 import type { PeriodSnapshot } from "./snapshot-types";
-import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatUsd } from "./formatters";
+import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatMonthsCoverage, formatUsd } from "./formatters";
+import { icRecommendation } from "./ic-recommendation";
 
 export const CHART_IDS = [
   "waterfall_gpr_noi_btcf",
@@ -11,20 +12,38 @@ export const CHART_IDS = [
   "actual_vs_budget_bridge",
   "bs_composition",
   "portfolio_heatmap",
+  "coverage_vs_threshold",
+  "occupancy_breakeven",
+  "liquidity_runway",
+  "fee_vs_noi",
+  "covenant_watchlist",
+  "t12_status",
+  "decision_posture",
+  "upb_stack",
+  "close_control",
 ] as const;
 
 export type ChartId = (typeof CHART_IDS)[number];
 
 export const CHART_TITLES: Record<ChartId, string> = {
   waterfall_gpr_noi_btcf: "GPR → NOI → BTCF waterfall",
-  trends_noi_occupancy_opex_dscr: "NOI / occupancy / OpEx ratio / DSCR trends",
+  trends_noi_occupancy_opex_dscr: "DSCR vs threshold sparkline",
   opex_composition: "OpEx composition",
-  capex_vs_reserves: "CapEx vs reserves",
-  debt_maturity_wall: "Debt maturity wall",
-  portfolio_concentration: "NOI concentration",
+  capex_vs_reserves: "CapEx vs reserve coverage",
+  debt_maturity_wall: "Maturity schedule",
+  portfolio_concentration: "NOI concentration bars",
   actual_vs_budget_bridge: "Actual vs budget NOI bridge",
   bs_composition: "Balance-sheet composition",
   portfolio_heatmap: "Portfolio heatmap",
+  coverage_vs_threshold: "Covenant traffic light",
+  occupancy_breakeven: "Occupancy vs breakeven gap",
+  liquidity_runway: "Liquidity months",
+  fee_vs_noi: "Fee income vs NOI",
+  covenant_watchlist: "Covenant watchlist (fails only)",
+  t12_status: "T12 incomplete callout",
+  decision_posture: "Decision / posture",
+  upb_stack: "UPB stack (not LTV)",
+  close_control: "Close / IC control",
 };
 
 export type WaterfallBar = {
@@ -86,6 +105,44 @@ export type ChartSuite = {
     footnote: string;
   };
   heatmap: { title: string; spec: HeatmapSpec };
+  coverageVsThreshold: {
+    title: string;
+    footnote: string;
+    rows: { key: string; label: string; actual: number; threshold: number; unit: string; pass: boolean | null }[];
+  };
+  occupancyBreakeven: {
+    title: string;
+    footnote: string;
+    rows: { key: string; label: string; pct: number | null }[];
+  };
+  liquidityRunway: { title: string; footnote: string; months: number | null; bars: NamedAmount[] };
+  feeVsNoi: { title: string; footnote: string; bars: NamedAmount[] };
+  covenantWatchlist: {
+    title: string;
+    footnote: string;
+    rows: { key: string; label: string; reason: string; tone: "fail" | "clear" }[];
+  };
+  t12Status: {
+    title: string;
+    footnote: string;
+    complete: boolean;
+    monthsAvailable: number;
+    noiUsd: number;
+    label: string;
+  };
+  decisionPosture: {
+    title: string;
+    footnote: string;
+    action: string;
+    rationale: string;
+    conditions: string[];
+  };
+  upbStack: { title: string; footnote: string; bars: NamedAmount[] };
+  closeControl: {
+    title: string;
+    footnote: string;
+    rows: { key: string; label: string; display: string; tone: "good" | "watch" | "fail" | "neutral" }[];
+  };
 };
 
 function share(part: bigint, whole: bigint): number | null {
@@ -328,23 +385,29 @@ export function buildHeatmap(snap: PeriodSnapshot): ChartSuite["heatmap"] {
         },
       ]);
   const cols = [
-    { key: "share", label: "NOI share" },
-    { key: "occ", label: "Occ. (book)" },
+    { key: "noi", label: "Period NOI" },
+    { key: "occ", label: "Phys. occ." },
+    { key: "book", label: "Book occ." },
     { key: "opex", label: "OpEx ratio" },
     { key: "dscr", label: "DSCR" },
-    { key: "ltv", label: "LTV" },
   ];
   const cells: HeatmapSpec["cells"] = [];
   for (const row of rows) {
     cells.push({
       rowKey: row.entityCode,
-      colKey: "share",
-      display: formatBpsAsPercent(row.shareBps),
-      tone: (row.shareBps ?? 0) >= 5_000 ? "watch" : "neutral",
+      colKey: "noi",
+      display: formatUsd(row.noiCents),
+      tone: (row.shareBps ?? 0) > 4_000 ? "watch" : "neutral",
     });
     cells.push({
       rowKey: row.entityCode,
       colKey: "occ",
+      display: formatBpsAsPercent(row.physicalOccupancyBps),
+      tone: "neutral",
+    });
+    cells.push({
+      rowKey: row.entityCode,
+      colKey: "book",
       display: formatBpsAsPercent(row.bookEconomicOccupancyBps),
       tone: "neutral",
     });
@@ -360,20 +423,207 @@ export function buildHeatmap(snap: PeriodSnapshot): ChartSuite["heatmap"] {
       display: formatBpsAsMultiple(row.dscrBps),
       tone: row.dscrPass === false ? "fail" : row.dscrPass === true ? "good" : "neutral",
     });
-    cells.push({
-      rowKey: row.entityCode,
-      colKey: "ltv",
-      display: "Gated",
-      tone: "gated",
-    });
   }
   return {
-    title: CHART_TITLES.portfolio_heatmap,
+    title: "SPE scorecard",
     spec: {
       rows: rows.map((row) => ({ key: row.entityCode, label: row.entityCode })),
       cols,
       cells,
     },
+  };
+}
+
+export function buildCoverageVsThreshold(snap: PeriodSnapshot): ChartSuite["coverageVsThreshold"] {
+  return {
+    title: CHART_TITLES.coverage_vs_threshold,
+    footnote: "DSCR is period NOI ÷ (interest + principal). Debt yield is annualized period NOI ÷ UPB — not T12. LTV stays gated.",
+    rows: [
+      {
+        key: "dscr",
+        label: "DSCR",
+        actual: snap.dscrBps === null ? 0 : snap.dscrBps / 10_000,
+        threshold: (snap.dscrThresholdBps ?? 0) / 10_000,
+        unit: "x",
+        pass: snap.dscrPass,
+      },
+      {
+        key: "debt_yield",
+        label: "Debt yield",
+        actual: snap.debtYieldBps === null ? 0 : snap.debtYieldBps / 100,
+        threshold: (snap.debtYieldThresholdBps ?? 0) / 100,
+        unit: "%",
+        pass: snap.debtYieldPass,
+      },
+    ],
+  };
+}
+
+export function buildOccupancyBreakeven(snap: PeriodSnapshot): ChartSuite["occupancyBreakeven"] {
+  return {
+    title: CHART_TITLES.occupancy_breakeven,
+    footnote:
+      snap.physicalOccupancyBps === null
+        ? "Physical occupancy needs a rent roll. Book economic occupancy is EGI / GPR."
+        : `Physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)} vs breakeven ${formatBpsAsPercent(snap.breakevenOccupancyBps)}.`,
+    rows: [
+      { key: "phys", label: "Physical occ.", pct: snap.physicalOccupancyBps === null ? null : snap.physicalOccupancyBps / 100 },
+      { key: "book", label: "Book economic occ.", pct: snap.bookEconomicOccupancyBps === null ? null : snap.bookEconomicOccupancyBps / 100 },
+      { key: "be", label: "Breakeven", pct: snap.breakevenOccupancyBps === null ? null : snap.breakevenOccupancyBps / 100 },
+    ],
+  };
+}
+
+export function buildLiquidityRunway(snap: PeriodSnapshot): ChartSuite["liquidityRunway"] {
+  return {
+    title: CHART_TITLES.liquidity_runway,
+    footnote: `Cash ÷ period OpEx. Coverage is ${formatMonthsCoverage(snap.liquidityMonthsHundredths)}.`,
+    months: snap.liquidityMonthsHundredths === null ? null : snap.liquidityMonthsHundredths / 100,
+    bars: [
+      { key: "cash", label: "Total cash", usd: centsToUsdNumber(snap.cashTotalCents), cents: snap.cashTotalCents },
+      { key: "opex", label: "Period OpEx", usd: centsToUsdNumber(snap.opexCents), cents: snap.opexCents },
+      { key: "reserve", label: "Reserve cash", usd: centsToUsdNumber(snap.cashReserveCents), cents: snap.cashReserveCents },
+    ],
+  };
+}
+
+export function buildFeeVsNoi(snap: PeriodSnapshot): ChartSuite["feeVsNoi"] {
+  const fee = snap.feeIncomeCents ?? snap.amFeesCents;
+  return {
+    title: CHART_TITLES.fee_vs_noi,
+    footnote: "AM fees sit below NOI on the SPE. OpCo fee income is the sponsor line, not an in-NOI deduction.",
+    bars: [
+      { key: "noi", label: "Period NOI", usd: centsToUsdNumber(snap.noiCents), cents: snap.noiCents },
+      { key: "fee", label: "Fee / AM line", usd: centsToUsdNumber(fee), cents: fee },
+    ],
+  };
+}
+
+function failWatchRows(snap: PeriodSnapshot): ChartSuite["covenantWatchlist"]["rows"] {
+  const rows: ChartSuite["covenantWatchlist"]["rows"] = [];
+  if (snap.dscrPass === false) {
+    rows.push({
+      key: "dscr",
+      label: "DSCR",
+      reason: `${formatBpsAsMultiple(snap.dscrBps)} vs ${formatBpsAsMultiple(snap.dscrThresholdBps)}`,
+      tone: "fail",
+    });
+  }
+  if (snap.debtYieldPass === false) {
+    rows.push({
+      key: "dy",
+      label: "Debt yield",
+      reason: `${snap.debtYieldBps === null ? "—" : (snap.debtYieldBps / 100).toFixed(2) + "%"} vs threshold`,
+      tone: "fail",
+    });
+  }
+  if (snap.monthsRemaining !== null && snap.monthsRemaining < 12) {
+    rows.push({
+      key: "mat",
+      label: "Maturity",
+      reason: `${snap.monthsRemaining} months remaining`,
+      tone: "fail",
+    });
+  }
+  for (const w of snap.watchlist) {
+    rows.push({ key: `${w.entityCode}-${w.reason}`, label: w.entityCode, reason: w.reason, tone: "fail" });
+  }
+  if (!rows.length) {
+    rows.push({ key: "clear", label: "Watchlist", reason: "No covenant fails this period", tone: "clear" });
+  }
+  return rows;
+}
+
+export function buildCovenantWatchlist(snap: PeriodSnapshot): ChartSuite["covenantWatchlist"] {
+  return {
+    title: CHART_TITLES.covenant_watchlist,
+    footnote: "Fails only. DSCR is period NOI ÷ (interest + principal). Debt yield is annualized period NOI — not T12.",
+    rows: failWatchRows(snap),
+  };
+}
+
+export function buildT12Status(snap: PeriodSnapshot): ChartSuite["t12Status"] {
+  return {
+    title: CHART_TITLES.t12_status,
+    footnote: snap.t12Complete
+      ? "T12 is complete (12/12). Do not relabel period NOI as T12."
+      : "Path-dependency: incomplete T12 is not annualized and is not ready T12. Seed demo months stay incomplete.",
+    complete: snap.t12Complete,
+    monthsAvailable: snap.t12MonthsAvailable,
+    noiUsd: centsToUsdNumber(snap.t12NoiCents),
+    label: snap.t12Label,
+  };
+}
+
+export function buildDecisionPosture(snap: PeriodSnapshot): ChartSuite["decisionPosture"] {
+  const rec = icRecommendation(snap);
+  return {
+    title: CHART_TITLES.decision_posture,
+    footnote: "Go / hold / kill. Period vs T12 vs annualized stay labeled. LTV gated without appraisal.",
+    action: rec.action,
+    rationale: rec.rationale,
+    conditions: [
+      "Period NOI is this month only",
+      snap.t12Complete ? "T12 is 12/12" : `T12 incomplete ${snap.t12MonthsAvailable}/12 — not annualized`,
+      "Annualized period NOI is debt-yield only",
+      "UPB stack is not LTV",
+    ],
+  };
+}
+
+export function buildUpbStack(snap: PeriodSnapshot): ChartSuite["upbStack"] {
+  const loans = snap.loans.length
+    ? snap.loans.map((l) => ({
+        key: l.entityCode,
+        label: `${l.entityCode} ${l.name}`,
+        usd: centsToUsdNumber(l.currentUpbCents),
+        cents: l.currentUpbCents,
+      }))
+    : [{ key: "upb", label: "Look-through UPB", usd: centsToUsdNumber(snap.upbCents), cents: snap.upbCents }];
+  return {
+    title: CHART_TITLES.upb_stack,
+    footnote: `Look-through UPB ${formatUsd(snap.upbCents)}. Not LTV — ${snap.ltvReason}`,
+    bars: loans,
+  };
+}
+
+export function buildCloseControl(snap: PeriodSnapshot): ChartSuite["closeControl"] {
+  const amOk = true;
+  return {
+    title: CHART_TITLES.close_control,
+    footnote: "AM 6310 sits below NOI. Combined roll-up is not a GAAP consolidation. Gated LTV/delinquency stay stubbed.",
+    rows: [
+      {
+        key: "close",
+        label: "Period close",
+        display: snap.closeStatus.replaceAll("_", " "),
+        tone: snap.closeStatus === "closed" ? "good" : snap.closeStatus === "soft_closed" ? "watch" : "neutral",
+      },
+      {
+        key: "ic",
+        label: "IC eliminate",
+        display: snap.rollupIsNotGaap ? "Combined roll-up · not GAAP consol" : "Standalone SPE · no IC eliminate",
+        tone: "neutral",
+      },
+      {
+        key: "am",
+        label: "AM below NOI",
+        display: `${formatUsd(snap.amFeesCents)} below NOI ${formatUsd(snap.noiCents)}`,
+        tone: amOk ? "good" : "fail",
+      },
+      {
+        key: "vault",
+        label: "Vault",
+        display: snap.vaultDocCount === null ? "—" : `${snap.vaultDocCount} docs`,
+        tone: "neutral",
+      },
+      {
+        key: "sched",
+        label: "Scheduler",
+        display: snap.schedulerJobCount === null ? "—" : `${snap.schedulerJobCount} jobs`,
+        tone: "neutral",
+      },
+    ],
   };
 }
 
@@ -388,6 +638,15 @@ export function buildChartSuite(snap: PeriodSnapshot): ChartSuite {
     budgetBridge: buildBudgetBridge(snap),
     bsComposition: buildBsComposition(snap),
     heatmap: buildHeatmap(snap),
+    coverageVsThreshold: buildCoverageVsThreshold(snap),
+    occupancyBreakeven: buildOccupancyBreakeven(snap),
+    liquidityRunway: buildLiquidityRunway(snap),
+    feeVsNoi: buildFeeVsNoi(snap),
+    covenantWatchlist: buildCovenantWatchlist(snap),
+    t12Status: buildT12Status(snap),
+    decisionPosture: buildDecisionPosture(snap),
+    upbStack: buildUpbStack(snap),
+    closeControl: buildCloseControl(snap),
   };
 }
 
@@ -406,5 +665,19 @@ export function chartIdsPresent(suite: ChartSuite): ChartId[] {
   if (suite.budgetBridge.bars.length) ids.push("actual_vs_budget_bridge");
   if (suite.bsComposition.assets.length) ids.push("bs_composition");
   if (suite.heatmap.spec.cells.length) ids.push("portfolio_heatmap");
+  if (suite.coverageVsThreshold.rows.length) ids.push("coverage_vs_threshold");
+  if (suite.occupancyBreakeven.rows.length) ids.push("occupancy_breakeven");
+  if (suite.liquidityRunway.bars.length) ids.push("liquidity_runway");
+  if (suite.feeVsNoi.bars.length) ids.push("fee_vs_noi");
+  if (suite.covenantWatchlist.rows.length) ids.push("covenant_watchlist");
+  if (suite.t12Status.label) ids.push("t12_status");
+  if (suite.decisionPosture.action) ids.push("decision_posture");
+  if (suite.upbStack.bars.length) ids.push("upb_stack");
+  if (suite.closeControl.rows.length) ids.push("close_control");
   return ids;
+}
+
+export function filterChartIds(ids: ChartId[], visible: ChartId[]): ChartId[] {
+  const allow = new Set(visible);
+  return ids.filter((id) => allow.has(id));
 }

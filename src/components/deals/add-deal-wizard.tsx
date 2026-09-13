@@ -80,6 +80,22 @@ function fieldClass() {
   return "mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 text-sm text-ink-900";
 }
 
+async function readApiError(res: Response, fallback: string): Promise<string> {
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text) as { error?: string };
+    if (json.error) return json.error;
+  } catch {
+    // platform 413 / HTML error pages
+  }
+  if (res.status === 413) {
+    return `File is too large for this server (HTTP 413). Use a file under ${INTAKE_MAX_BYTES_LABEL}.`;
+  }
+  if (res.status === 429) return "Too many Add Deal requests. Wait a minute and retry.";
+  if (!text) return `${fallback} (HTTP ${res.status}).`;
+  return text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 280) || fallback;
+}
+
 export function AddDealWizard({
   initialIntakeId,
   opcos,
@@ -228,37 +244,71 @@ export function AddDealWizard({
     if (!current) current = await saveDraft(3);
     if (!current) return;
     const files = Array.from(fileList);
+    if (!files.length) {
+      setError("Choose at least one file (rent-roll CSV or PDF).");
+      return;
+    }
+    const oversized = files.filter((f) => f.size > INTAKE_MAX_BYTES);
+    if (oversized.length) {
+      const names = oversized.map((f) => f.name).join(", ");
+      setError(`${names} exceed the ${INTAKE_MAX_BYTES_LABEL} limit. Split the file or upload later on /vault.`);
+      setUploads(oversized.map((f) => ({ name: f.name, progress: "error", error: `Over ${INTAKE_MAX_BYTES_LABEL}` })));
+      return;
+    }
+    const empty = files.filter((f) => f.size === 0);
+    if (empty.length) {
+      setError(`${empty.map((f) => f.name).join(", ")} is empty. Choose a file with content.`);
+      return;
+    }
+    setError(null);
     setUploads(files.map((f) => ({ name: f.name, progress: "uploading" })));
     const body = new FormData();
     body.set("intakeId", current.id);
     body.set("source", source);
     for (const file of files) body.append("file", file);
-    const res = await fetch("/api/deals/intake/files", { method: "POST", body });
-    const json = await res.json();
-    if (!res.ok) {
-      setUploads(files.map((f) => ({ name: f.name, progress: "error", error: json.error })));
-      setError(json.error ?? "Upload failed");
-      return;
+    try {
+      const res = await fetch("/api/deals/intake/files", { method: "POST", body });
+      const message = res.ok ? null : await readApiError(res, "Upload failed");
+      if (!res.ok) {
+        setUploads(files.map((f) => ({ name: f.name, progress: "error", error: message ?? "Upload failed" })));
+        setError(message ?? "Upload failed. The file was not stored.");
+        return;
+      }
+      const json = (await res.json()) as { intake?: Intake; stored?: { filename: string }[] };
+      setUploads(files.map((f) => ({ name: f.name, progress: "done" })));
+      if (json.intake) hydrate(json.intake);
+      setMessage(`${files.length} file(s) stored. Classify them on the next step.`);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "Upload failed";
+      setUploads(files.map((f) => ({ name: f.name, progress: "error", error: text })));
+      setError(`Upload failed: ${text}`);
     }
-    setUploads(files.map((f) => ({ name: f.name, progress: "done" })));
-    if (json.intake) hydrate(json.intake as Intake);
-    setMessage(`${files.length} file(s) stored. Classify them on the next step.`);
   }
 
   async function removeFile(id: string) {
-    await fetch(`/api/deals/intake/files?id=${id}`, { method: "DELETE" });
+    setError(null);
+    const res = await fetch(`/api/deals/intake/files?id=${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError(await readApiError(res, "Could not remove the file."));
+      return;
+    }
     if (!intake) return;
-    const res = await fetch(`/api/deals/intake?id=${intake.id}`);
-    const json = await res.json();
+    const refresh = await fetch(`/api/deals/intake?id=${intake.id}`);
+    const json = await refresh.json();
     if (json.id) hydrate(json as Intake);
   }
 
   async function classify(fileId: string, classification: DealFileClass) {
-    await fetch("/api/deals/intake/files", {
+    setError(null);
+    const res = await fetch("/api/deals/intake/files", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fileId, classification }),
     });
+    if (!res.ok) {
+      setError(await readApiError(res, "Could not classify the file."));
+      return;
+    }
     if (!intake) return;
     setIntake({
       ...intake,
@@ -424,7 +474,11 @@ export function AddDealWizard({
         })}
       </ol>
 
-      {error ? <p className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="border border-red-400 bg-red-50 px-4 py-3 text-sm text-red-900">
+          {error}
+        </p>
+      ) : null}
       {message ? <p className="border border-gold-300 bg-cream-50 px-4 py-3 text-sm text-ink-700">{message}</p> : null}
 
       <div className="border border-cream-300 bg-white px-6 py-6 shadow-ledger">
@@ -524,8 +578,9 @@ export function AddDealWizard({
           <section className="space-y-5">
             <h2 className="font-display text-2xl text-navy-900">Source files</h2>
             <p className="text-sm text-ink-600">
-              Choose one or more intake modes. Upload works now (max {INTAKE_MAX_BYTES_LABEL} per file). Larger
-              offering-memorandum PDFs can be noted and added later on Vault.
+              Choose one or more intake modes. Upload works now (CSV, XLSX/XLS, PDF, images — max{" "}
+              {INTAKE_MAX_BYTES_LABEL} per file). Larger offering-memorandum PDFs can be noted and added later
+              on Vault.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               {(
@@ -576,7 +631,7 @@ export function AddDealWizard({
             {form.sources.includes("upload") ? (
               <FileDropzone
                 onFiles={(files) => void uploadFiles(files, "upload")}
-                hint={`Drop rent-roll CSV, budget CSV, loan PDFs, OM, insurance. Max ${INTAKE_MAX_BYTES_LABEL}.`}
+                hint={`Drop rent-roll CSV or XLSX, budget workbook, loan PDFs, OM, insurance. Max ${INTAKE_MAX_BYTES_LABEL}.`}
               />
             ) : null}
 
@@ -654,8 +709,10 @@ export function AddDealWizard({
           <section className="space-y-4">
             <h2 className="font-display text-2xl text-navy-900">Classify files</h2>
             <p className="text-sm text-ink-600">
-              Map each file so it lands in the vault with the right kind. CSV types can run the existing
-              rent-roll and budget importers after the SPE exists.
+              Map each file so it lands in the vault with the right kind. Tag an XLSX as rent-roll,
+              budget, or other (OM / loan supporting). Rent-roll and budget workbooks use the first
+              matching sheet (RentRoll / Budget / first sheet) after the SPE exists. If columns do not
+              match, the file stays stored — ask Expert to map them. Do not leave a workbook unclassified.
             </p>
             {!intake?.files.length ? (
               <p className="text-sm text-ink-600">No files yet. Go back and upload, or continue if you will add files later.</p>
@@ -668,6 +725,7 @@ export function AddDealWizard({
                         <p className="text-sm text-navy-900">{file.filename}</p>
                         <p className="text-xs text-ink-500">
                           {(file.byteSize / 1024).toFixed(1)} KB · {file.source} · {file.status}
+                          {file.lastError ? ` · ${file.lastError}` : ""}
                         </p>
                       </div>
                       <button type="button" className="text-xs uppercase tracking-[0.12em] text-red-800" onClick={() => void removeFile(file.id)}>
@@ -724,8 +782,8 @@ export function AddDealWizard({
           <section className="space-y-4">
             <h2 className="font-display text-2xl text-navy-900">Apply structured data</h2>
             <p className="text-sm text-ink-600">
-              Optional. Rent-roll and budget CSVs use the existing importers. If rows already exist, you must
-              confirm a full replace.
+              Optional. Rent-roll and budget CSV / XLSX files use the existing importers (xlsx first
+              sheet or a RentRoll / Budget tab). If rows already exist, you must confirm a full replace.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               <label className="block text-sm text-ink-700">
@@ -781,8 +839,9 @@ export function AddDealWizard({
               Apply rent roll, budget, and loan
             </button>
             <p className="text-xs text-ink-500">
-              Sample CSVs: <code>data/samples/rent-roll.csv</code> and <code>data/samples/budget.csv</code>. LTV is
-              not invented from book cost.
+              Samples: <code>data/samples/rent-roll.csv</code>, <code>data/samples/rent-roll.xlsx</code>,{" "}
+              <code>data/samples/budget.csv</code>. Max {INTAKE_MAX_BYTES_LABEL} per file. LTV is not
+              invented from book cost.
             </p>
           </section>
         ) : null}
@@ -904,6 +963,7 @@ function FileDropzone({ onFiles, hint }: { onFiles: (files: File[]) => void; hin
       <input
         type="file"
         multiple
+        accept=".csv,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.webp,.txt,.eml,.doc,.docx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/pdf"
         className="hidden"
         onChange={(e) => {
           if (e.target.files) onFiles(Array.from(e.target.files));

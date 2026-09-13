@@ -354,6 +354,7 @@ async function wipeDemoData() {
   await prisma.reportJobRun.deleteMany();
   await prisma.reportJob.deleteMany();
   await prisma.vaultDocument.deleteMany();
+  await prisma.storedBlob.deleteMany();
   await prisma.vendorPayment.deleteMany();
   await prisma.vendor.deleteMany();
   await prisma.partnerCapitalActivity.deleteMany();

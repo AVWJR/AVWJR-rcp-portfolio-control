@@ -1,5 +1,6 @@
+import { AUDIENCE_BRIEFS } from "./audience-briefs";
 import { buildChartSuite, CHART_IDS, CHART_TITLES, type ChartId, type ChartSuite } from "./charts";
-import { buildAllNarratives, buildNarrative, type AudienceNarrative } from "./narratives";
+import { buildAllNarratives, buildNarrative, type AudienceNarrative, type NarrativeCitation } from "./narratives";
 import type { AudienceId, PeriodSnapshot } from "./snapshot-types";
 import { AUDIENCE_LABELS } from "./snapshot-types";
 import { formatUsd, periodLabel } from "./formatters";
@@ -22,44 +23,32 @@ export const PACK_CATALOG: PackMeta[] = [
     title: "Monthly Investor Pack",
     audience: "lp",
     cadence: "monthly",
-    description: "LP performance, distributions proxy (CFADS), risk, and operating health with the GPR→NOI→BTCF waterfall.",
-    charts: [
-      "waterfall_gpr_noi_btcf",
-      "trends_noi_occupancy_opex_dscr",
-      "portfolio_concentration",
-      "actual_vs_budget_bridge",
-      "bs_composition",
-    ],
+    description: AUDIENCE_BRIEFS.lp.dek,
+    charts: AUDIENCE_BRIEFS.lp.chartIds,
   },
   {
     id: "quarterly_lender",
     title: "Quarterly Lender Pack",
     audience: "lender",
     cadence: "quarterly",
-    description: "Collateral, DSCR / debt yield, reserves, maturity wall, and covenant compliance. LTV stays gated.",
-    charts: ["debt_maturity_wall", "capex_vs_reserves", "trends_noi_occupancy_opex_dscr", "bs_composition", "portfolio_heatmap"],
+    description: AUDIENCE_BRIEFS.lender.dek,
+    charts: AUDIENCE_BRIEFS.lender.chartIds,
   },
   {
     id: "ic_memo",
     title: "IC Memo Pack",
     audience: "ic",
     cadence: "as_needed",
-    description: "Thesis tracking, budget bridge, concentration, covenants, and a go / hold / fix recommendation.",
-    charts: [
-      "waterfall_gpr_noi_btcf",
-      "actual_vs_budget_bridge",
-      "portfolio_concentration",
-      "portfolio_heatmap",
-      "debt_maturity_wall",
-    ],
+    description: AUDIENCE_BRIEFS.ic.dek,
+    charts: AUDIENCE_BRIEFS.ic.chartIds,
   },
   {
     id: "management_flash",
     title: "Management Flash",
     audience: "mgmt",
     cadence: "flash",
-    description: "Operating actions, OpEx composition, variance owners, and CapEx / reserve priorities.",
-    charts: ["opex_composition", "actual_vs_budget_bridge", "capex_vs_reserves", "trends_noi_occupancy_opex_dscr"],
+    description: AUDIENCE_BRIEFS.mgmt.dek,
+    charts: AUDIENCE_BRIEFS.mgmt.chartIds,
   },
 ];
 
@@ -99,6 +88,9 @@ function kpi(label: string, value: string, hint: string): PackKpi {
 
 function commonDisclosures(snap: PeriodSnapshot): string[] {
   return [
+    snap.entityCode === "SPE-WBG" || snap.entityCode === "RCP-OPCO"
+      ? `Seed / demo disclaimer: ${snap.entityCode} demo months. T12 incomplete is not annualized.`
+      : `Book basis · USD · en-US · America/New_York · integer cents. Period ${snap.period}.`,
     `Book basis · USD · en-US · America/New_York · integer cents. Period ${snap.period}.`,
     snap.t12Complete
       ? `T12 NOI ${formatUsd(snap.t12NoiCents)}.`
@@ -124,19 +116,19 @@ function coverBullets(snap: PeriodSnapshot, audience: AudienceId): string[] {
   ];
 }
 
+function kpisFromCitations(citations: NarrativeCitation[]): PackKpi[] {
+  return citations.map((c) =>
+    kpi(c.label, c.value, `${c.unit} · ${c.source}${c.noiDefinition ? ` · ${c.noiDefinition}` : ""}`),
+  );
+}
+
 export function buildPack(snap: PeriodSnapshot, packId: PackId): BuiltPack {
   const meta = getPackMeta(packId);
   if (!meta) throw new Error(`Unknown pack ${packId}`);
   const charts = buildChartSuite(snap);
   const narrative = buildNarrative(snap, meta.audience);
-  const kpis: PackKpi[] = [
-    kpi("Period NOI", formatUsd(snap.noiCents), "AM fees below this line"),
-    kpi("BTCF", formatUsd(snap.btcfCents), "NOI − interest − principal"),
-    kpi("CFADS", formatUsd(snap.cfadsCents), "Distributions proxy"),
-    kpi("DSCR", narrative.citations.find((c) => c.id === "dscr")?.value ?? "—", "Period NOI / DS"),
-    kpi("Physical occ.", narrative.citations.find((c) => c.id === "occ_phys")?.value ?? "—", "Rent roll"),
-    kpi("OpEx ratio", narrative.citations.find((c) => c.id === "opex_ratio")?.value ?? "—", "OpEx ÷ EGI"),
-  ];
+  const sharedKpis = kpisFromCitations(narrative.sharedCitations);
+  const specificKpis = kpisFromCitations(narrative.specificCitations);
   const slides: PackSlide[] = [
     {
       kind: "cover",
@@ -144,7 +136,10 @@ export function buildPack(snap: PeriodSnapshot, packId: PackId): BuiltPack {
       subtitle: `${snap.entityName} · ${periodLabel(snap.period)}`,
       bullets: coverBullets(snap, meta.audience),
     },
-    { kind: "kpis", title: "Period snapshot", kpis },
+    ...(sharedKpis.length
+      ? [{ kind: "kpis" as const, title: "Shared snapshot (3+ audiences)", kpis: sharedKpis }]
+      : []),
+    { kind: "kpis", title: `${AUDIENCE_LABELS[meta.audience]} KPIs`, kpis: specificKpis },
     ...meta.charts.map((chartId) => ({ kind: "chart" as const, title: CHART_TITLES[chartId], chartId })),
     { kind: "narrative", title: `${AUDIENCE_LABELS[meta.audience]} narrative`, narrative },
     { kind: "disclosures", title: "Disclosures", bullets: commonDisclosures(snap) },

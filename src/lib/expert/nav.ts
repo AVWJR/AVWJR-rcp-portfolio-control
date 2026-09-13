@@ -171,7 +171,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "narratives", href: "/narratives", label: "Narratives", hint: "Five audience tones" },
   { id: "lp_pack", href: "/narratives/packs/monthly_investor", label: "Monthly Investor Pack", hint: "LP PDF / PPTX" },
   { id: "lender_pack", href: "/narratives/packs/quarterly_lender", label: "Quarterly Lender Pack", hint: "Lender PDF / PPTX" },
-  { id: "ic_pack", href: "/narratives/packs/ic_memo", label: "IC Memo Pack", hint: "Go / hold / fix memo" },
+  { id: "ic_pack", href: "/narratives/packs/ic_memo", label: "IC Memo Pack", hint: "Go / hold / kill memo" },
   { id: "mgmt_pack", href: "/narratives/packs/management_flash", label: "Management Flash", hint: "Ops flash pack" },
   { id: "os", href: "/reports/operating-statement", label: "Operating Statement", hint: "NOI bridge + variance" },
   { id: "tb", href: "/reports/trial-balance", label: "Trial Balance", hint: "Debits = credits" },

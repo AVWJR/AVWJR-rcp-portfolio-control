@@ -315,7 +315,7 @@ Do this in the product — click paths only.
 2. **Goal** — stabilize / value-add / light rehab, plus the target period.
 3. **Identity** — SPE legal name, code (use **Suggest** for \`SPE-XXX\`), unit count, parent OpCo (usually RCP-OPCO).
 4. **Source files** — **Upload files** works now. Dropbox / email / RCP mailbox stay visible; if they are not connected, follow the on-screen note and keep uploading.
-5. **Classify files** — rent-roll CSV, budget CSV, loan, lease, OM/CIM, insurance, or other. Files land in ${vault} after the SPE exists.
+5. **Classify files** — rent-roll CSV/XLSX, budget CSV/XLSX, loan, lease, OM/CIM, insurance, or other. Files land in ${vault} after the SPE exists. Password-protected workbooks are rejected; ambiguous columns stay stored — ask me to map them.
 6. **Create entity** — creates the SPE, clones the master chart of accounts, opens periods. The new code appears in the navy **Entity** switcher after a refresh.
 7. **Apply data** — optional rent-roll and budget import for the target period. If rows already exist, check **confirm replace** (this overwrites). Capture lender, UPB, rate, payment, maturity, DSCR / debt-yield thresholds on the existing loan file. Do not invent LTV.
 8. **Completeness** — same Expert score as month-end. Then open Dashboard, ${props}, Debt, Vault, or Narratives.
@@ -331,10 +331,11 @@ function rentRollImportCopy(ctx: ExpertClientContext): string {
     : link("/deals/new", ctx, "Add Deal");
   return `**Import a rent roll**
 
-1. Prefer Add Deal if this is a **new** SPE — classify the CSV as **Rent-roll CSV**, create the entity, then Apply (confirm replace if units already exist).
-2. For an existing SPE, open ${dest}. Use the CSV import on that page. Headers: \`unit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent,lease_start,lease_end,concession\`.
-3. If units already exist, you must **confirm replace**. That deletes the current unit file and loads the CSV. Sample file: \`data/samples/rent-roll.csv\` (linked from Add Deal).
-4. Occupancy is not derived from GL 4020.
+1. Prefer Add Deal if this is a **new** SPE — classify the CSV or **XLSX** as **Rent-roll CSV / XLSX**, create the entity, then Apply (confirm replace if units already exist).
+2. For an existing SPE, open ${dest}. Use the CSV import on that page, or upload an XLSX on Add Deal (first sheet named RentRoll / units, else the first sheet).
+3. Required columns: \`unit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent,lease_start,lease_end,concession\`. Budget workbooks need \`account_code,amount\`. If those headers are missing, the file stays in the vault — map the columns or save that sheet as CSV. I will not invent units.
+4. If units already exist, you must **confirm replace**. That deletes the current unit file and loads the CSV/XLSX. Samples: \`data/samples/rent-roll.csv\` and \`data/samples/rent-roll.xlsx\`.
+5. Occupancy is not derived from GL 4020. Password-protected or corrupt workbooks must be re-saved without a password.
 
 I will not invent a rent roll from the income statement.`;
 }
@@ -410,7 +411,7 @@ export function answerOffline(
     content = tour(ctx);
   } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
     content = addDealFlow(ctx);
-  } else if (/import rent roll|rent-?roll csv/.test(q)) {
+  } else if (/import rent roll|rent-?roll csv|xlsx|map columns|workbook/.test(q)) {
     content = rentRollImportCopy(ctx);
   } else if (/check ?list|month-end|month end|close books|soft close|hard lock/.test(q)) {
     content = checklistMode(ctx, bundle);

@@ -74,7 +74,7 @@ async function main() {
     checks.push(check(`WBG ${audience} cites period NOI $`, body.includes(formatUsd(wbgSnap.noiCents))));
     checks.push(check(`WBG ${audience} cites units or USD`, /\$|units|%|x/.test(body)));
   }
-  checks.push(check("IC includes go/hold/fix", Boolean(wbgNarr.ic.recommendation?.action)));
+  checks.push(check("IC includes go/hold/kill", Boolean(wbgNarr.ic.recommendation?.action) && /GO|HOLD|KILL/.test(wbgNarr.ic.recommendation?.action ?? "")));
   checks.push(
     check(
       "Narratives change when period changes",

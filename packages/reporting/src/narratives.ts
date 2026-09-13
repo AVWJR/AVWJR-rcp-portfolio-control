@@ -1,3 +1,6 @@
+import { AUDIENCE_BRIEFS, partitionAudienceKpis, type AudienceKpiId } from "./audience-briefs";
+import type { ChartId } from "./charts";
+import { icRecommendation, type IcAction } from "./ic-recommendation";
 import type { AudienceId, PeriodSnapshot } from "./snapshot-types";
 import { AUDIENCE_LABELS, AUDIENCES } from "./snapshot-types";
 import {
@@ -11,7 +14,10 @@ import {
   periodLabel,
 } from "./formatters";
 
-export type IcAction = "GO" | "HOLD" | "FIX";
+export type { IcAction };
+export { icRecommendation };
+
+export type NarrativeNoiDefinition = "period" | "t12 incomplete" | "annualized_period";
 
 export type NarrativeCitation = {
   id: string;
@@ -19,6 +25,7 @@ export type NarrativeCitation = {
   value: string;
   unit: string;
   source: string;
+  noiDefinition?: NarrativeNoiDefinition;
 };
 
 export type NarrativeSection = {
@@ -31,55 +38,256 @@ export type AudienceNarrative = {
   audienceLabel: string;
   title: string;
   dek: string;
+  tone: string;
   entityCode: string;
   entityName: string;
   period: string;
   viewLabel: string;
   sections: NarrativeSection[];
   citations: NarrativeCitation[];
+  sharedCitations: NarrativeCitation[];
+  specificCitations: NarrativeCitation[];
+  chartIds: ChartId[];
+  seedDisclaimer: string;
   recommendation?: { action: IcAction; rationale: string };
 };
 
 export type NarrativeBundle = Record<AudienceId, AudienceNarrative>;
 
-function cite(id: string, label: string, value: string, unit: string, source: string): NarrativeCitation {
-  return { id, label, value, unit, source };
+function cite(
+  id: string,
+  label: string,
+  value: string,
+  unit: string,
+  source: string,
+  noiDefinition?: NarrativeNoiDefinition,
+): NarrativeCitation {
+  return { id, label, value, unit, source, noiDefinition };
 }
 
-function commonCitations(snap: PeriodSnapshot): NarrativeCitation[] {
-  return [
-    cite("noi", "Period NOI", formatUsd(snap.noiCents), "USD", "GL EGI − in-NOI OpEx"),
-    cite("egi", "EGI", formatUsd(snap.egiCents), "USD", "GPR − vacancy − concessions + other income"),
-    cite("gpr", "GPR", formatUsd(snap.gprCents), "USD", "GL 4010"),
-    cite("opex", "OpEx", formatUsd(snap.opexCents), "USD", "In-NOI operating expenses"),
-    cite("opex_ratio", "OpEx ratio", formatBpsAsPercent(snap.opexRatioBps), "%", "OpEx ÷ EGI"),
-    cite("btcf", "BTCF", formatUsd(snap.btcfCents), "USD", "Period NOI − interest − principal"),
-    cite("cfads", "CFADS", formatUsd(snap.cfadsCents), "USD", "Period NOI − PPE additions − reserve requirement"),
-    cite("dscr", "DSCR", formatBpsAsMultiple(snap.dscrBps), "x", "Period NOI ÷ (interest + principal)"),
-    cite("debt_yield", "Debt yield", formatBpsAsYield(snap.debtYieldBps), "%", "Annualized period NOI ÷ UPB"),
-    cite("occ_phys", "Physical occupancy", formatBpsAsPercent(snap.physicalOccupancyBps), "%", "Rent roll occupied ÷ rentable"),
-    cite("occ_book", "Book economic occupancy", formatBpsAsPercent(snap.bookEconomicOccupancyBps), "%", "EGI ÷ GPR"),
-    cite("breakeven", "Breakeven occupancy", formatBpsAsPercent(snap.breakevenOccupancyBps), "%", "Phase D helper"),
-    cite("cash", "Cash", formatUsd(snap.cashTotalCents), "USD", "GL 1010–1040"),
-    cite("upb", "UPB", formatUsd(snap.upbCents), "USD", "Loan file"),
-    cite("t12", "T12 NOI", `${formatUsd(snap.t12NoiCents)} · ${snap.t12MonthsAvailable}/12 mo`, "USD", snap.t12Label),
-    cite("ltv", "LTV", "Gated", "—", snap.ltvReason),
-    cite("delq", "Delinquency", "Not available", "—", snap.delinquencyReason),
-  ];
+function beCushionBps(snap: PeriodSnapshot): number | null {
+  if (snap.physicalOccupancyBps === null || snap.breakevenOccupancyBps === null) return null;
+  return snap.physicalOccupancyBps - snap.breakevenOccupancyBps;
 }
 
-function scopeSentence(snap: PeriodSnapshot): string {
+function seedDisclaimer(snap: PeriodSnapshot): string {
+  const bits: string[] = [];
+  if (snap.entityCode === "SPE-WBG" || snap.entityCode === "RCP-OPCO" || snap.entityCode.startsWith("SPE-")) {
+    bits.push("Seed / demo books (SPE-WBG and the two-month demo) are not a live close.");
+  }
+  if (!snap.t12Complete) {
+    bits.push(
+      `T12 is incomplete (${snap.t12MonthsAvailable}/12 months, ${formatUsd(snap.t12NoiCents)}) and is not annualized or labeled ready T12.`,
+    );
+  }
+  bits.push("AM 6310 sits below NOI. Combined OpCo roll-up is not a GAAP consolidation. CPA tax export is not a filing.");
+  return bits.join(" ");
+}
+
+function citationCatalog(snap: PeriodSnapshot): Record<AudienceKpiId, NarrativeCitation> {
+  const rec = icRecommendation(snap);
+  const debtService = snap.interestCents + snap.principalCents;
+  const watch =
+    snap.watchlist.length === 0
+      ? "None"
+      : snap.watchlist.map((w) => `${w.entityCode} ${w.reason}`).join("; ");
+  const conc =
+    snap.concentration.length === 0
+      ? `${snap.entityCode} 100%`
+      : snap.concentration
+          .slice(0, 3)
+          .map((c) => `${c.entityCode} ${formatBpsAsPercent(c.shareBps)}`)
+          .join("; ");
+  const lookThrough = snap.lookThroughNoiCents ?? snap.noiCents;
+  const fee = snap.feeIncomeCents ?? snap.amFeesCents;
+  const cushion = beCushionBps(snap);
+  const annualized = snap.noiCents * 12n;
+  const t12Def: NarrativeNoiDefinition | undefined = snap.t12Complete ? undefined : "t12 incomplete";
+  const lease =
+    snap.leaseRollover12mCount === null
+      ? "Missing — rent-roll lease-end dates not posted"
+      : `${snap.leaseRollover12mCount} units`;
+  const mom =
+    snap.priorNoiCents === null
+      ? "No prior month"
+      : formatUsd(snap.noiCents - snap.priorNoiCents);
+  return {
+    noi: cite(
+      "noi",
+      "Period NOI",
+      formatUsd(snap.noiCents),
+      "USD",
+      snap.t12Complete
+        ? "period NOI · T12 also complete · AM fees sit below"
+        : "period NOI (not T12; T12 incomplete — not annualized) · AM fees sit below",
+      "period",
+    ),
+    noi_per_unit: cite(
+      "noi_per_unit",
+      "NOI / unit",
+      formatUsdOrDash(snap.noiPerUnitCents),
+      "USD / unit",
+      "Period NOI ÷ unit count",
+      "period",
+    ),
+    opex_ratio: cite("opex_ratio", "OpEx ratio", formatBpsAsPercent(snap.opexRatioBps), "%", "In-NOI OpEx ÷ EGI"),
+    occupancy: cite(
+      "occupancy",
+      "Physical occupancy",
+      formatBpsAsPercent(snap.physicalOccupancyBps),
+      "%",
+      "Rent roll occupied ÷ rentable · labeled separately from book economic occupancy",
+    ),
+    occ_book: cite(
+      "occ_book",
+      "Book economic occupancy",
+      formatBpsAsPercent(snap.bookEconomicOccupancyBps),
+      "%",
+      "EGI ÷ GPR · labeled separately from physical occupancy",
+    ),
+    breakeven: cite("breakeven", "Breakeven occupancy", formatBpsAsPercent(snap.breakevenOccupancyBps), "%", "Phase D helper"),
+    be_cushion: cite(
+      "be_cushion",
+      "BE vs physical cushion",
+      cushion === null ? "—" : formatBpsAsPercent(cushion),
+      "pp",
+      cushion === null
+        ? "Needs physical occupancy and breakeven"
+        : cushion >= 0
+          ? "Physical occupancy minus breakeven (cushion)"
+          : "Physical occupancy is below breakeven",
+    ),
+    budget_variance: cite(
+      "budget_variance",
+      "NOI vs budget",
+      snap.noiVarianceCents === null ? "No budget" : formatUsd(snap.noiVarianceCents),
+      "USD",
+      snap.budgetNoiCents === null ? "No monthly budget posted" : `${formatBpsAsPercent(snap.noiVarianceBps)} vs plan`,
+      "period",
+    ),
+    cash: cite("cash", "Cash", formatUsd(snap.cashTotalCents), "USD", "GL 1010–1040"),
+    btcf: cite("btcf", "BTCF", formatUsd(snap.btcfCents), "USD", "Period NOI − interest − principal"),
+    cfads: cite("cfads", "CFADS", formatUsd(snap.cfadsCents), "USD", "Distributions proxy · NOI − PPE − reserve req."),
+    cfads_dscr: cite(
+      "cfads_dscr",
+      "CFADS-DSCR",
+      formatBpsAsMultiple(snap.cfadsDscrBps),
+      "x",
+      "CFADS ÷ (interest + principal)",
+    ),
+    dscr: cite(
+      "dscr",
+      "DSCR",
+      formatBpsAsMultiple(snap.dscrBps),
+      "x",
+      `period NOI ÷ (interest + principal) vs ${formatBpsAsMultiple(snap.dscrThresholdBps)} · ${passFail(snap.dscrPass)}`,
+      "period",
+    ),
+    debt_yield: cite(
+      "debt_yield",
+      "Debt yield",
+      formatBpsAsYield(snap.debtYieldBps),
+      "%",
+      `vs ${formatBpsAsYield(snap.debtYieldThresholdBps)} · annualized period NOI ÷ UPB — not T12`,
+      "annualized_period",
+    ),
+    upb: cite("upb", "Look-through UPB", formatUsd(snap.upbCents), "USD", "Loan file · not LTV"),
+    debt_service: cite("debt_service", "Debt service", formatUsd(debtService), "USD", "Interest + principal this period"),
+    reserves: cite("reserves", "Reserve cash", formatUsd(snap.cashReserveCents), "USD", "GL 1020 vs monthly requirement"),
+    maturity: cite(
+      "maturity",
+      "Maturity",
+      snap.maturityDate ?? "—",
+      snap.monthsRemaining === null ? "—" : `${snap.monthsRemaining} mo`,
+      "First-mortgage file",
+    ),
+    covenant_watch: cite("covenant_watch", "Covenant watchlist", watch, "—", "Fails only · DSCR / debt-yield / maturity"),
+    liquidity: cite("liquidity", "Liquidity", formatMonthsCoverage(snap.liquidityMonthsHundredths), "months", "Cash ÷ period OpEx"),
+    fee_income: cite("fee_income", "Fee income 7010", formatUsd(fee), "USD", "AM / OpCo fee line · below NOI on the SPE"),
+    am_fees: cite("am_fees", "AM fees 6310", formatUsd(snap.amFeesCents), "USD", "Sit below NOI — proof tile"),
+    ga_ratio: cite("ga_ratio", "G&A %", formatBpsAsPercent(snap.gaRatioBps), "%", "OpCo G&A ÷ fee income · not an SPE OpEx ratio"),
+    look_through_noi: cite(
+      "look_through_noi",
+      "Look-through period NOI",
+      formatUsd(lookThrough),
+      "USD",
+      "Property books · not a GAAP consolidation",
+      "period",
+    ),
+    concentration: cite("concentration", "NOI concentration", conc, "%", "Look-through SPE share of period NOI"),
+    controllable_opex: cite(
+      "controllable_opex",
+      "Controllable OpEx",
+      formatUsd(snap.controllableOpexCents),
+      "USD",
+      `${formatBpsAsPercent(snap.controllableOpexRatioBps)} of EGI`,
+    ),
+    ltl: cite("ltl", "Loss-to-lease", formatUsdOrDash(snap.lossToLeaseCents), "USD", "Rent roll mark-to-market gap · not a valuation"),
+    capex: cite("capex", "Period CapEx", formatUsd(snap.periodCapexCents), "USD", "PPE additions · CIP stays off NOI"),
+    recommendation: cite("recommendation", "IC call", rec.action, "—", rec.rationale),
+    t12_status: cite(
+      "t12_status",
+      "T12 status",
+      snap.t12Complete ? formatUsd(snap.t12NoiCents) : `${snap.t12MonthsAvailable}/12 incomplete`,
+      snap.t12Complete ? "USD" : "months",
+      snap.t12Label,
+      t12Def,
+    ),
+    annualized_noi: cite(
+      "annualized_noi",
+      "Annualized period NOI",
+      formatUsd(annualized),
+      "USD",
+      "12 × period NOI — used only for debt yield. Not T12.",
+      "annualized_period",
+    ),
+    lease_rollover: cite("lease_rollover", "Lease rollover (12m)", lease, "count", "Rent-roll lease-end dates · flagged missing when absent"),
+    close_status: cite("close_status", "Period close", snap.closeStatus.replaceAll("_", " "), "—", "Period status on /close"),
+    mom: cite("mom", "NOI MoM", mom, "USD", "Period NOI minus prior month · period definition", "period"),
+    units: cite("units", "Units", String(snap.unitCount || "—"), "count", "Look-through unit count"),
+    properties: cite("properties", "Properties", String(snap.propertyCount), "count", "SPE count in this view"),
+  };
+}
+
+function citationsFor(snap: PeriodSnapshot, ids: AudienceKpiId[]): NarrativeCitation[] {
+  const catalog = citationCatalog(snap);
+  return ids.map((id) => catalog[id]);
+}
+
+function envelope(snap: PeriodSnapshot, audience: AudienceId, extras: Pick<AudienceNarrative, "sections" | "recommendation">): AudienceNarrative {
+  const brief = AUDIENCE_BRIEFS[audience];
+  const parts = partitionAudienceKpis(audience);
+  return {
+    audience,
+    audienceLabel: brief.label,
+    title: brief.title,
+    dek: brief.dek,
+    tone: brief.tone,
+    entityCode: snap.entityCode,
+    entityName: snap.entityName,
+    period: snap.period,
+    viewLabel: snap.viewLabel,
+    citations: citationsFor(snap, brief.kpiIds),
+    sharedCitations: citationsFor(snap, parts.shared),
+    specificCitations: citationsFor(snap, parts.specific),
+    chartIds: brief.chartIds,
+    seedDisclaimer: seedDisclaimer(snap),
+    ...extras,
+  };
+}
+
+function scopeClause(snap: PeriodSnapshot): string {
   const units = snap.unitCount ? ` ${snap.unitCount} units` : "";
   const strategy = snap.strategy ? ` ${snap.strategy.replaceAll("_", " ")}` : "";
   const rollup = snap.rollupIsNotGaap
-    ? ` Figures are look-through property books unless labeled combined roll-up; the combined roll-up is not a GAAP consolidation.`
+    ? " Figures are look-through property books unless labeled combined roll-up; the combined roll-up is not a GAAP consolidation."
     : " Standalone SPE books.";
   return `${snap.entityName} (${snap.entityCode})${units}${strategy} for ${periodLabel(snap.period)}.${rollup}`;
 }
 
 function t12Sentence(snap: PeriodSnapshot): string {
   if (snap.t12Complete) {
-    return `T12 NOI is ${formatUsd(snap.t12NoiCents)}.`;
+    return `T12 NOI is ${formatUsd(snap.t12NoiCents)} (12/12).`;
   }
   return `T12 NOI is incomplete at ${formatUsd(snap.t12NoiCents)} across ${snap.t12MonthsAvailable} of 12 months and is not annualized or labeled ready T12.`;
 }
@@ -92,7 +300,7 @@ function varianceSentence(snap: PeriodSnapshot): string {
   return `Period NOI is ${formatUsd(snap.noiCents)} versus budget ${formatUsd(snap.budgetNoiCents)}, ${formatUsd(snap.noiVarianceCents)} ${direction} plan (${formatBpsAsPercent(snap.noiVarianceBps)}).`;
 }
 
-function occupancySentence(snap: PeriodSnapshot): string {
+function occupancyFacts(snap: PeriodSnapshot): string {
   const phys =
     snap.physicalOccupancyBps === null
       ? "Physical occupancy is not computed (no rent roll)."
@@ -102,19 +310,38 @@ function occupancySentence(snap: PeriodSnapshot): string {
     snap.breakevenOccupancyBps === null
       ? "Breakeven occupancy is not computed."
       : `Breakeven occupancy is ${formatBpsAsPercent(snap.breakevenOccupancyBps)}.`;
-  return `${phys} ${book} ${be}`;
+  const cushion = beCushionBps(snap);
+  const cushionTxt =
+    cushion === null
+      ? ""
+      : cushion >= 0
+        ? ` Physical-versus-breakeven cushion is ${formatBpsAsPercent(cushion)}.`
+        : ` Physical occupancy is ${formatBpsAsPercent(-cushion)} below breakeven — a red flag.`;
+  return `${phys} ${book} ${be}${cushionTxt}`;
 }
 
-function covenantSentence(snap: PeriodSnapshot): string {
+function covenantFacts(snap: PeriodSnapshot): string {
   if (snap.dscrBps === null && snap.loans.length === 0) {
     return "No loan file is posted; DSCR and debt yield are not computed.";
   }
-  const dscr = `DSCR is ${formatBpsAsMultiple(snap.dscrBps)} versus a ${formatBpsAsMultiple(snap.dscrThresholdBps)} threshold (${passFail(snap.dscrPass)}).`;
+  const dscr = `DSCR is ${formatBpsAsMultiple(snap.dscrBps)} versus a ${formatBpsAsMultiple(snap.dscrThresholdBps)} threshold (${passFail(snap.dscrPass)}) — period NOI ÷ (interest + principal).`;
   const dy = `Debt yield is ${formatBpsAsYield(snap.debtYieldBps)} versus ${formatBpsAsYield(snap.debtYieldThresholdBps)} (${passFail(snap.debtYieldPass)}), using annualized period NOI — not T12.`;
-  const mat = snap.maturityDate
-    ? ` First-mortgage UPB is ${formatUsd(snap.upbCents)}, maturing ${snap.maturityDate} (${snap.monthsRemaining ?? "—"} months remaining).`
-    : "";
-  return `${dscr} ${dy}${mat}`;
+  return `${dscr} ${dy}`;
+}
+
+function failsOnlyWatch(snap: PeriodSnapshot): string {
+  const fails: string[] = [];
+  if (snap.dscrPass === false) {
+    fails.push(`DSCR ${formatBpsAsMultiple(snap.dscrBps)} vs ${formatBpsAsMultiple(snap.dscrThresholdBps)}`);
+  }
+  if (snap.debtYieldPass === false) {
+    fails.push(`debt yield ${formatBpsAsYield(snap.debtYieldBps)} vs ${formatBpsAsYield(snap.debtYieldThresholdBps)}`);
+  }
+  if (snap.monthsRemaining !== null && snap.monthsRemaining < 12) {
+    fails.push(`maturity in ${snap.monthsRemaining} months unaddressed`);
+  }
+  for (const w of snap.watchlist) fails.push(`${w.entityCode}: ${w.reason}`);
+  return fails.length ? fails.join("; ") : "No covenant fails on the watchlist this period.";
 }
 
 function largestVariances(snap: PeriodSnapshot, n = 3): string {
@@ -136,254 +363,213 @@ function largestVariances(snap: PeriodSnapshot, n = 3): string {
     .join("; ");
 }
 
-export function icRecommendation(snap: PeriodSnapshot): { action: IcAction; rationale: string } {
-  const occBelow =
-    snap.physicalOccupancyBps !== null &&
-    snap.breakevenOccupancyBps !== null &&
-    snap.physicalOccupancyBps < snap.breakevenOccupancyBps;
-  const subjectDscrFail = snap.dscrPass === false;
-  const failingSpes = snap.concentration.filter((c) => c.dscrPass === false).map((c) => c.entityCode);
-  const lookThroughFail = snap.entityType === "OPCO" && subjectDscrFail;
-  const materialVar = snap.noiVarianceBps !== null && Math.abs(snap.noiVarianceBps) >= 1_000;
-  const nearMaturity = snap.monthsRemaining !== null && snap.monthsRemaining <= 12;
-  const watch = snap.watchlist.length > 0 || snap.debtYieldPass === false;
-
-  if (lookThroughFail || (snap.entityType !== "OPCO" && (subjectDscrFail || occBelow))) {
-    const reasons = [
-      subjectDscrFail ? `DSCR ${formatBpsAsMultiple(snap.dscrBps)} vs ${formatBpsAsMultiple(snap.dscrThresholdBps)}` : null,
-      occBelow
-        ? `physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)} below breakeven ${formatBpsAsPercent(snap.breakevenOccupancyBps)}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join("; ");
-    return { action: "FIX", rationale: `${reasons || "Coverage or occupancy shortfall"}. Value-add monthly DSCR below 1.25x is a control result, not a data error.` };
+function concentrationSentence(snap: PeriodSnapshot): string {
+  if (snap.entityType === "OPCO" && snap.concentration.length) {
+    const hot = snap.concentration.filter((c) => (c.shareBps ?? 0) > 4_000);
+    const list = snap.concentration.map((c) => `${c.entityCode} ${formatUsd(c.noiCents)} (${formatBpsAsPercent(c.shareBps)})`).join("; ");
+    const flag = hot.length ? ` Red flag: ${hot.map((c) => c.entityCode).join(", ")} above ~40% of look-through NOI.` : "";
+    return `NOI concentration by SPE: ${list}.${flag}`;
   }
+  return "This SPE is a single-asset file — concentration is 100% here, not a diversification claim.";
+}
 
-  if (snap.entityType === "OPCO" && failingSpes.length) {
-    return {
-      action: "HOLD",
-      rationale: `Hold the portfolio and fix ${failingSpes.join(", ")} (SPE DSCR fail). Look-through DSCR is ${formatBpsAsMultiple(snap.dscrBps)}.`,
-    };
+function problemChild(snap: PeriodSnapshot): string {
+  const ranked = [...snap.concentration].sort((a, b) => {
+    const aFail = a.dscrPass === false ? 1 : 0;
+    const bFail = b.dscrPass === false ? 1 : 0;
+    if (aFail !== bFail) return bFail - aFail;
+    return (a.physicalOccupancyBps ?? 10_000) - (b.physicalOccupancyBps ?? 10_000);
+  });
+  const child = ranked[0];
+  if (!child || snap.concentration.length <= 1) {
+    return `Problem-child screen is this file (${snap.entityCode}): period NOI ${formatUsd(snap.noiCents)}, physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)}, controllable OpEx ${formatUsd(snap.controllableOpexCents)}, CapEx ${formatUsd(snap.periodCapexCents)} vs reserve cash ${formatUsd(snap.cashReserveCents)}.`;
   }
-
-  if (watch || materialVar || nearMaturity || occBelow) {
-    const bits = [
-      snap.debtYieldPass === false ? `debt yield ${formatBpsAsYield(snap.debtYieldBps)}` : null,
-      materialVar ? `NOI variance ${formatBpsAsPercent(snap.noiVarianceBps)}` : null,
-      nearMaturity ? `maturity in ${snap.monthsRemaining} months` : null,
-      snap.watchlist.length ? `watchlist ${snap.watchlist.map((w) => w.entityCode).join(", ")}` : null,
-      occBelow ? "occupancy below breakeven" : null,
-    ]
-      .filter(Boolean)
-      .join("; ");
-    return { action: "HOLD", rationale: `Hold: ${bits}.` };
-  }
-
-  return {
-    action: "GO",
-    rationale: `Go / monitor: DSCR ${formatBpsAsMultiple(snap.dscrBps)} ${passFail(snap.dscrPass)}, period NOI ${formatUsd(snap.noiCents)}, physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)}.`,
-  };
+  return `Problem-child SPE is ${child.entityCode} (${child.entityName}): period NOI ${formatUsd(child.noiCents)}, physical occupancy ${formatBpsAsPercent(child.physicalOccupancyBps)}, DSCR ${formatBpsAsMultiple(child.dscrBps)} (${passFail(child.dscrPass)}).`;
 }
 
 function lpNarrative(snap: PeriodSnapshot): AudienceNarrative {
-  const rec = icRecommendation(snap);
-  return {
-    audience: "lp",
-    audienceLabel: AUDIENCE_LABELS.lp,
-    title: "Limited Partner report",
-    dek: "Period performance, cash available as a distributions proxy, risk, and operating health.",
-    entityCode: snap.entityCode,
-    entityName: snap.entityName,
-    period: snap.period,
-    viewLabel: snap.viewLabel,
-    citations: commonCitations(snap),
+  const concHot = snap.concentration.some((c) => (c.shareBps ?? 0) > 4_000 && snap.entityType === "OPCO");
+  return envelope(snap, "lp", {
     sections: [
       {
-        heading: "Performance",
-        body: `${scopeSentence(snap)} Period NOI is ${formatUsd(snap.noiCents)} on EGI of ${formatUsd(snap.egiCents)} after GPR of ${formatUsd(snap.gprCents)}, vacancy of ${formatUsd(snap.vacancyCents)}, and concessions of ${formatUsd(snap.concessionsCents)}. ${varianceSentence(snap)} NOI per unit is ${formatUsdOrDash(snap.noiPerUnitCents)}. Asset-management fees of ${formatUsd(snap.amFeesCents)} sit below NOI. ${t12Sentence(snap)}`,
+        heading: "NOI / NOI-unit versus plan",
+        body: `${scopeClause(snap)} Look-through period NOI is ${formatUsd(snap.lookThroughNoiCents ?? snap.noiCents)} on EGI of ${formatUsd(snap.egiCents)} after GPR of ${formatUsd(snap.gprCents)}, vacancy of ${formatUsd(snap.vacancyCents)}, and concessions of ${formatUsd(snap.concessionsCents)}. NOI per unit is ${formatUsdOrDash(snap.noiPerUnitCents)} across ${snap.unitCount || "—"} units. OpEx ratio is ${formatBpsAsPercent(snap.opexRatioBps)} of EGI. ${varianceSentence(snap)} Asset-management fees of ${formatUsd(snap.amFeesCents)} sit below NOI and are not in this operating line. ${t12Sentence(snap)} ${occupancyFacts(snap)} Loss-to-lease is ${formatUsdOrDash(snap.lossToLeaseCents)}. Physical and book economic occupancy are labeled separately; do not blend them.`,
       },
       {
-        heading: "Distributions proxy",
-        body: `No investor distribution subledger is posted. The book distributions proxy is CFADS of ${formatUsd(snap.cfadsCents)} (period NOI ${formatUsd(snap.noiCents)} less period PPE additions ${formatUsd(snap.periodCapexCents)} and the monthly reserve requirement of ${formatUsd(snap.reserveRequirementCents)}). Before-tax cash flow after debt service is BTCF of ${formatUsd(snap.btcfCents)} (NOI less interest ${formatUsd(snap.interestCents)} and principal ${formatUsd(snap.principalCents)}). Ending cash is ${formatUsd(snap.cashTotalCents)}, including replacement-reserve cash of ${formatUsd(snap.cashReserveCents)}.`,
+        heading: "Capital at risk",
+        body: `${concentrationSentence(snap)}${concHot ? " Concentration above ~40% in one SPE is a red flag." : ""} Liquidity is ${formatMonthsCoverage(snap.liquidityMonthsHundredths)} of period OpEx. Look-through UPB is ${formatUsd(snap.upbCents)}; LTV is gated and is not shown as a live ratio. ${snap.ltvReason} Covenant stress (fails only): ${failsOnlyWatch(snap)}${
+          snap.dscrPass === false ? " DSCR fail has no cure path on this LP page — escalate." : ""
+        }${
+          snap.opexRatioBps !== null && snap.noiVarianceBps !== null && snap.noiVarianceBps < -500
+            ? " Unexplained OpEx pressure is in the budget variance — this update does not dump the full CoA."
+            : ""
+        } LTL is ${formatUsdOrDash(snap.lossToLeaseCents)}; a rising LTL without lease-up is a red flag. Delinquency is stubbed, not live. ${snap.delinquencyReason}`,
       },
       {
-        heading: "Risk",
-        body: `${covenantSentence(snap)} ${snap.watchlist.length ? `Covenant watchlist: ${snap.watchlist.map((w) => `${w.entityCode} ${w.reason}`).join("; ")}.` : "No additional covenant watch items."} LTV remains gated — ${snap.ltvReason} Delinquency is not available — ${snap.delinquencyReason} IC posture on this file is ${rec.action}.`,
-      },
-      {
-        heading: "Operating health",
-        body: `${occupancySentence(snap)} In-NOI OpEx is ${formatUsd(snap.opexCents)} (${formatBpsAsPercent(snap.opexRatioBps)} of EGI). Controllable OpEx is ${formatUsd(snap.controllableOpexCents)} (${formatBpsAsPercent(snap.controllableOpexRatioBps)} of EGI). Loss-to-lease is ${formatUsdOrDash(snap.lossToLeaseCents)} on the current rent roll.`,
+        heading: "Ask / next capital event",
+        body: `No investor distribution subledger and no capital-call notice are posted for ${snap.period}. The book distributions proxy is CFADS of ${formatUsd(snap.cfadsCents)} (period NOI ${formatUsd(snap.noiCents)} less period PPE additions ${formatUsd(snap.periodCapexCents)} and the monthly reserve requirement of ${formatUsd(snap.reserveRequirementCents)}). Before-tax cash flow after debt service is BTCF of ${formatUsd(snap.btcfCents)}. Ending cash is ${formatUsd(snap.cashTotalCents)}, including replacement-reserve cash of ${formatUsd(snap.cashReserveCents)}. Next capital event: none scheduled on this seed — do not invent a call, refinance, or promote. This is a stewardship update, not a K-1 or tax bridge.`,
       },
     ],
-  };
+  });
 }
 
 function gpNarrative(snap: PeriodSnapshot): AudienceNarrative {
   const fee =
     snap.feeIncomeCents !== null
-      ? ` OpCo standalone AM fee income is ${formatUsd(snap.feeIncomeCents)}; G&A ratio is ${formatBpsAsPercent(snap.gaRatioBps)} of that fee line.`
+      ? ` OpCo standalone AM fee income (7010) is ${formatUsd(snap.feeIncomeCents)}; G&A ratio is ${formatBpsAsPercent(snap.gaRatioBps)} of that fee line — not an SPE OpEx deep dive.`
+      : ` SPE asset-management fees of ${formatUsd(snap.amFeesCents)} sit below NOI — they are fee income to the sponsor, not an in-NOI cost.`;
+  const mismatch =
+    snap.feeIncomeCents !== null && snap.feeIncomeCents > snap.noiCents
+      ? " Red flag: IC/AM fee income exceeds this SPE’s period NOI."
       : "";
-  return {
-    audience: "gp",
-    audienceLabel: AUDIENCE_LABELS.gp,
-    title: "General Partner report",
-    dek: "Value creation, operator accountability, and capital allocation.",
-    entityCode: snap.entityCode,
-    entityName: snap.entityName,
-    period: snap.period,
-    viewLabel: snap.viewLabel,
-    citations: commonCitations(snap),
+  const lease =
+    snap.leaseRollover12mCount === null
+      ? " Lease rollover is missing — rent-roll lease-end dates are not posted; flag it."
+      : ` ${snap.leaseRollover12mCount} units roll in the next 12 months.`;
+  const capexGap = snap.periodCapexCents - snap.cashReserveCents;
+  const capexFlag =
+    snap.periodCapexCents > snap.cashReserveCents
+      ? ` Red flag: period CapEx ${formatUsd(snap.periodCapexCents)} exceeds reserve cash ${formatUsd(snap.cashReserveCents)} by ${formatUsd(capexGap)}.`
+      : ` CapEx ${formatUsd(snap.periodCapexCents)} is inside reserve cash ${formatUsd(snap.cashReserveCents)}.`;
+  return envelope(snap, "gp", {
     sections: [
       {
-        heading: "Value creation",
-        body: `${scopeSentence(snap)} Period NOI ${formatUsd(snap.noiCents)} and BTCF ${formatUsd(snap.btcfCents)} are the current-period value engines. ${occupancySentence(snap)} Loss-to-lease of ${formatUsdOrDash(snap.lossToLeaseCents)} is the mark-to-market rent gap on occupied units — not LTV. ${varianceSentence(snap)} ${t12Sentence(snap)}`,
+        heading: "Intervene this month",
+        body: `${scopeClause(snap)} ${problemChild(snap)} ${varianceSentence(snap)} Controllable OpEx is ${formatUsd(snap.controllableOpexCents)} (${formatBpsAsPercent(snap.controllableOpexRatioBps)} of EGI) — a spike here is the site lever, not a lender memo. ${occupancyFacts(snap)} LTL ${formatUsdOrDash(snap.lossToLeaseCents)}.${lease} ${capexFlag} CFADS ${formatUsd(snap.cfadsCents)}. Do not lead with DSCR/maturity jargon; those are watchlist reason codes only: ${failsOnlyWatch(snap)}`,
       },
       {
-        heading: "Operator accountability",
-        body: `Controllable OpEx is ${formatUsd(snap.controllableOpexCents)} (${formatBpsAsPercent(snap.controllableOpexRatioBps)} of EGI ${formatUsd(snap.egiCents)}). Total in-NOI OpEx is ${formatUsd(snap.opexCents)} (${formatBpsAsPercent(snap.opexRatioBps)} of EGI). Largest budget variances: ${largestVariances(snap)}.${fee} AM fees of ${formatUsd(snap.amFeesCents)} remain below NOI.`,
+        heading: "Fee income / OpCo burn versus property",
+        body: `${fee}${mismatch} Property period NOI is ${formatUsd(snap.noiCents)}; liquidity on the books is ${formatUsd(snap.cashTotalCents)} (${formatMonthsCoverage(snap.liquidityMonthsHundredths)} of OpEx). ${
+          snap.lookThroughNoiCents !== null
+            ? `Look-through property NOI is ${formatUsd(snap.lookThroughNoiCents)}.`
+            : "This is a standalone SPE book."
+        }${
+          snap.combinedRollupNoiCents !== null
+            ? ` Combined roll-up NOI is ${formatUsd(snap.combinedRollupNoiCents)} after IC/AM elimination — not a GAAP consolidation.`
+            : ""
+        } Fee income is not property cash.`,
       },
       {
-        heading: "Capital allocation",
-        body: `Period PPE additions are ${formatUsd(snap.periodCapexCents)} against replacement-reserve cash of ${formatUsd(snap.cashReserveCents)} and a monthly reserve requirement of ${formatUsd(snap.reserveRequirementCents)}. CFADS available after those uses is ${formatUsd(snap.cfadsCents)}. CapEx register: ${
-          snap.capexProjects.length
-            ? snap.capexProjects
-                .map((p) => `${p.name} (${p.entityCode}, ${p.classification} / ${p.status}) spent ${formatUsd(p.spentCents)} of ${formatUsd(p.budgetCents)}`)
+        heading: "Problem-child SPE",
+        body: `${problemChild(snap)} Per-SPE scorecard: ${
+          snap.concentration.length
+            ? snap.concentration
+                .map(
+                  (c) =>
+                    `${c.entityCode} NOI ${formatUsd(c.noiCents)}, occ ${formatBpsAsPercent(c.physicalOccupancyBps)}, OpEx ${formatBpsAsPercent(c.opexRatioBps)}`,
+                )
                 .join("; ")
-            : "no open projects on this entity"
-        }. Liquidity coverage is ${formatMonthsCoverage(snap.liquidityMonthsHundredths)} of period OpEx.`,
+            : `${snap.entityCode} NOI ${formatUsd(snap.noiCents)}, occ ${formatBpsAsPercent(snap.physicalOccupancyBps)}, OpEx ${formatBpsAsPercent(snap.opexRatioBps)}`
+        }. Watchlist reason codes (fails only): ${failsOnlyWatch(snap)} No tax M-1 and no invented delinquency. ${snap.delinquencyReason}`,
       },
     ],
-  };
+  });
 }
 
 function icNarrative(snap: PeriodSnapshot): AudienceNarrative {
   const rec = icRecommendation(snap);
-  const combined =
-    snap.combinedNote ??
-    (snap.lookThroughNoiCents !== null && snap.combinedRollupNoiCents !== null
-      ? `Look-through property NOI ${formatUsd(snap.lookThroughNoiCents)}; combined roll-up NOI ${formatUsd(snap.combinedRollupNoiCents)} after IC/AM elimination — not a GAAP consolidation.`
-      : "");
-  const conc = snap.concentration.length
-    ? snap.concentration
-        .map((c) => `${c.entityCode} ${formatUsd(c.noiCents)} (${formatBpsAsPercent(c.shareBps)})`)
-        .join("; ")
-    : `${snap.entityCode} ${formatUsd(snap.noiCents)} (100.00%)`;
-  return {
-    audience: "ic",
-    audienceLabel: AUDIENCE_LABELS.ic,
-    title: "Investment Committee memo",
-    dek: "Thesis tracking, risks, covenants, and go / hold / fix support.",
-    entityCode: snap.entityCode,
-    entityName: snap.entityName,
-    period: snap.period,
-    viewLabel: snap.viewLabel,
-    citations: commonCitations(snap),
+  const annualized = snap.noiCents * 12n;
+  const conc = concentrationSentence(snap);
+  return envelope(snap, "ic", {
     recommendation: rec,
     sections: [
       {
-        heading: "Thesis tracking",
-        body: `${scopeSentence(snap)} ${varianceSentence(snap)} Period NOI ${formatUsd(snap.noiCents)} / unit ${formatUsdOrDash(snap.noiPerUnitCents)}. ${occupancySentence(snap)} ${combined} NOI concentration: ${conc}.`,
+        heading: "Go / hold / kill",
+        body: `${rec.action}: ${rec.rationale} Decision box — GO / HOLD / KILL. Conditions: keep period, T12, and annualized labels unmixed; do not underwrite on silent annualization; LTV stays gated without appraisal. Support: period NOI ${formatUsd(snap.noiCents)}, DSCR ${formatBpsAsMultiple(snap.dscrBps)}, debt yield ${formatBpsAsYield(snap.debtYieldBps)}, physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)}, BE cushion ${formatBpsAsPercent(beCushionBps(snap))}, LTL ${formatUsdOrDash(snap.lossToLeaseCents)}, maturity ${snap.monthsRemaining ?? "—"} months, strategy ${snap.strategy ? snap.strategy.replaceAll("_", " ") : "unlabeled"}.`,
       },
       {
-        heading: "Risks",
-        body: `${t12Sentence(snap)} LTV is gated and is not computed from book cost. ${snap.ltvReason} Delinquency is stubbed. ${snap.delinquencyReason} Concentration above 50% of look-through NOI is a single-asset dependency, not a diversification claim.`,
+        heading: "Period versus T12 versus annualized",
+        body: `${scopeClause(snap)} Definitions are locked: (1) period NOI ${formatUsd(snap.noiCents)} for this month; (2) ${t12Sentence(snap)}; (3) annualized period NOI ${formatUsd(annualized)} is used only as the debt-yield numerator — it is not T12. ${varianceSentence(snap)} ${occupancyFacts(snap)} ${conc} Look-through UPB ${formatUsd(snap.upbCents)} is a stack, not an LTV. ${snap.ltvReason}`,
       },
       {
-        heading: "Covenants",
-        body: `${covenantSentence(snap)} Watchlist: ${
-          snap.watchlist.length
-            ? snap.watchlist.map((w) => `${w.entityCode} / ${w.lenderName}: ${w.reason} (DSCR ${w.dscrDisplay}, debt yield ${w.debtYieldDisplay})`).join("; ")
-            : "none"
-        }. CFADS / DSCR is ${formatBpsAsMultiple(snap.cfadsDscrBps)} on CFADS ${formatUsd(snap.cfadsCents)}.`,
-      },
-      {
-        heading: "Go / hold / fix",
-        body: `${rec.action}: ${rec.rationale} Support figures: NOI ${formatUsd(snap.noiCents)}, DSCR ${formatBpsAsMultiple(snap.dscrBps)}, debt yield ${formatBpsAsYield(snap.debtYieldBps)}, physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)}, CFADS ${formatUsd(snap.cfadsCents)}.`,
+        heading: "Falsifiers",
+        body: `What kills or holds the thesis: silent T12 annualization; covenant breach with no mitigation (${failsOnlyWatch(snap)}); concentration plus weak occupancy; definition drift (calling annualized period NOI a T12). A DSCR print below ${formatBpsAsMultiple(snap.dscrThresholdBps)}, physical occupancy below breakeven ${formatBpsAsPercent(snap.breakevenOccupancyBps)}, or an unlabeled T12 would move this file toward HOLD or KILL. Path-dependency: the two-month demo cannot become a T12 by multiplying. Delinquency is stubbed. ${snap.delinquencyReason} No marketing fluff.`,
       },
     ],
-  };
+  });
 }
 
 function lenderNarrative(snap: PeriodSnapshot): AudienceNarrative {
-  return {
-    audience: "lender",
-    audienceLabel: AUDIENCE_LABELS.lender,
-    title: "Lender report",
-    dek: "Collateral, DSCR / debt yield, reserves, and covenant compliance.",
-    entityCode: snap.entityCode,
-    entityName: snap.entityName,
-    period: snap.period,
-    viewLabel: snap.viewLabel,
-    citations: commonCitations(snap),
+  const debtService = snap.interestCents + snap.principalCents;
+  const glDebt = snap.glDebtCents;
+  const upbMismatch =
+    glDebt !== null && glDebt !== snap.upbCents
+      ? ` Red flag: loan-file UPB ${formatUsd(snap.upbCents)} ≠ GL 2110+2210 ${formatUsd(glDebt)}.`
+      : glDebt !== null
+        ? ` Loan-file UPB ties to GL 2110+2210 ${formatUsd(glDebt)}.`
+        : "";
+  const reserveUnder =
+    snap.cashReserveCents < snap.reserveRequirementCents
+      ? ` Red flag: reserve cash ${formatUsd(snap.cashReserveCents)} underfunds the ${formatUsd(snap.reserveRequirementCents)} monthly requirement.`
+      : ` Reserve cash ${formatUsd(snap.cashReserveCents)} covers the ${formatUsd(snap.reserveRequirementCents)} monthly requirement.`;
+  const occBelow =
+    snap.physicalOccupancyBps !== null &&
+    snap.breakevenOccupancyBps !== null &&
+    snap.physicalOccupancyBps < snap.breakevenOccupancyBps;
+  return envelope(snap, "lender", {
     sections: [
       {
-        heading: "Collateral",
-        body: `${scopeSentence(snap)} Reported UPB is ${formatUsd(snap.upbCents)} across ${snap.loans.length || 0} first-mortgage file${snap.loans.length === 1 ? "" : "s"}. Maturity ${snap.maturityDate ?? "—"} (${snap.monthsRemaining ?? "—"} months). LTV is not stated: ${snap.ltvReason} Collateral discussion is limited to units, occupancy, and book cash — not an appraisal.`,
+        heading: "In covenant?",
+        body: `${covenantFacts(snap)} Covenant watchlist is the primary exhibit (fails only): ${failsOnlyWatch(snap)} Period NOI of ${formatUsd(snap.noiCents)} is the DSCR numerator; debt yield uses annualized period NOI against UPB of ${formatUsd(snap.upbCents)}. ${t12Sentence(snap)} This is a credit memo, not an LP update. OpCo fee income is not property cash and is not in this coverage stack.`,
       },
       {
-        heading: "DSCR and debt yield",
-        body: `${covenantSentence(snap)} Period NOI of ${formatUsd(snap.noiCents)} covers interest ${formatUsd(snap.interestCents)} and principal ${formatUsd(snap.principalCents)}. CFADS is ${formatUsd(snap.cfadsCents)}; CFADS / debt service is ${formatBpsAsMultiple(snap.cfadsDscrBps)}. ${t12Sentence(snap)}`,
+        heading: "Cure path",
+        body: `${
+          snap.dscrPass === false
+            ? `DSCR is below threshold — there is no posted cure (equity, rate relief, or principal paydown) on this file. State a cure or treat as uncured.`
+            : snap.debtYieldPass === false
+              ? `Debt yield is below threshold. No cure is posted.`
+              : `No coverage fail this period; no cure is required.`
+        } Reported UPB is ${formatUsd(snap.upbCents)} across ${snap.loans.length || 0} first-mortgage file${snap.loans.length === 1 ? "" : "s"}.${upbMismatch} Period debt service is ${formatUsd(debtService)} (interest ${formatUsd(snap.interestCents)} + principal ${formatUsd(snap.principalCents)}). Maturity ${snap.maturityDate ?? "—"} (${snap.monthsRemaining ?? "—"} months remaining).${
+          snap.monthsRemaining !== null && snap.monthsRemaining < 12 ? " Red flag: maturity inside 12 months is unaddressed." : ""
+        } LTV is not stated: ${snap.ltvReason} ${reserveUnder} Period PPE additions ${formatUsd(snap.periodCapexCents)} versus reserve cash — collateral-preserving uses only.`,
       },
       {
-        heading: "Reserves",
-        body: `Replacement-reserve cash (GL 1020) is ${formatUsd(snap.cashReserveCents)} against a monthly requirement of ${formatUsd(snap.reserveRequirementCents)}. Period PPE additions are ${formatUsd(snap.periodCapexCents)}. Escrow / impound cash is ${formatUsd(snap.cashEscrowCents)}; security-deposit cash is ${formatUsd(snap.cashDepositsCents)}. Total cash ${formatUsd(snap.cashTotalCents)} is a GL position, not a bank reconciliation.`,
-      },
-      {
-        heading: "Covenant compliance",
-        body: `DSCR ${passFail(snap.dscrPass)}; debt yield ${passFail(snap.debtYieldPass)}. ${occupancySentence(snap)} ${
-          snap.watchlist.length
-            ? `Flags: ${snap.watchlist.map((w) => `${w.entityCode} ${w.reason}`).join("; ")}.`
-            : "No maturity-inside-12-months or covenant-fail flags beyond the ratios above."
-        } ${snap.rollupIsNotGaap ? "OpCo presentation is a combined roll-up, not a GAAP consolidation." : ""} Delinquency is not available from GL 1110.`,
+        heading: "Collateral operations",
+        body: `${occupancyFacts(snap)}${occBelow ? " Red flag: breakeven exceeds physical occupancy." : ""} Cash ${formatUsd(snap.cashTotalCents)} (operating ${formatUsd(snap.cashOperatingCents)}, reserve 1020 ${formatUsd(snap.cashReserveCents)}, escrow ${formatUsd(snap.cashEscrowCents)}). CFADS ${formatUsd(snap.cfadsCents)}; CFADS-DSCR ${formatBpsAsMultiple(snap.cfadsDscrBps)}. Delinquency is not available from GL 1110. ${snap.delinquencyReason} No tax / K-1 language.`,
       },
     ],
-  };
+  });
 }
 
 function mgmtNarrative(snap: PeriodSnapshot): AudienceNarrative {
-  const occGap =
-    snap.physicalOccupancyBps !== null && snap.breakevenOccupancyBps !== null
-      ? snap.physicalOccupancyBps - snap.breakevenOccupancyBps
-      : null;
-  const capexPriority = snap.capexProjects.length
-    ? snap.capexProjects
-        .slice()
-        .sort((a, b) => (a.spentCents === b.spentCents ? 0 : a.spentCents > b.spentCents ? -1 : 1))
-        .map((p) => `${p.name} (${p.classification}, ${p.status}) ${formatUsd(p.spentCents)} spent / ${formatUsd(p.budgetCents)} budget`)
-        .join("; ")
-    : `Period PPE additions ${formatUsd(snap.periodCapexCents)} with reserve cash ${formatUsd(snap.cashReserveCents)}`;
-  return {
-    audience: "mgmt",
-    audienceLabel: AUDIENCE_LABELS.mgmt,
-    title: "Management flash",
-    dek: "Operating actions, variance owners, and maintenance / CapEx priorities.",
-    entityCode: snap.entityCode,
-    entityName: snap.entityName,
-    period: snap.period,
-    viewLabel: snap.viewLabel,
-    citations: commonCitations(snap),
+  const icNote =
+    snap.combinedNote ??
+    (snap.rollupIsNotGaap
+      ? "OpCo presentation is a combined roll-up with IC/AM elimination, not a GAAP consolidation."
+      : "Standalone SPE — no IC eliminate on this book.");
+  const vault =
+    snap.vaultDocCount === null
+      ? "Vault status is not on this snapshot."
+      : `${snap.vaultDocCount} vault document${snap.vaultDocCount === 1 ? "" : "s"} on file.`;
+  const jobs =
+    snap.schedulerJobCount === null
+      ? "Scheduler status is not on this snapshot."
+      : `${snap.schedulerJobCount} scheduler job${snap.schedulerJobCount === 1 ? "" : "s"} attached.`;
+  const mom =
+    snap.priorNoiCents === null
+      ? "No prior-month NOI is posted for a MoM bridge."
+      : `MoM period NOI change is ${formatUsd(snap.noiCents - snap.priorNoiCents)} (prior ${formatUsd(snap.priorNoiCents)}).`;
+  return envelope(snap, "mgmt", {
     sections: [
       {
-        heading: "Operating actions",
-        body: `${scopeSentence(snap)} ${occupancySentence(snap)} Vacancy loss is ${formatUsd(snap.vacancyCents)} and concessions are ${formatUsd(snap.concessionsCents)} on GPR ${formatUsd(snap.gprCents)}. ${
-          occGap === null
-            ? "Hold occupancy at or above breakeven once both figures are available."
-            : occGap >= 0
-              ? `Physical occupancy is ${formatBpsAsPercent(occGap)} above breakeven; defend in-place rent and limit new concessions.`
-              : `Physical occupancy is ${formatBpsAsPercent(-occGap)} below breakeven; priority is leased occupancy and concession discipline.`
-        } Period NOI ${formatUsd(snap.noiCents)}; BTCF ${formatUsd(snap.btcfCents)}.`,
+        heading: "Books close clean?",
+        body: `${scopeClause(snap)} Period close status is ${snap.closeStatus.replaceAll("_", " ")}. Close the books on /close for ${snap.entityCode} ${snap.period} before anything ships. AM fees of ${formatUsd(snap.amFeesCents)} sit below NOI — if a pack ever shows them inside NOI, do not circulate it (AM-above-NOI is a close breach). ${icNote} ${vault} ${jobs} ${failsOnlyWatch(snap)} Gated LTV/delinquency stay stubbed — do not show them as live KPIs.`,
       },
       {
-        heading: "Variance owners",
-        body: `${varianceSentence(snap)} Assigned variance owners this period: ${largestVariances(snap, 4)}. Controllable OpEx ${formatUsd(snap.controllableOpexCents)} is the site-manageable bucket (payroll, R&M, utilities, contracts, marketing, admin, other). Insurance and real-estate taxes stay non-controllable.`,
+        heading: "Combined coherent?",
+        body: `${
+          snap.rollupIsNotGaap
+            ? `Look-through NOI ${formatUsd(snap.lookThroughNoiCents ?? snap.noiCents)}; combined roll-up NOI ${formatUsd(snap.combinedRollupNoiCents ?? 0n)} after IC eliminate. Label it combined, never consol.`
+            : `Standalone SPE period NOI ${formatUsd(snap.noiCents)}. No combined roll-up on this view.`
+        } ${varianceSentence(snap)} ${mom} Assigned variance owners: ${largestVariances(snap, 4)}. ${concentrationSentence(snap)} Portfolio scoreboard: ${snap.propertyCount} propert${snap.propertyCount === 1 ? "y" : "ies"}, ${snap.unitCount || "—"} units, physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)}. Intercompany mismatches and close locks are controller items.`,
       },
       {
-        heading: "Maintenance and CapEx priorities",
-        body: `${capexPriority}. Fund the ${formatUsd(snap.reserveRequirementCents)} monthly reserve requirement from operations when CFADS of ${formatUsd(snap.cfadsCents)} allows; reserve cash on the books is ${formatUsd(snap.cashReserveCents)}. R&M inside OpEx is the 5210 line. CIP remains on 1460 until placed in service — do not expense value-add interiors through NOI.`,
+        heading: "What ships externally?",
+        body: `External ship list this period: LP stewardship pack (not a CoA dump), lender covenant memo (not an LP letter), IC go/hold/kill memo. Do not ship marketing copy, a GAAP consolidation claim, or tax-filing language. CPA tax export is not a filing. ${t12Sentence(snap)} Watchlist that would block a ship: ${failsOnlyWatch(snap)}`,
       },
     ],
-  };
+  });
 }
 
 const BUILDERS: Record<AudienceId, (snap: PeriodSnapshot) => AudienceNarrative> = {

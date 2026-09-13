@@ -43,6 +43,31 @@ describe("pack build smoke", () => {
     expect(pptx.length).toBeGreaterThan(1_000);
   });
 
+  it("packs pull the matching audience brief for KPIs and charts", () => {
+    const snap = fixtureSnapshot();
+    const investor = buildPack(snap, "monthly_investor");
+    const lender = buildPack(snap, "quarterly_lender");
+    expect(investor.meta.audience).toBe("lp");
+    expect(lender.meta.audience).toBe("lender");
+    expect(investor.meta.charts).toEqual(investor.narrative.chartIds);
+    expect(lender.meta.charts).toEqual(lender.narrative.chartIds);
+    expect(investor.meta.charts).not.toEqual(lender.meta.charts);
+    expect(investor.narrative.citations.map((c) => c.id)).not.toEqual(lender.narrative.citations.map((c) => c.id));
+    const investorKpiSlide = investor.slides.find((s) => s.kind === "kpis");
+    const lenderKpiSlide = lender.slides.find((s) => s.kind === "kpis");
+    const investorLabels = investor.slides.filter((s) => s.kind === "kpis").flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
+    const lenderLabels = lender.slides.filter((s) => s.kind === "kpis").flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
+    expect(investorLabels).toContain("NOI / unit");
+    expect(lenderLabels).toContain("DSCR");
+    expect(investorLabels).not.toContain("DSCR");
+    expect(lender.meta.charts).toContain("coverage_vs_threshold");
+    expect(investor.meta.charts).toContain("portfolio_concentration");
+    expect(investor.meta.charts).toContain("t12_status");
+    expect(investor.meta.charts).not.toEqual(lender.meta.charts);
+    expect(investorKpiSlide && investorKpiSlide.kind === "kpis").toBe(true);
+    expect(lenderKpiSlide && lenderKpiSlide.kind === "kpis").toBe(true);
+  });
+
   it("keeps gated LTV language in pack disclosures", () => {
     const pack = buildPack(fixtureSnapshot(), "quarterly_lender");
     const disclosures = pack.slides.find((s) => s.kind === "disclosures");

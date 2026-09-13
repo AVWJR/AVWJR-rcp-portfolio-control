@@ -174,6 +174,12 @@ export function fixtureSnapshot(overrides: Partial<PeriodSnapshot> = {}): Period
         spentCents: dollars(120_000),
       },
     ],
+    closeStatus: "open",
+    glDebtCents: dollars(16_000_000),
+    leaseRollover12mCount: null,
+    propertyCount: 1,
+    vaultDocCount: 0,
+    schedulerJobCount: 0,
     ...overrides,
   };
 }

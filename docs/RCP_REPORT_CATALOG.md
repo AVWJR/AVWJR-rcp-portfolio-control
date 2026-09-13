@@ -2,44 +2,55 @@
 
 Phase E institutional packs. Every pack reprints the same period snapshot used by the five-audience narrative engine. Ratio math stays in `@rcp/analytics` (Phase D). Amounts are integer USD cents.
 
-Source of truth in code: `@rcp/reporting` `PACK_CATALOG` and `@rcp/documents` `listReportPacks()`. Preview: `/narratives`. Export: `GET /api/packs/{id}?entity=&period=&format=pdf|pptx`.
+Source of truth in code: `@rcp/reporting` `PACK_CATALOG`, `AUDIENCE_BRIEFS` (CRE Sentinel matrix), and `@rcp/documents` `listReportPacks()`. Preview: `/narratives`. Export: `GET /api/packs/{id}?entity=&period=&format=pdf|pptx`.
 
-## Audiences (same snapshot, five tones)
+## Audiences (same snapshot, five briefs)
 
-| id | Audience | Emphasis |
-| --- | --- | --- |
-| `lp` | Limited Partner | Performance, CFADS as distributions proxy, risk, operating health |
-| `gp` | General Partner | Value creation, operator accountability, capital allocation |
-| `ic` | Investment Committee | Thesis tracking, risks, covenants, go / hold / fix |
-| `lender` | Lender | Collateral, DSCR / debt yield, reserves, covenant compliance |
-| `mgmt` | Management Committee | Operating actions, variance owners, maintenance / CapEx priorities |
+Each audience is a first-class `AudienceBrief`: **section outline + KPI strip + chart IDs**. Switching tabs on `/narratives` changes the body, chips, and infographics. Shared KPI chips are only ids that appear on **three or more** audiences; everything else is audience-specific. Every NOI tile carries a `noiDefinition` of `period` | `t12 incomplete` | `annualized_period`.
 
-Narratives regenerate when the navy header entity or period changes. They cite key figures with units (USD, %, x, months). They do not invent LTV, delinquency, T12 from one month, or actual investor distributions.
+| id | Audience | Questions / sections | Charts |
+| --- | --- | --- | --- |
+| `lp` | Limited Partner | NOI / NOI-unit vs plan; capital at risk; ask / next capital event | NOI concentration bars; occupancy vs breakeven gap; T12-incomplete callout; covenant watchlist (fails only) |
+| `gp` | General Partner | Intervene this month; fee income / OpCo burn vs property; problem-child SPE | SPE scorecard heatmap; CapEx vs reserve gap; watchlist with reason codes |
+| `ic` | Investment Committee | Go / hold / kill; period vs T12 vs annualized; falsifiers | Decision / posture strip; UPB stack (not LTV); T12 / path-dependency callout |
+| `lender` | Lender | In covenant?; cure path; collateral operations | Covenant traffic light; DSCR sparkline; maturity schedule; reserve coverage |
+| `mgmt` | Management Committee | Books close clean?; combined coherent?; what ships externally? | Close / IC control strip; NOI variance waterfall; portfolio scoreboard |
+
+Narratives regenerate when the navy header entity or period changes. They cite key figures with units (USD, %, x, months). They do not invent LTV, delinquency, T12 from one month, or actual investor distributions. Seed / demo months (SPE-WBG) carry an incomplete-T12 disclaimer.
 
 ## Packs
 
 | id | Title | Audience | Cadence | Charts |
 | --- | --- | --- | --- | --- |
-| `monthly_investor` | Monthly Investor Pack | LP | monthly | GPR→NOI→BTCF waterfall; NOI/occ/OpEx/DSCR trends; concentration; budget bridge; BS composition |
-| `quarterly_lender` | Quarterly Lender Pack | Lender | quarterly | Maturity wall; CapEx vs reserves; trends; BS composition; heatmap |
-| `ic_memo` | IC Memo Pack | IC | as needed | Waterfall; budget bridge; concentration; heatmap; maturity wall |
-| `management_flash` | Management Flash | Management Committee | flash | OpEx composition; budget bridge; CapEx vs reserves; trends |
+| `monthly_investor` | Monthly Investor Pack | LP | monthly | From the LP brief |
+| `quarterly_lender` | Quarterly Lender Pack | Lender | quarterly | From the Lender brief |
+| `ic_memo` | IC Memo Pack | IC | as needed | From the IC brief |
+| `management_flash` | Management Flash | Management Committee | flash | From the Management brief |
 
-Each pack also includes a cover, KPI strip, audience narrative, and disclosures.
+Each pack also includes a cover, shared KPI strip (3+ audiences only), audience-specific KPIs, audience narrative, and disclosures.
 
 ## Chart ids
 
 | id | Chart |
 | --- | --- |
 | `waterfall_gpr_noi_btcf` | GPR → vacancy → concessions → EGR → other income → EGI → OpEx → NOI → interest → principal → BTCF |
-| `trends_noi_occupancy_opex_dscr` | Available-month NOI, book economic occupancy (EGI/GPR), OpEx ratio, DSCR |
+| `trends_noi_occupancy_opex_dscr` | DSCR vs threshold sparkline (available-month NOI / book occ / OpEx / DSCR) |
 | `opex_composition` | In-NOI OpEx groups |
-| `capex_vs_reserves` | Period PPE additions vs GL 1020 vs loan reserve requirement |
-| `debt_maturity_wall` | First-mortgage UPB by maturity year |
-| `portfolio_concentration` | SPE period NOI share (look-through; not GAAP consolidation) |
-| `actual_vs_budget_bridge` | Budget NOI → actual NOI |
+| `capex_vs_reserves` | CapEx vs reserve coverage (PPE additions vs GL 1020 vs requirement) |
+| `debt_maturity_wall` | Maturity schedule — first-mortgage UPB by year |
+| `portfolio_concentration` | NOI concentration bars (look-through; not GAAP consolidation) |
+| `actual_vs_budget_bridge` | NOI variance waterfall — budget NOI → actual NOI |
 | `bs_composition` | Asset / liability / equity slices |
-| `portfolio_heatmap` | SPE × share / book occ / OpEx ratio / DSCR / gated LTV |
+| `portfolio_heatmap` | SPE scorecard (NOI / phys occ / book occ / OpEx / DSCR). LTV omitted (gated). |
+| `coverage_vs_threshold` | Covenant traffic light — DSCR and debt yield versus thresholds |
+| `occupancy_breakeven` | Occupancy vs breakeven gap |
+| `liquidity_runway` | Cash versus period OpEx (months of coverage) |
+| `fee_vs_noi` | AM / fee line versus period NOI (fees stay below NOI) |
+| `covenant_watchlist` | Covenant watchlist, fails only, with reason codes |
+| `t12_status` | T12 incomplete callout / path-dependency |
+| `decision_posture` | Go / hold / kill strip |
+| `upb_stack` | UPB stack — not LTV |
+| `close_control` | Close / IC / AM-below-NOI control strip |
 
 BTCF is a presentation identity: **period NOI − interest − principal**. AM fees stay below NOI and are excluded from BTCF. CFADS (Phase D) is the distributions proxy: **period NOI − PPE additions − reserve requirement**.
 
@@ -59,6 +70,7 @@ UI: Export PDF / Export PPTX on `/narratives` and `/narratives/packs/[id]`.
 - Combined roll-up is **not a GAAP consolidation**.
 - T12 incomplete on the two-month demo seed is **not annualized**.
 - LTV gated without appraisal. Delinquency stubbed (no charge/receipt subledger).
+- AM 6310 sits below NOI. CPA tax export is not a filing.
 - No promote waterfall. No live PMS or bank rec.
 
 ## Phase F

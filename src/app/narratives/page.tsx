@@ -3,7 +3,7 @@ import { PackExportButtons } from "@/components/pack-export-buttons";
 import { ChartSuiteView } from "@/components/rcp-charts";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { loadPeriodSnapshot } from "@/lib/period-snapshot";
-import { PACK_CATALOG, buildAllNarratives, buildChartSuite, isAudienceId, serializeChartSuite } from "@rcp/reporting";
+import { AUDIENCE_BRIEFS, PACK_CATALOG, buildAllNarratives, buildChartSuite, isAudienceId, serializeChartSuite } from "@rcp/reporting";
 import Link from "next/link";
 
 export default async function NarrativesPage({
@@ -48,9 +48,10 @@ export default async function NarrativesPage({
               <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{reportSubtitle(ctx)}</p>
               <h1 className="font-display text-4xl text-navy-900">Narratives / report packs</h1>
               <p className="mt-2 max-w-3xl text-sm text-ink-700">
-                Phase E institutional reporting. Five audience tones regenerate from the same period
-                snapshot. Charts reprint Phase D ratio math — AM fees stay below NOI, T12 is not
-                silently annualized, LTV and delinquency stay gated. Combined roll-up is not a GAAP
+                Each audience has its own brief: section outline, KPI strip, and infographics — not
+                the same paragraphs with a different title. Switching LP / Lender / GP / IC /
+                Management changes the body, chips, and charts. AM fees stay below NOI. T12 is not
+                silently annualized. LTV and delinquency stay gated. Combined roll-up is not a GAAP
                 consolidation.
               </p>
             </div>
@@ -76,7 +77,11 @@ export default async function NarrativesPage({
             </section>
             <AudienceTabs active={audience} qs={q} />
             <NarrativeView narrative={narratives[audience]} qs={q} />
-            <ChartSuiteView suite={suite} />
+            <ChartSuiteView
+              suite={suite}
+              visibleChartIds={AUDIENCE_BRIEFS[audience].chartIds}
+              audienceLabel={AUDIENCE_BRIEFS[audience].label}
+            />
           </div>
         );
       }}

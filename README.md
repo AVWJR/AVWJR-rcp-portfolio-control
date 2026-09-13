@@ -45,14 +45,14 @@ Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deal
 
 | Mode | This release |
 | --- | --- |
-| 1. Upload files | **Live** — multi-file dropzone, classify, vault + optional rent-roll / budget import |
+| 1. Upload files | **Live** — multi-file dropzone (CSV, **XLSX/XLS**, PDF, images), classify, vault + rent-roll / budget import |
 | 2. Dropbox | Provider + UI. List/import when `DROPBOX_ACCESS_TOKEN` is set; otherwise a **Connect Dropbox** empty state |
 | 3. Email attachment | Upload `.eml` / attachment files, or fetch when `GMAIL_ACCESS_TOKEN` / `MICROSOFT_ACCESS_TOKEN` is set |
 | 4. RCP mailbox | Architecture + stub. `RCP_INGEST_MAILBOX` is a placeholder. **Mailbox address is not decided yet.** **Scan RCP inbox** no-ops with an honest message |
 
-Drafts persist (`DealIntake`). Rent-roll / budget replace still requires confirm. File cap **10 MB** (Vercel Functions can accept larger bodies; this demo matches the vault limit — split large OMs or upload later on `/vault`). Tokens are server-only. The public Vercel demo has **no partner auth** yet; Add Deal mutates the demo database (acceptable for the Principal demo).
+Drafts persist (`DealIntake`). Rent-roll / budget replace still requires confirm. File cap **10 MB** (Vercel Functions can accept larger bodies; this demo matches the vault limit — split large OMs or upload later on `/vault`). Uploads write through a durable file store: **local `data/vault/` on a laptop**, **Neon `StoredBlob` on Vercel** (default), or **Vercel Blob** when `BLOB_READ_WRITE_TOKEN` is set. The previous local-only write was the live-demo failure mode. Tokens are server-only. The public Vercel demo has **no partner auth** yet; Add Deal mutates the demo database (acceptable for the Principal demo).
 
-Sample CSVs: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/budget.csv`](./data/samples/budget.csv). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
+Sample files: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](./data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](./data/samples/budget.csv), [`data/samples/budget.xlsx`](./data/samples/budget.xlsx). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
 
 APIs: `POST /api/deals` · `POST /api/deals/intake` · `POST /api/deals/intake/files` · `POST /api/deals/intake/import` · `POST /api/deals/intake/from-dropbox` · `POST /api/deals/intake/from-email` · `POST /api/deals/intake/scan-mailbox`
 
@@ -110,6 +110,8 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | `GMAIL_ACCESS_TOKEN` / `MICROSOFT_ACCESS_TOKEN` | No | Optional mailbox connectors for email-attachment intake |
 | `RCP_INGEST_MAILBOX` | No | Placeholder for the RCP-owned ingest inbox (**address TBD**) |
 | `RCP_DEFAULT_OPCO` | No | Parent OpCo code for new deals, default `RCP-OPCO` |
+| `BLOB_READ_WRITE_TOKEN` | No | Prefer **Vercel Blob** for Add Deal / vault files. If unset on Vercel, files persist in Neon (`StoredBlob`) instead of the ephemeral function disk |
+| `RCP_FILE_STORE` | No | Force `blob`, `db`, or `fs`. Default: Blob when the token is set, `db` on Vercel, `fs` on a laptop |
 
 Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POSTGRES_URL` for the pooled URL; `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` for the direct URL.
 
@@ -153,7 +155,7 @@ Close demo: WBG `2026-07` is **hard locked**. CVC `2026-07` is **soft closed**. 
 - **Books-to-tax** — `/tax` worksheet per entity: book NI, 6210 depreciation, 6110 interest, 6310 AM fees (below NOI) vs tax columns. MACRS lives hooks (27.5-year residential, 15-year site, 5-year FF&E). Every line labeled **BOOKS** / **TAX** / **BRIDGE**. Sample adjustments seeded on SPE-WBG and RCP-OPCO. Combined roll-up is **not a tax consolidation**.
 - **Partner capital / K-1 export** — `/tax/k1` rollforward `beg + contrib − dist ± book NI = end`. CSV / Excel for CPA K-1 prep. **Not a filed Schedule K-1.** Seed SPEs stay 100% owned.
 - **1099 vendor hooks** — `/vendors` master (form, TIN last4) plus reportable-payment overlay. Phase A AP (`2010`/`2020`) has no invoice subledger; empty overlay stubs honestly. Not a filed 1099.
-- **Document vault** — `/vault` stores metadata + local FS blobs (leases, loans, K-1s, draws, insurance) linked to an entity. Upload / list / download.
+- **Document vault** — `/vault` stores metadata plus file blobs (leases, loans, K-1s, draws, insurance) linked to an entity. **Laptop:** `data/vault/`. **Vercel:** Neon `StoredBlob` rows by default, or private Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set. The serverless filesystem is not used for durable uploads. Upload / list / download.
 - **Scheduled reporting** — `/scheduler` job defs for monthly investor and quarterly lender packs. CLI `npm run reports:run -- --pack=...`. Writes PDF/PPTX under `data/reports/` and persists last-run status. No email send.
 
 Docs: [docs/RCP_TAX_BRIDGE.md](./docs/RCP_TAX_BRIDGE.md) · [docs/RCP_DOCUMENT_VAULT.md](./docs/RCP_DOCUMENT_VAULT.md) · [docs/RCP_SCHEDULER.md](./docs/RCP_SCHEDULER.md) · [VERIFY_PHASE_F.md](./VERIFY_PHASE_F.md).
@@ -163,7 +165,7 @@ API: `GET /api/tax/bridge` · `GET /api/tax/k1` · `GET /api/vendors/1099` · `G
 ## Phase E — infographics, narratives, report packs
 
 - **Chart layer** — Recharts (light/dark RCP themes) plus print-ready PDF vectors and PPTX Office charts: GPR→NOI→BTCF waterfall; NOI / book-occupancy / OpEx ratio / DSCR trends; OpEx composition; CapEx vs reserves; debt maturity wall; NOI concentration and SPE heatmap; actual vs budget bridge; BS composition.
-- **Narrative engine** — LP, GP, Investment Committee, Lender, and Management Committee tones from the **same** period snapshot. Copy is plain professional English and cites key numbers with units. Regenerates when entity or period changes. IC memo includes a deterministic go / hold / fix.
+- **Narrative engine** — First-class `AudienceBrief` per LP, GP, Investment Committee, Lender, and Management Committee (CRE Sentinel matrix). Switching audience on `/narratives` changes **section outline, KPI chips, and infographics** — not just the title. Shared KPI chips are only ids on 3+ audiences. Every NOI tile carries a `noiDefinition`. Copy is plain professional English and cites key numbers with units. Regenerates when entity or period changes. IC memo includes a deterministic go / hold / kill. Seed / incomplete-T12 disclaimer stays on SPE-WBG demo months.
 - **Packs** — Monthly Investor Pack (LP), Quarterly Lender Pack, IC Memo Pack, Management Flash. Export **PDF** and **PPTX**. Catalog: [docs/RCP_REPORT_CATALOG.md](./docs/RCP_REPORT_CATALOG.md).
 - **UI** — `/narratives` replaces the Phase D stub. Pack preview at `/narratives/packs/{id}`. Alias `/reports/packs`.
 - **API** — `GET /api/narratives?entity=SPE-WBG&period=2026-08` · `&audience=lp` · `GET /api/packs` · `GET /api/packs/monthly_investor?entity=SPE-WBG&period=2026-08&format=pdf|pptx|json`
