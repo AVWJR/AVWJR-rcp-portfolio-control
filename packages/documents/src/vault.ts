@@ -31,6 +31,23 @@ export function isVaultKind(value: string): value is VaultKind {
   return (VAULT_KINDS as readonly string[]).includes(value);
 }
 
+/** Offering memo / CIM filenames, including Life_at_Harrington_Park_OM_….pdf */
+export function looksLikeOmCimFilename(filename: string): boolean {
+  const stem = filename.replace(/\.[A-Za-z0-9]+$/, "");
+  if (/_OM(_|\b)|_OM$/i.test(stem)) return true;
+  if (/(^|[-_\s.])(om|cim)([-_\s.]|$)/i.test(stem)) return true;
+  if (/offering[\s._-]*mem/i.test(filename)) return true;
+  if (/\boffering\b/i.test(filename)) return true;
+  return false;
+}
+
+/** Prefer om_cim when the filename is an OM / offering memo; otherwise keep the selected kind. */
+export function guessVaultKind(filename: string, selected?: string | null): VaultKind {
+  if (looksLikeOmCimFilename(filename)) return "om_cim";
+  if (selected && isVaultKind(selected)) return selected;
+  return "other";
+}
+
 export const PHASE_F_VAULT_TODO =
   "Phase F live: document vault stores metadata + file blobs at /vault (leases, loans, K-1s, draws, insurance). On Vercel, blobs persist in Neon StoredBlob or Vercel Blob — not the ephemeral function filesystem.";
 

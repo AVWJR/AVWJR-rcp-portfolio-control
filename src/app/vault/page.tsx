@@ -1,5 +1,6 @@
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { VaultUploadForm } from "@/components/vault-forms";
+import { isBlobTokenConfigured, isOnVercel } from "@/lib/file-store";
 import { listVaultDocuments } from "@/lib/vault";
 import { VAULT_KIND_LABELS } from "@rcp/documents/vault";
 
@@ -21,9 +22,10 @@ export default async function VaultPage({
               <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{reportSubtitle(ctx)}</p>
               <h1 className="font-display text-4xl text-navy-900">Document vault</h1>
               <p className="mt-2 max-w-3xl text-sm text-ink-700">
-                Metadata plus file blobs on the local filesystem, linked to a legal entity. Seed
-                covers leases, loans, K-1 placeholders, draws, and insurance for SPE-WBG. Not a live
-                PMS or bank attachment store.
+                Metadata plus file blobs linked to a legal entity. Large files (OM PDFs over ~3.5 MB)
+                use the same Vercel Blob client-upload path as Add Deal. Seed covers leases, loans,
+                K-1 placeholders, draws, and insurance for SPE-WBG. Not a live PMS or bank attachment
+                store.
               </p>
             </div>
             <div className="grid gap-6 lg:grid-cols-3">
@@ -64,7 +66,12 @@ export default async function VaultPage({
                   )}
                 </section>
               </div>
-              <VaultUploadForm entity={ctx.entity.code} period={period} />
+              <VaultUploadForm
+                entity={ctx.entity.code}
+                period={period}
+                blobConfigured={isBlobTokenConfigured()}
+                onVercel={isOnVercel()}
+              />
             </div>
           </div>
         );

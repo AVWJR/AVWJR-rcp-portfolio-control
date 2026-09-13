@@ -18,11 +18,12 @@ Kinds: **lease**, **loan**, **k1**, **draw**, **insurance**, **rent_roll**, **bu
 
 - `/vault` — list for the header entity, upload, download
 - `GET /api/vault?entity=SPE-WBG`
-- `POST /api/vault` multipart (`entity`, `kind`, `title`, `notes`, `file`)
+- `POST /api/vault` small files: multipart (`entity`, `kind`, `title`, `notes`, `file`). Large files: JSON `{ entity, filename, blobUrl, mimeType, byteSize, kind, title, notes }` after client Blob upload
+- `POST /api/vault/blob` — same `@vercel/blob` `handleUpload` helper as Add Deal (`/api/deals/intake/blob`)
 - `GET /api/vault/{id}` — download
 - `DELETE /api/vault/{id}`
 
-Upload limit: **32 MB** (same as Add Deal intake). Filenames are sanitized. Paths cannot escape `data/vault`. On Vercel, Add Deal files over ~3.5 MB **must** use client upload to Vercel Blob (`BLOB_READ_WRITE_TOKEN`) — the function request body is ~4.5 MB and returns HTTP 413 before the handler. Neon `StoredBlob` remains the durable fallback for small multipart files when Blob is not connected.
+Upload limit: **32 MB** (same as Add Deal intake). Filenames are sanitized. Paths cannot escape `data/vault`. On Vercel, **Vault and Add Deal** files over ~3.5 MB **must** use client upload to Vercel Blob (`BLOB_READ_WRITE_TOKEN`) — the function request body is ~4.5 MB and returns HTTP 413 before the handler. A missing token or 413 shows a Principal error (never a stuck **Uploading…**). Filenames containing `_OM_` or an offering memo prefer kind **om_cim** even if the form was left on Other. Neon `StoredBlob` remains the durable fallback for small multipart files when Blob is not connected.
 
 ## Seed
 
@@ -33,4 +34,4 @@ These are demo text blobs, not live PMS or bank attachments.
 
 ## Out of scope
 
-No SSO. No bank-rec feed. K-1 placeholders are not filed returns. Vercel Blob is optional; Neon `StoredBlob` is the default durable path on Vercel.
+No SSO. No bank-rec feed. K-1 placeholders are not filed returns. Vercel Blob is **required on Vercel for files over ~3.5 MB** (typical OM PDFs). Neon `StoredBlob` is the default durable path for smaller multipart uploads.

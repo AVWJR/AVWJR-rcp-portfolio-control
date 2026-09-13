@@ -4,7 +4,9 @@ import {
   PHASE_F_VAULT_TODO,
   SCHEDULED_PACK_IDS,
   VAULT_STATUS,
+  guessVaultKind,
   isVaultKind,
+  looksLikeOmCimFilename,
   safeVaultFilename,
 } from "@rcp/documents";
 import { describe, expect, it } from "vitest";
@@ -26,6 +28,16 @@ describe("document vault", () => {
   it("sanitizes filenames", () => {
     expect(safeVaultFilename("a/b\\c?.txt")).toBe("a-b-c-.txt");
     expect(safeVaultFilename("   ")).toBe("document.bin");
+  });
+
+  it("prefers om_cim when the filename contains _OM_ or an offering memo", () => {
+    expect(looksLikeOmCimFilename("Life_at_Harrington_Park_OM_Offering.pdf")).toBe(true);
+    expect(looksLikeOmCimFilename("Life_at_Harrington_Park_OM.pdf")).toBe(true);
+    expect(looksLikeOmCimFilename("Harrington_Park_offering_memorandum.pdf")).toBe(true);
+    expect(looksLikeOmCimFilename("RR_-_Harrington_-_12.31.19_-_Resi.xlsx")).toBe(false);
+    expect(guessVaultKind("Life_at_Harrington_Park_OM_….pdf", "other")).toBe("om_cim");
+    expect(guessVaultKind("lease-abstract.pdf", "lease")).toBe("lease");
+    expect(guessVaultKind("notes.txt", "other")).toBe("other");
   });
 });
 

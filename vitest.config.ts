@@ -18,6 +18,7 @@ export default defineConfig({
       "@rcp/analytics": path.resolve(__dirname, "packages/analytics/src/index.ts"),
       "@rcp/debt": path.resolve(__dirname, "packages/debt/src/index.ts"),
       "@rcp/documents": path.resolve(__dirname, "packages/documents/src/index.ts"),
+      "@rcp/documents/vault": path.resolve(__dirname, "packages/documents/src/vault.ts"),
       "@rcp/rcp-brand": path.resolve(__dirname, "packages/rcp-brand/src/index.ts"),
       "@rcp/tax-bridge": path.resolve(__dirname, "packages/tax-bridge/src/index.ts"),
     },
