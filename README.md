@@ -50,11 +50,11 @@ Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deal
 | 3. Email attachment | Upload `.eml` / attachment files, or fetch when `GMAIL_ACCESS_TOKEN` / `MICROSOFT_ACCESS_TOKEN` is set |
 | 4. RCP mailbox | Architecture + stub. `RCP_INGEST_MAILBOX` is a placeholder. **Mailbox address is not decided yet.** **Scan RCP inbox** no-ops with an honest message |
 
-Drafts persist (`DealIntake`). **Upload-first:** drop files with no identity keystrokes. The wizard auto-creates an **Untitled deal** draft, infers name/code from filenames, uploads **one file at a time**, then auto-ingests (create SPE + vault + mappable rent-roll). T12/P&L workbooks are vaulted, not invented into the GL. File cap **32 MB**. Oversized files show `File too large (max 32 MB)` instead of `Failed to fetch`. Durable store: **local `data/vault/`**, **Neon `StoredBlob` on Vercel**, or **Vercel Blob** (`BLOB_READ_WRITE_TOKEN`, preferred for large OMs).
+Drafts persist (`DealIntake`). **Upload-first:** drop files with no identity keystrokes. The wizard auto-creates an **Untitled deal** draft, infers name/code from filenames, uploads **one file at a time**, then auto-ingests (create SPE + vault + broker rent-roll XLSX → Unit rows). T12/P&L workbooks are vaulted, not invented into the GL. File cap **32 MB**. Files over ~3.5 MB use **Vercel Blob client upload** (not the serverless body). Without Blob on Vercel a 5.5 MB OM shows “OM is 5.5 MB — add `BLOB_READ_WRITE_TOKEN`…” instead of a naked HTTP 413. Durable store: **local `data/vault/`**, **Neon `StoredBlob`** for small Vercel uploads, or **Vercel Blob** (`BLOB_READ_WRITE_TOKEN`, **required** for OM PDFs over ~3.5 MB).
 
 Sample files: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](./data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](./data/samples/budget.csv), [`data/samples/budget.xlsx`](./data/samples/budget.xlsx). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
 
-APIs: `POST /api/deals` · `POST /api/deals/intake` · `POST /api/deals/intake/files` · `POST /api/deals/intake/import` · `POST /api/deals/intake/from-dropbox` · `POST /api/deals/intake/from-email` · `POST /api/deals/intake/scan-mailbox`
+APIs: `POST /api/deals` · `POST /api/deals/intake` · `POST /api/deals/intake/files` · `POST /api/deals/intake/blob` · `POST /api/deals/intake/import` · `POST /api/deals/intake/from-dropbox` · `POST /api/deals/intake/from-email` · `POST /api/deals/intake/scan-mailbox`
 
 Sample: [http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1](http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1)
 
@@ -110,7 +110,7 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | `GMAIL_ACCESS_TOKEN` / `MICROSOFT_ACCESS_TOKEN` | No | Optional mailbox connectors for email-attachment intake |
 | `RCP_INGEST_MAILBOX` | No | Placeholder for the RCP-owned ingest inbox (**address TBD**) |
 | `RCP_DEFAULT_OPCO` | No | Parent OpCo code for new deals, default `RCP-OPCO` |
-| `BLOB_READ_WRITE_TOKEN` | No | Prefer **Vercel Blob** for Add Deal / vault files. If unset on Vercel, files persist in Neon (`StoredBlob`) instead of the ephemeral function disk |
+| `BLOB_READ_WRITE_TOKEN` | **Required on Vercel for OM / files over ~3.5 MB** | Vercel Blob read-write token. Without it, a 5.5 MB OM gets a Principal message — not a naked 413. Small files still persist in Neon (`StoredBlob`) |
 | `RCP_FILE_STORE` | No | Force `blob`, `db`, or `fs`. Default: Blob when the token is set, `db` on Vercel, `fs` on a laptop |
 
 Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POSTGRES_URL` for the pooled URL; `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` for the direct URL.
@@ -118,6 +118,18 @@ Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POST
 Runtime uses `@prisma/adapter-neon` (Prisma 6.16 driver adapters, GA) with the pooled URL. The Prisma CLI uses `DIRECT_URL` so migrations / `db push` never go through PgBouncer.
 
 Laptop seed against Neon (optional): put the same URLs in `.env` and run `npm run db:reset`. That **wipes** the remote database — prefer `/admin/seed` for a first empty deploy.
+
+#### Connect Vercel Blob (Principal — required for a 5.5 MB OM)
+
+The app cap is **32 MB per file**. Vercel’s function **request body** is still ~**4.5 MB** on typical Hobby/Pro requests, so `Life_at_Harrington_Park_OM_….pdf` at **5,605 KB** 413s if the bytes go through `/api/deals/intake/files` as multipart. After Blob is connected, Add Deal uploads those bytes with `@vercel/blob` `upload()` / `handleUpload`.
+
+1. Open [vercel.com](https://vercel.com) and select this project.
+2. Click **Storage**.
+3. Click **Create Database** (or **Create**) → choose **Blob**.
+4. Create the store and **connect** it to this project (Production + Preview).
+5. Confirm the env var name is exactly **`BLOB_READ_WRITE_TOKEN`** (Vercel injects it when the store is connected). If you created the token by hand: Settings → Environment Variables → add `BLOB_READ_WRITE_TOKEN` for Production and Preview.
+6. **Redeploy** the latest production deployment (Deployments → ⋯ → Redeploy) so the token is in the running function.
+7. Retry Add Deal: drop the three small xlsx first if you want, then the OM — or drop all four. The OM should store instead of HTTP 413.
 
 ## Seed entities
 
@@ -155,7 +167,7 @@ Close demo: WBG `2026-07` is **hard locked**. CVC `2026-07` is **soft closed**. 
 - **Books-to-tax** — `/tax` worksheet per entity: book NI, 6210 depreciation, 6110 interest, 6310 AM fees (below NOI) vs tax columns. MACRS lives hooks (27.5-year residential, 15-year site, 5-year FF&E). Every line labeled **BOOKS** / **TAX** / **BRIDGE**. Sample adjustments seeded on SPE-WBG and RCP-OPCO. Combined roll-up is **not a tax consolidation**.
 - **Partner capital / K-1 export** — `/tax/k1` rollforward `beg + contrib − dist ± book NI = end`. CSV / Excel for CPA K-1 prep. **Not a filed Schedule K-1.** Seed SPEs stay 100% owned.
 - **1099 vendor hooks** — `/vendors` master (form, TIN last4) plus reportable-payment overlay. Phase A AP (`2010`/`2020`) has no invoice subledger; empty overlay stubs honestly. Not a filed 1099.
-- **Document vault** — `/vault` stores metadata plus file blobs (leases, loans, K-1s, draws, insurance) linked to an entity. **Laptop:** `data/vault/`. **Vercel:** Neon `StoredBlob` rows by default, or private Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set. The serverless filesystem is not used for durable uploads. Upload / list / download.
+- **Document vault** — `/vault` stores metadata plus file blobs (leases, loans, K-1s, draws, insurance) linked to an entity. **Laptop:** `data/vault/`. **Vercel:** Neon `StoredBlob` for small multipart files, or private Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set (required for Add Deal OM PDFs over ~3.5 MB). The serverless filesystem is not used for durable uploads. Upload / list / download.
 - **Scheduled reporting** — `/scheduler` job defs for monthly investor and quarterly lender packs. CLI `npm run reports:run -- --pack=...`. Writes PDF/PPTX under `data/reports/` and persists last-run status. No email send.
 
 Docs: [docs/RCP_TAX_BRIDGE.md](./docs/RCP_TAX_BRIDGE.md) · [docs/RCP_DOCUMENT_VAULT.md](./docs/RCP_DOCUMENT_VAULT.md) · [docs/RCP_SCHEDULER.md](./docs/RCP_SCHEDULER.md) · [VERIFY_PHASE_F.md](./VERIFY_PHASE_F.md).

@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { deleteStoredFile, getStoredFile, putStoredFile } from "@/lib/file-store";
+import {
+  blobStoragePath,
+  deleteStoredFile,
+  getStoredFile,
+  isTrustedBlobUrl,
+  putStoredFile,
+} from "@/lib/file-store";
 import { storeVaultDocument } from "@/lib/vault";
 import { safeVaultFilename, type VaultKind } from "@rcp/documents";
 import { inferFileRole } from "./infer";
@@ -41,6 +47,7 @@ export async function storeIntakeFile(opts: {
   bytes: Buffer;
   classification?: string;
   remoteId?: string;
+  existingStoragePath?: string;
 }) {
   if (opts.bytes.length === 0) {
     throw new Error("The file is empty. Choose a rent-roll CSV, XLSX, or PDF that has content.");
@@ -80,11 +87,9 @@ export async function storeIntakeFile(opts: {
   });
 
   try {
-    const storagePath = await putStoredFile(
-      `_intake/${opts.intakeId}/${created.id}-${filename}`,
-      opts.bytes,
-      opts.mimeType,
-    );
+    const storagePath =
+      opts.existingStoragePath ??
+      (await putStoredFile(`_intake/${opts.intakeId}/${created.id}-${filename}`, opts.bytes, opts.mimeType));
     const saved = await prisma.dealIntakeFile.update({
       where: { id: created.id },
       data: { storagePath, status: "stored", lastError: null },
@@ -106,6 +111,36 @@ export async function storeIntakeFile(opts: {
     await prisma.dealIntakeFile.delete({ where: { id: created.id } }).catch(() => undefined);
     throw error;
   }
+}
+
+export async function storeIntakeFileFromBlob(opts: {
+  intakeId: string;
+  source: DealFileSource;
+  filename: string;
+  mimeType: string;
+  blobUrl: string;
+  classification?: string;
+  byteSize?: number;
+  bytes?: Buffer;
+}) {
+  if (!isTrustedBlobUrl(opts.blobUrl)) {
+    throw new Error("That Blob URL is not a Vercel Blob object. Re-upload the file from Add Deal.");
+  }
+  if (opts.byteSize && opts.byteSize > INTAKE_MAX_BYTES) {
+    throw new Error(`${fileTooLargeMessage()}. Split the file or note it for a later vault upload.`);
+  }
+  const storagePath = blobStoragePath(opts.blobUrl);
+  const bytes = opts.bytes ?? (await getStoredFile(storagePath));
+  return storeIntakeFile({
+    intakeId: opts.intakeId,
+    source: opts.source,
+    filename: opts.filename,
+    mimeType: opts.mimeType,
+    bytes,
+    classification: opts.classification,
+    remoteId: opts.blobUrl,
+    existingStoragePath: storagePath,
+  });
 }
 
 export async function readIntakeFileBytes(fileId: string) {

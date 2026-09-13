@@ -92,6 +92,7 @@ describe("expert Add Deal knowledge", () => {
     expect(reply.content).toMatch(/confirm replace/i);
     expect(reply.content).toMatch(/upload-first|Upload-first|drop the OM/i);
     expect(reply.content).toMatch(/32 MB/);
+    expect(reply.content).toMatch(/BLOB_READ_WRITE_TOKEN/);
     expect(reply.content).toMatch(/XLSX/);
     expect(reply.content).toMatch(/Dashboard/);
     expect(reply.content).toMatch(/not decided/);
@@ -100,6 +101,7 @@ describe("expert Add Deal knowledge", () => {
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/Add Deal/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/\/deals\/new/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/XLSX is first-class/);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/BLOB_READ_WRITE_TOKEN/);
   });
 
   it("teaches broker xlsx apply and Properties / Dashboard after ingest", () => {

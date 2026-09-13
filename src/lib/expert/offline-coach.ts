@@ -312,7 +312,7 @@ function addDealFlow(ctx: ExpertClientContext): string {
 Do this in the product — click paths only. Drop the broker **XLSX** on Add Deal. Do not make a spreadsheet conversion the default.
 
 1. Gold nav **Deals** → ${list}, or Overview → **Add Deal**. Open ${start}.
-2. Drop the OM / rent-roll / T12 files on **Upload files**. Naming the SPE is optional — filenames infer Life at Harrington Park → \`SPE-HRP\`. Files upload **one at a time** (max **32 MB each**). Four files totaling ~6 MB is fine; a 5.5 MB OM is under the cap.
+2. Drop the OM / rent-roll / T12 files on **Upload files**. Naming the SPE is optional — filenames infer Life at Harrington Park → \`SPE-HRP\`. Files upload **one at a time** (max **32 MB each**). A 5.5 MB OM is valid. On Vercel, files over ~3.5 MB go through **Vercel Blob** so they do not hit HTTP 413. If you see “OM is 5.5 MB — add BLOB_READ_WRITE_TOKEN…”, connect Blob: Vercel → **Storage** → create **Blob** → confirm env **BLOB_READ_WRITE_TOKEN** → redeploy. Or upload the Excel files first and add the OM after Blob is connected.
 3. **XLSX rent rolls are first-class.** Broker workbooks (\`RR_-_Harrington_-_…xlsx\`) auto-map Unit / Floorplan / Beds / Baths / Sqft / Status / Market Rent / Lease Rent / lease dates / concession. Auto-ingest creates the SPE, writes **Unit** rows, and vaults the rest.
 4. If columns cannot be mapped you will see **could not map columns: … Detected headers: …** — not a silent vault-only success. Ask me with that header list. Do not invent units.
 5. After ingest, open ${props} and ${link("/dashboard", ctx, "Dashboard")} for the new \`SPE-xxx\` (header period **2026-08**). Occupancy / loss-to-lease come from the rent roll, not GL 4020.

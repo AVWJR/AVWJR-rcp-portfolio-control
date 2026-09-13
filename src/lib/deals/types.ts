@@ -35,9 +35,18 @@ export const DEAL_FILE_CLASS_LABELS: Record<DealFileClass, string> = {
 
 export const DEFAULT_OPCO_CODE = "RCP-OPCO";
 export const DEFAULT_TARGET_PERIOD = "2026-08";
-/** Per-file intake / vault cap. Sequential uploads stay under the Vercel 100 MB function body limit. */
+/** Per-file intake / vault cap. Sequential uploads stay under this app limit, not the Vercel request-body cap. */
 export const INTAKE_MAX_BYTES = 32 * 1024 * 1024;
 export const INTAKE_MAX_BYTES_LABEL = "32 MB";
+/**
+ * Stay under typical Vercel Hobby/Pro function request-body 413 (~4.5 MB).
+ * Files at or above this size use @vercel/blob client upload so bytes never enter the serverless body.
+ */
+export const VERCEL_MULTIPART_SAFE_BYTES = Math.round(3.5 * 1024 * 1024);
+/** Documented platform body limit that returns HTTP 413 before our handler. */
+export const VERCEL_FUNCTION_BODY_LIMIT_BYTES = Math.round(4.5 * 1024 * 1024);
+/** Principal’s Harrington OM size used in coaching copy (~5.5 MB). */
+export const TYPICAL_OM_BYTES = Math.round(5.5 * 1024 * 1024);
 
 export const DEAL_WIZARD_STEPS = [
   { id: 1, key: "goal", title: "Goal", hint: "What are you onboarding?" },
