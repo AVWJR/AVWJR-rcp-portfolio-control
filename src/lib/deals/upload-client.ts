@@ -109,6 +109,17 @@ const NOISE = new Set([
   "llc",
   "offering",
   "memorandum",
+  "dec",
+  "nov",
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
 ]);
 
 function titleCase(value: string): string {
@@ -122,6 +133,7 @@ function titleCase(value: string): string {
 
 export function cleanFilenameForIdentity(filename: string): string {
   let stem = filename.replace(/\.[A-Za-z0-9]+$/, "");
+  stem = stem.replace(/\(\d+\)$/g, " ");
   stem = stem.replace(/[–—]/g, "-");
   for (let i = 0; i < 5; i += 1) {
     const next = stem.replace(DOC_PREFIX, "");

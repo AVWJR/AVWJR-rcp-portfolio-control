@@ -1,7 +1,12 @@
 import { workbookToCsv } from "@/lib/deals/workbook";
 import { CsvParseError, parseRentRollCsv } from "@rcp/properties";
 import { describe, expect, it } from "vitest";
-import { HARRINGTON_BROKER_CSV, harringtonRentRollWorkbook, unmappableWorkbook } from "./fixtures/harrington-rent-roll";
+import {
+  HARRINGTON_BROKER_CSV,
+  harringtonRentRollWorkbook,
+  harringtonYardiResiWorkbook,
+  unmappableWorkbook,
+} from "./fixtures/harrington-rent-roll";
 
 describe("broker rent-roll mapping", () => {
   it("maps Harrington-style headers under title rows", () => {
@@ -26,6 +31,20 @@ describe("broker rent-roll mapping", () => {
     expect(units.map((u) => u.status)).toEqual(["OCCUPIED", "VACANT", "OCCUPIED", "OCCUPIED", "DOWN"]);
     expect(units[3]?.bathsTenths).toBe(25);
     expect(units[1]?.inPlaceRent).toBe(0n);
+  });
+
+  it("maps a Yardi/MRI Resi workbook (two-row headers, Charges, comma SF, duplicate charge rows)", () => {
+    const csv = workbookToCsv(harringtonYardiResiWorkbook(), "RR_-_Harrington_-_12.31.19_-_Resi.xlsx");
+    const units = parseRentRollCsv(csv);
+    expect(units).toHaveLength(5);
+    expect(units.map((u) => u.unitCode)).toEqual(["1-101", "1-102", "1-201", "1-202", "1-301"]);
+    expect(units[0]?.inPlaceRent).toBe(1225_00n);
+    expect(units[0]?.sqft).toBe(750);
+    expect(units[2]?.sqft).toBe(1050);
+    expect(units[2]?.inPlaceRent).toBe(1465_00n);
+    expect(units[2]?.bathsTenths).toBe(20);
+    expect(units[3]?.bathsTenths).toBe(25);
+    expect(units[4]?.status).toBe("DOWN");
   });
 
   it("surfaces detected headers when the sheet is not a rent roll", () => {

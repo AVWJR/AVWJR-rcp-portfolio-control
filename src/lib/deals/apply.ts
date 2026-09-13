@@ -1,4 +1,4 @@
-import { importBudgetCsv } from "@/lib/budgets";
+import { importBudgetCsv, replaceBudget } from "@/lib/budgets";
 import { ReplaceRequiresConfirmError } from "@/lib/import-guard";
 import { prisma } from "@/lib/prisma";
 import { inferAsOfDate } from "./infer";
@@ -8,7 +8,9 @@ import { createSpeDeal } from "./create-spe";
 import { promoteIntakeFilesToVault, readIntakeFileBytes } from "./files";
 import { getIntake, updateIntake } from "./intake";
 import type { DealGoal } from "./types";
-import { bytesToImportCsv } from "./workbook";
+import { bytesToImportCsv, isSpreadsheetFilename, parseT12WorkbookBytes } from "./workbook";
+import { t12ParseToBudgetRows } from "@rcp/properties";
+import { BROKER_T12_SOURCE, overlayNoteFromParse } from "@/lib/t12-overlay";
 
 function coachStructuredImportError(filename: string, error: unknown): never {
   const raw = error instanceof Error ? error.message : String(error);
@@ -58,6 +60,7 @@ export async function applyStructuredData(opts: {
   confirmReplace?: boolean;
   importRentRoll?: boolean;
   importBudget?: boolean;
+  importT12?: boolean;
   saveLoan?: boolean;
   lenient?: boolean;
 }) {
@@ -75,7 +78,12 @@ export async function applyStructuredData(opts: {
       const csvFile = intake.files.find((f) => f.classification === "rent_roll_csv");
       if (csvFile) {
         const loaded = await readIntakeFileBytes(csvFile.id);
-        if (loaded) {
+        if (!loaded) {
+          results.push({
+            kind: "rent_roll",
+            skipped: `${csvFile.filename}: could not map columns: stored bytes missing. Detected headers: (none)`,
+          });
+        } else {
           let units;
           try {
             const asOf = inferAsOfDate(loaded.file.filename);
@@ -85,6 +93,9 @@ export async function applyStructuredData(opts: {
               confirmReplace: opts.confirmReplace,
               asOfDate: asOf ? new Date(`${asOf}T16:00:00.000Z`) : undefined,
             });
+            if (!units.length) {
+              throw new Error(`could not map columns: unit rows. Detected headers: (none)`);
+            }
           } catch (error) {
             if (error instanceof ReplaceRequiresConfirmError) throw error;
             if (opts.lenient) {
@@ -158,6 +169,67 @@ export async function applyStructuredData(opts: {
         }
       } else {
         results.push({ kind: "budget", skipped: "No file classified as budget CSV / XLSX." });
+      }
+    }
+
+    if (opts.importT12 !== false) {
+      const t12Files = intake.files.filter((f) => f.classification === "t12_pl");
+      for (const t12File of t12Files) {
+        const loaded = await readIntakeFileBytes(t12File.id);
+        if (!loaded) {
+          results.push({
+            kind: "t12_overlay",
+            skipped: `${t12File.filename}: stored bytes missing — vaulted only, not mapped to budget.`,
+          });
+          continue;
+        }
+        try {
+          const parsed = isSpreadsheetFilename(loaded.file.filename)
+            ? parseT12WorkbookBytes(loaded.bytes, loaded.file.filename)
+            : null;
+          if (!parsed) {
+            results.push({
+              kind: "t12_overlay",
+              skipped: `${loaded.file.filename} is not a workbook we can map to CoA.`,
+            });
+            continue;
+          }
+          const rows = t12ParseToBudgetRows(parsed);
+          if (!rows.length) {
+            throw new Error(`could not map columns: T12 operating lines. Detected headers: ${parsed.detectedHeaders.join(", ")}`);
+          }
+          await replaceBudget({
+            entityId: intake.entityId,
+            year: period.year,
+            month: period.month,
+            rows,
+            source: BROKER_T12_SOURCE,
+          });
+          if (t12File.vaultDocumentId) {
+            await prisma.vaultDocument.update({
+              where: { id: t12File.vaultDocumentId },
+              data: {
+                notes: overlayNoteFromParse(parsed, loaded.file.filename, `${period.year}-${String(period.month).padStart(2, "0")}`),
+              },
+            });
+          }
+          await prisma.dealIntakeFile.update({
+            where: { id: t12File.id },
+            data: { status: "imported", lastError: null },
+          });
+          results.push({ kind: "t12_overlay", imported: rows.length });
+        } catch (error) {
+          if (error instanceof ReplaceRequiresConfirmError) throw error;
+          const message = error instanceof Error ? error.message : String(error);
+          await prisma.dealIntakeFile.update({
+            where: { id: t12File.id },
+            data: { status: "needs_mapping", lastError: message.slice(0, 500) },
+          });
+          results.push({
+            kind: "t12_overlay",
+            skipped: `${loaded.file.filename}: ${message}. Overlay only — nothing posted to the GL.`,
+          });
+        }
       }
     }
 

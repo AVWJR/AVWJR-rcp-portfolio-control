@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { afterAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { harringtonRentRollWorkbook, unmappableWorkbook } from "./fixtures/harrington-rent-roll";
+import { harringtonRentRollWorkbook, harringtonT12Workbook, harringtonYardiResiWorkbook, unmappableWorkbook } from "./fixtures/harrington-rent-roll";
 import { resolveReportScope } from "@/lib/reports-server";
 
 const intakeIds: string[] = [];
@@ -404,7 +404,7 @@ describe("Add Deal intake upload", () => {
       source: "upload",
       filename: "T12_NOI_-_Life_at_Harrington_-_11.2019.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      bytes: readFileSync(resolve("data/samples/budget.xlsx")),
+      bytes: harringtonT12Workbook(),
     });
 
     const report = await autoIngestIntake(intake.id);
@@ -413,7 +413,8 @@ describe("Add Deal intake upload", () => {
     expect(report.created.entityCode).toMatch(/^SPE-/);
     expect(report.created.entityName).toMatch(/Harrington Park/i);
     expect(report.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 5)).toBe(true);
-    expect(report.gaps.some((gap) => /T12|P&L/i.test(gap))).toBe(true);
+    expect(report.results.some((row) => row.kind === "t12_overlay" && (row.imported ?? 0) >= 1)).toBe(true);
+    expect(report.gaps.some((gap) => /T12|overlay|P&L/i.test(gap))).toBe(true);
 
     const latest = await getIntake(intake.id);
     expect(latest?.targetPeriod).toBe("2026-08");
@@ -464,6 +465,43 @@ describe("Add Deal intake upload", () => {
     expect(skipped).toMatch(/could not map columns/i);
     expect(skipped).toMatch(/Detected headers/i);
     expect(await prisma.unit.count({ where: { entityId: entity.id } })).toBe(0);
+  });
+
+  it("auto-ingests a Yardi/MRI Resi workbook into Unit rows", async () => {
+    const intake = await createIntake({ sources: ["upload"], goal: "value_add" });
+    intakeIds.push(intake.id);
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "RR_-_Harrington_-_12.31.19_-_Resi.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: harringtonYardiResiWorkbook(),
+    });
+    const report = await autoIngestIntake(intake.id);
+    if (report.created.entityId) entityIds.push(report.created.entityId);
+    expect(report.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 5)).toBe(true);
+    const units = await prisma.unit.count({ where: { entityId: report.created.entityId! } });
+    expect(units).toBe(5);
+  });
+
+  it("fails auto-ingest when a classified rent roll maps 0 units", async () => {
+    const intake = await createIntake({ sources: ["upload"], goal: "value_add" });
+    intakeIds.push(intake.id);
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "RR_-_Mystery_-_notes.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: unmappableWorkbook(),
+    });
+    await expect(autoIngestIntake(intake.id)).rejects.toThrow(/could not map columns/i);
+    const latest = await getIntake(intake.id);
+    if (latest?.entityId) entityIds.push(latest.entityId);
+    expect(latest?.status).toBe("FAILED");
+    expect(latest?.lastError ?? "").toMatch(/Detected headers/i);
+    if (latest?.entityId) {
+      expect(await prisma.unit.count({ where: { entityId: latest.entityId } })).toBe(0);
+    }
   });
 
   it("opens a missing header period instead of throwing Period not found", async () => {

@@ -89,6 +89,29 @@ export async function suggestCodeForName(name: string) {
   return suggestSpeCode(name, existing.map((row) => row.code));
 }
 
+const MONTH_NOISE =
+  /^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|life|the|at|llc|lp|park|resi)$/;
+
+export function dealNameMatchKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\(\d+\)/g, " ")
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2 && !MONTH_NOISE.test(word) && !/^\d+$/.test(word))
+    .join("");
+}
+
+export async function findReusableSpe(speName: string) {
+  const want = dealNameMatchKey(speName);
+  if (want.length < 4) return null;
+  const spes = await prisma.entity.findMany({
+    where: { type: "SPE" },
+    select: { id: true, code: true, name: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+  return spes.find((row) => dealNameMatchKey(row.name) === want) ?? null;
+}
+
 export async function listSpeDeals() {
   return prisma.entity.findMany({
     where: { type: "SPE" },
