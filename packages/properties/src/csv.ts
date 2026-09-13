@@ -1,6 +1,6 @@
 import { dollars } from "@rcp/ledger";
 import { type UnitSnapshot } from "./types";
-import { couldNotMapColumnsMessage, findRentRollHeaderRow, parseMappedRentRollRows } from "./rent-roll-map";
+import { couldNotMapColumnsMessage, parseMappedRentRollRows, resolveRentRollHeader } from "./rent-roll-map";
 
 export const RENT_ROLL_CSV_HEADERS = [
   "unit_id",
@@ -107,14 +107,14 @@ export function parseRentRollCsv(text: string, opts: { lenient?: boolean } = {})
     throw new CsvParseError(0, "file is empty");
   }
   const table = lines.map(splitCsvLine);
-  const headerIdx = findRentRollHeaderRow(table);
-  if (headerIdx < 0) {
+  const resolved = resolveRentRollHeader(table);
+  if (!resolved) {
     throw new CsvParseError(1, couldNotMapColumnsMessage((table[0] ?? []).filter(Boolean), ["unit"]));
   }
-  const headers = table[headerIdx] ?? [];
+  const headers = resolved.headers;
   const canonical = headers.map((h) => h.toLowerCase());
   const isCanonical = canonical.includes("unit_id") && canonical.includes("market_rent");
-  return parseMappedRentRollRows(headers, table.slice(headerIdx + 1), {
+  return parseMappedRentRollRows(headers, table.slice(resolved.dataStart), {
     lenient: opts.lenient ?? !isCanonical,
   });
 }

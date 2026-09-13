@@ -16,22 +16,30 @@ export const RENT_ROLL_CANONICAL_FIELDS = [
 ] as const;
 
 export type RentRollField = (typeof RENT_ROLL_CANONICAL_FIELDS)[number];
-export type RentRollColumnMap = Partial<Record<RentRollField | "beds_baths", number>>;
+export type RentRollExtraField = "beds_baths" | "bldg";
+export type RentRollColumnMap = Partial<Record<RentRollField | RentRollExtraField, number>>;
 
-const FIELD_ALIASES: Record<RentRollField | "beds_baths", string[]> = {
+const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
   unit: [
     "unit_id",
     "unit id",
+    "unit designation",
     "unit number",
     "unit nbr",
     "unit no",
     "unit code",
+    "apt number",
+    "bldg unit",
+    "building unit",
+    "bldg un",
     "unit #",
     "unit",
     "apt no",
     "apt #",
     "apartment",
     "apt",
+    "space",
+    "uhid",
   ],
   floorplan: [
     "floorplan",
@@ -44,11 +52,20 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths", string[]> = {
     "fp",
     "type",
   ],
-  beds: ["bedrooms", "bedroom", "beds", "bed", "bdrms", "bdrm", "br", "bd"],
-  baths: ["bathrooms", "bathroom", "baths", "bath", "ba"],
-  beds_baths: ["bd ba", "beds baths", "bed bath", "br ba", "bds bas", "bed/bath", "bd/ba"],
+  beds: ["bedrooms", "bedroom", "beds", "bed", "bdrms", "bdrm", "brs", "br", "bd"],
+  baths: ["bathrooms", "bathroom", "baths", "bath", "bas", "ba"],
+  beds_baths: ["bd ba", "beds baths", "bed bath", "br ba", "bds bas", "brs bas", "bed/bath", "bd/ba"],
+  bldg: ["building", "bldg", "bld", "bldg no", "building number"],
   sqft: ["square footage", "square feet", "unit sf", "sq ft", "sqft", "sf", "nra", "nsa"],
-  status: ["occupancy status", "unit status", "occ status", "occupancy", "status", "occ"],
+  status: [
+    "occupancy status",
+    "unit status",
+    "occ status",
+    "occupancy",
+    "occupied",
+    "status",
+    "occ",
+  ],
   market_rent: [
     "market rent",
     "asking rent",
@@ -120,7 +137,7 @@ export function mapRentRollHeaders(headers: string[]): {
   const map: RentRollColumnMap = {};
   const used = new Set<number>();
 
-  const assign = (field: RentRollField | "beds_baths") => {
+  const assign = (field: RentRollField | RentRollExtraField) => {
     const aliases = FIELD_ALIASES[field];
     let best = -1;
     let bestLen = -1;
@@ -140,7 +157,7 @@ export function mapRentRollHeaders(headers: string[]): {
     }
   };
 
-  (Object.keys(FIELD_ALIASES) as Array<RentRollField | "beds_baths">)
+  (Object.keys(FIELD_ALIASES) as Array<RentRollField | RentRollExtraField>)
     .sort((a, b) => FIELD_ALIASES[b][0]!.length - FIELD_ALIASES[a][0]!.length)
     .forEach(assign);
 
@@ -166,18 +183,48 @@ export function scoreRentRollHeaderRow(headers: string[]): number {
   return score;
 }
 
-export function findRentRollHeaderRow(rows: string[][], maxScan = 25): number {
-  let best = -1;
-  let bestScore = 0;
+export function mergeHeaderRows(top: string[], bottom: string[]): string[] {
+  const len = Math.max(top.length, bottom.length);
+  const out: string[] = [];
+  for (let i = 0; i < len; i += 1) {
+    const a = (top[i] ?? "").trim();
+    const b = (bottom[i] ?? "").trim();
+    if (!a) out.push(b);
+    else if (!b || normalizeHeader(a) === normalizeHeader(b)) out.push(a);
+    else out.push(`${a} ${b}`);
+  }
+  return out;
+}
+
+export type ResolvedRentRollHeader = {
+  index: number;
+  headers: string[];
+  dataStart: number;
+  score: number;
+};
+
+export function resolveRentRollHeader(rows: string[][], maxScan = 80): ResolvedRentRollHeader | null {
+  let best: ResolvedRentRollHeader | null = null;
   const limit = Math.min(rows.length, maxScan);
   for (let i = 0; i < limit; i += 1) {
-    const score = scoreRentRollHeaderRow(rows[i] ?? []);
-    if (score > bestScore) {
-      bestScore = score;
-      best = i;
+    const single = rows[i] ?? [];
+    const singleScore = scoreRentRollHeaderRow(single);
+    if (!best || singleScore > best.score) {
+      best = { index: i, headers: single, dataStart: i + 1, score: singleScore };
+    }
+    const next = rows[i + 1];
+    if (!next) continue;
+    const merged = mergeHeaderRows(single, next);
+    const mergedScore = scoreRentRollHeaderRow(merged);
+    if (mergedScore > singleScore && (!best || mergedScore > best.score)) {
+      best = { index: i, headers: merged, dataStart: i + 2, score: mergedScore };
     }
   }
-  return bestScore >= 8 ? best : -1;
+  return best && best.score >= 8 ? best : null;
+}
+
+export function findRentRollHeaderRow(rows: string[][], maxScan = 80): number {
+  return resolveRentRollHeader(rows, maxScan)?.index ?? -1;
 }
 
 export function couldNotMapColumnsMessage(detected: string[], missing: string[] = ["unit"]): string {
@@ -190,8 +237,10 @@ export function parseRentRollStatus(raw: string): UnitStatus | null {
   if (!value) return null;
   const compact = value.replace(/[^a-z]/g, "");
   if (isUnitStatus(raw.trim().toUpperCase())) return raw.trim().toUpperCase() as UnitStatus;
-  if (/^(occupied|current|occ|leased|notice|ntv|onnotice|pending|resident)$/.test(compact)) return "OCCUPIED";
-  if (/^(vacant|vac|empty|ready|available|unoccupied|unrented)$/.test(compact)) return "VACANT";
+  if (/^(occupied|current|occ|leased|notice|ntv|onnotice|pending|resident|y|yes|true|1|x)$/.test(compact)) {
+    return "OCCUPIED";
+  }
+  if (/^(vacant|vac|empty|ready|available|unoccupied|unrented|n|no|false|0)$/.test(compact)) return "VACANT";
   if (/^(down|offline|model|admin|employee|makeready|nrv|unrentable)$/.test(compact)) return "DOWN";
   return null;
 }
@@ -254,7 +303,11 @@ export function parseMappedRentRollRows(
   const units: UnitSnapshot[] = [];
   rows.forEach((cols, i) => {
     const line = i + 2;
-    const unitCode = cell(cols, map.unit);
+    const rawUnit = cell(cols, map.unit);
+    const bldg = cell(cols, map.bldg);
+    const unitCode = bldg && rawUnit && !rawUnit.startsWith(`${bldg}-`) && !rawUnit.startsWith(`${bldg}/`)
+      ? `${bldg}-${rawUnit}`
+      : rawUnit;
     if (!unitCode || looksLikeSummary(unitCode, cols)) return;
 
     if (seen.has(unitCode)) {

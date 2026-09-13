@@ -76,7 +76,13 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
   }
   const rr = applied.results.find((row) => row.kind === "rent_roll");
   if (rr?.imported) {
-    gaps.push(`Open Properties / Dashboard for ${uniqueCode} — occupancy now uses ${rr.imported} rent-roll units.`);
+    gaps.push(
+      `Rent roll wrote ${rr.imported} Unit rows. Open Properties / Dashboard for ${uniqueCode}. GL $0 is expected until T12/P&L is mapped — occupancy comes from the rent roll, not the GL.`,
+    );
+  } else {
+    gaps.unshift(
+      `Rent roll wrote 0 units${rr?.skipped ? ` — ${rr.skipped}` : ""}. Occupancy stays empty until the broker RR maps. GL $0 is expected until T12/P&L is mapped.`,
+    );
   }
 
   const latest = applied.intake ?? (await getIntake(intake.id));

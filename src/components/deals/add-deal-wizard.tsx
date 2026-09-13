@@ -1060,6 +1060,24 @@ export function AddDealWizard({
                     ? ` Address: ${ingestReport.inferred.address}.`
                     : " No street address in the filenames — left blank."}
                 </p>
+                {(() => {
+                  const rr = ingestReport.results.find((row) => row.kind === "rent_roll");
+                  if (rr?.imported) {
+                    return (
+                      <p>
+                        <strong>Rent roll — {rr.imported} units written.</strong> Occupancy uses the rent
+                        roll. GL $0 is expected until T12/P&L is mapped.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p>
+                      <strong>Rent roll — 0 units.</strong>{" "}
+                      {rr?.skipped ?? "No rent-roll file was classified."} Occupancy stays empty until the
+                      broker RR maps.
+                    </p>
+                  );
+                })()}
                 <ul className="list-disc space-y-1 pl-5">
                   {ingestReport.results.map((row) => (
                     <li key={row.kind}>

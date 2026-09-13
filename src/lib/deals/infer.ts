@@ -1,4 +1,4 @@
-import { looksLikeRentRollHeaders } from "@rcp/properties";
+import { looksLikeRentRollHeaders, parseCsvRows, resolveRentRollHeader } from "@rcp/properties";
 import { read, utils } from "xlsx";
 import { suggestSpeCode } from "./codes";
 import { isDealFileClass, type DealFileClass } from "./types";
@@ -75,6 +75,9 @@ export function sniffWorkbookRole(bytes: Buffer, filename: string): DealFileClas
 
 export function inferFileRole(filename: string, bytes?: Buffer): DealFileClass {
   const fromName = classifyFromFilename(filename);
+  // Filename prefixes win. A Resi RR workbook often also has T12 / Unit Mix tabs —
+  // sniffing those sheets must not reclassify RR_-_Harrington_-_….xlsx as t12_pl.
+  if (fromName === "rent_roll_csv") return fromName;
   if (bytes && (isSpreadsheetFilename(filename) || filename.toLowerCase().endsWith(".csv"))) {
     const sniffed = sniffWorkbookRole(bytes, filename);
     if (sniffed === "rent_roll_csv") return sniffed;
@@ -85,12 +88,7 @@ export function inferFileRole(filename: string, bytes?: Buffer): DealFileClass {
 }
 
 export function looksMappableRentRoll(csv: string): boolean {
-  const lines = csv.split(/\r?\n/).filter((line) => line.trim());
-  for (const line of lines.slice(0, 25)) {
-    const headers = line.split(",").map((h) => h.trim());
-    if (looksLikeRentRollHeaders(headers)) return true;
-  }
-  return false;
+  return resolveRentRollHeader(parseCsvRows(csv)) != null;
 }
 
 export function looksMappableBudget(csv: string): boolean {

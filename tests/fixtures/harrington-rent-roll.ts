@@ -48,6 +48,73 @@ export function unmappableWorkbook(): Buffer {
   return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
 }
 
+/**
+ * Closer to the live broker packet: T12 + Unit Mix decoy tabs, 20 title rows,
+ * two-line headers, Bldg/Unit + Occupied Y/N. Filename stays RR_-_…Resi.xlsx.
+ */
+export function harringtonBrokerPacketWorkbook(): Buffer {
+  const cover = utils.aoa_to_sheet([
+    ["Life at Harrington Park"],
+    ["Offering memorandum"],
+    ["Confidential"],
+  ]);
+  const mix = utils.aoa_to_sheet([
+    ["Unit Mix"],
+    ["Unit Type", "Count", "SF", "Market Rent", "Occupied"],
+    ["A1", "36", "750", "1185", "32"],
+    ["B2", "58", "1050", "1375", "50"],
+    ["C3", "61", "1200", "1550", "55"],
+  ]);
+  const t12 = utils.aoa_to_sheet([
+    ["T12 NOI", "Trailing twelve months"],
+    ["Account", "Nov 2018", "Dec 2018", "Total"],
+    ["GPR", "100", "110", "210"],
+    ["NOI", "40", "42", "82"],
+  ]);
+  const title = Array.from({ length: 18 }, (_, i) =>
+    i === 0
+      ? ["Life at Harrington Park"]
+      : i === 1
+        ? ["RR - Harrington - 12.31.19 - Resi", "As of 12/31/2019"]
+        : i === 2
+          ? ["Prepared for offering diligence"]
+          : [],
+  );
+  const headerTop = ["Bldg /", "Unit", "", "", "Market", "Lease", "Lease", "Lease", ""];
+  const headerBot = ["Unit", "Type", "Bd/Ba", "SF", "Rent", "Rent", "Start", "End", "Occupied"];
+  const units: (string | number)[][] = [];
+  const stacks: { type: string; beds: string; baths: string; sf: string; market: number; count: number }[] = [
+    { type: "A1", beds: "1", baths: "1", sf: "750", market: 1185, count: 6 },
+    { type: "B2", beds: "2", baths: "2", sf: "1050", market: 1375, count: 6 },
+    { type: "C3", beds: "3", baths: "2", sf: "1200", market: 1550, count: 6 },
+  ];
+  let n = 0;
+  for (const stack of stacks) {
+    for (let i = 0; i < stack.count; i += 1) {
+      n += 1;
+      const occupied = n % 5 !== 0;
+      units.push([
+        String(100 + n),
+        stack.type,
+        `${stack.beds}/${stack.baths}`,
+        stack.sf,
+        String(stack.market),
+        occupied ? String(stack.market - 25) : "0",
+        occupied ? "1/1/2019" : "",
+        occupied ? "12/31/2019" : "",
+        occupied ? "Y" : "N",
+      ]);
+    }
+  }
+  const resi = utils.aoa_to_sheet([...title, headerTop, headerBot, ...units]);
+  const wb = utils.book_new();
+  utils.book_append_sheet(wb, cover, "Cover");
+  utils.book_append_sheet(wb, mix, "Unit Mix");
+  utils.book_append_sheet(wb, t12, "T12 NOI");
+  utils.book_append_sheet(wb, resi, "Resi");
+  return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
+}
+
 export const HARRINGTON_BROKER_CSV = `Life at Harrington Park
 Rent Roll as of 12/31/2019
 
