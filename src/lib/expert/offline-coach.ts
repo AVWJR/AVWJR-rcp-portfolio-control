@@ -309,7 +309,7 @@ function addDealFlow(ctx: ExpertClientContext): string {
   const props = link("/properties", ctx, "Properties");
   return `**Add a new deal — new property SPE under OpCo**
 
-Do this in the product. Do not use a terminal.
+Do this in the product — click paths only.
 
 1. Gold nav **Deals** → ${list}, or Overview → **Add Deal**. Open ${start}.
 2. **Goal** — stabilize / value-add / light rehab, plus the target period.

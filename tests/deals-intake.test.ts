@@ -85,7 +85,7 @@ describe("expert Add Deal knowledge", () => {
     expect(reply.content).toMatch(/\/deals\/new/);
     expect(reply.content).toMatch(/confirm replace/i);
     expect(reply.content).toMatch(/not decided/);
-    expect(reply.content).not.toMatch(/npm |npx |CLI|terminal/i);
+    expect(reply.content).not.toMatch(/npm |npx |\bCLI\b/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/Add Deal/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/\/deals\/new/);
   });

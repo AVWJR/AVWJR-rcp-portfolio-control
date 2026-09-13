@@ -1,6 +1,6 @@
 "use client";
 
-import { VAULT_KIND_LABELS, VAULT_KINDS } from "@rcp/documents";
+import { VAULT_KIND_LABELS, VAULT_KINDS } from "@rcp/documents/vault";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
