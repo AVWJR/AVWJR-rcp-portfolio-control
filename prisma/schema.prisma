@@ -88,6 +88,14 @@ enum DealIntakeStatus {
   FAILED
 }
 
+/// Soft-archive columns already on Neon from PR #20 preview/prod `db push`.
+/// Kept here so this schema matches the live table (additive / no-op) and does
+/// not try to DROP `lifecycleStatus`. Archive UI stays on PR #20.
+enum EntityLifecycle {
+  LIVE
+  ARCHIVED
+}
+
 enum UnitStatus {
   OCCUPIED
   VACANT
@@ -107,9 +115,14 @@ model Entity {
   strategy     SpeStrategy?
   currency     String       @default("USD")
   locale       String       @default("en-US")
-  timezone     String       @default("America/New_York")
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  timezone         String          @default("America/New_York")
+  lifecycleStatus  EntityLifecycle @default(LIVE)
+  archivedAt       DateTime?
+  archivedBy       String?
+  restoredAt       DateTime?
+  restoredBy       String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   accounts         Account[]
   periods          Period[]
