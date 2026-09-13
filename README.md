@@ -34,7 +34,7 @@ App: [http://localhost:3000](http://localhost:3000)
 Every page mounts a lower-right **Expert** FAB that opens a miniature coaching dialogue (not a generic chatbot). The Expert reads the current **entity** and **period** from the URL, speaks first with where you are and three next-move chips, and can audit missing data, errant journals, and anomalous KPIs from the **same** dashboard / close / rent-roll / loan math as the rest of the app.
 
 - **Offline (default)** — no model key required. The panel still opens, shows a gold banner (“Offline coach — add key”), and answers from live tools (`getEntitySummary`, `getPeriodStatus`, `getKpiSnapshot`, `getDataCompleteness`, `getAnomalies`, `listNavTargets`). It will not invent GL balances or covenants.
-- **Live Grok (go-live)** — set server-only **`AI_GATEWAY_API_KEY`** and **`EXPERT_MODEL=xai/grok-4.5`** (current xAI Grok text slug on Vercel AI Gateway). The panel streams and shows a green **Grok connected** banner. Optional fallback: **`XAI_API_KEY`** (alias **`GROK_API_KEY`**) against `https://api.x.ai/v1` with **`grok-4.6`**. If both keys are set, Gateway wins. Keys never go in `NEXT_PUBLIC_*`. If the call fails or no key is set, gold **Offline coach — add key**.
+- **Live Grok (go-live)** — set server-only **`AI_GATEWAY_API_KEY`** and **`EXPERT_MODEL=spacexai/grok-4.6`** (Vercel AI Gateway Grok slug). The panel streams and shows a green **Grok connected** banner. Optional fallback: **`XAI_API_KEY`** (alias **`GROK_API_KEY`**) against `https://api.x.ai/v1` with **`grok-4.6`**. If both keys are set, Gateway wins. Keys never go in `NEXT_PUBLIC_*`. If the call fails or no key is set, gold **Offline coach — add key**.
 - Conversation is stored in `localStorage` keyed by entity + period. **New chat** clears that thread. `Esc` closes the panel; focus returns to the FAB.
 - `GET /api/expert/context?entity=SPE-WBG&period=2026-08&pathname=/dashboard/SPE-WBG` · `POST /api/expert/chat` (JSON `{ context, messages?, intent?, stream? }`). The chat route is rate-limited and read-only. Live Grok replies stream as NDJSON when `stream: true`.
 
@@ -44,7 +44,7 @@ Primary: they added a Vercel AI Gateway card. Use the Gateway key.
 
 1. Open the Vercel project → **Settings** → **Environment Variables**.
 2. Add **`AI_GATEWAY_API_KEY`** (from the AI Gateway card / project AI settings). Never prefix `NEXT_PUBLIC_`.
-3. Add **`EXPERT_MODEL`** = **`xai/grok-4.5`** (Gateway xAI Grok text model; default if omitted on the Gateway path).
+3. Add **`EXPERT_MODEL`** = **`spacexai/grok-4.6`** (Gateway Grok text model; default if omitted on the Gateway path).
 4. Apply to **Production** and **Preview**. **Redeploy** (Deployments → ⋯ → Redeploy).
 5. Open any page → lower-right **Expert**. Banner should read **Grok connected**. Writes still need an on-screen confirm.
 
@@ -127,7 +127,7 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | `NEXT_PUBLIC_RCP_LOCALE` | Yes | `en-US` |
 | `NEXT_PUBLIC_RCP_TIMEZONE` | Yes | `America/New_York` |
 | `AI_GATEWAY_API_KEY` | No (primary for live Grok) | Vercel AI Gateway key. Offline coach works without it |
-| `EXPERT_MODEL` | No | Gateway default **`xai/grok-4.5`**. Direct xAI fallback **`grok-4.6`** |
+| `EXPERT_MODEL` | No | Gateway default **`spacexai/grok-4.6`**. Direct xAI fallback **`grok-4.6`** |
 | `XAI_API_KEY` / `GROK_API_KEY` | No | Optional direct xAI fallback (`https://api.x.ai/v1`, model `grok-4.6`) |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | No | Alternate server-only keys for live Expert replies |
 | `DROPBOX_ACCESS_TOKEN` | No | Enables Dropbox file pick on Add Deal (server-only) |

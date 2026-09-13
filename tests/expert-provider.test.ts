@@ -64,14 +64,14 @@ describe("expert model provider selection", () => {
     expect(resolved.modelId).toBe("grok-4.6");
   });
 
-  it("uses Gateway xai/grok-4.5 when AI_GATEWAY_API_KEY is present", () => {
+  it("uses Gateway spacexai/grok-4.6 when AI_GATEWAY_API_KEY is present", () => {
     const resolved = resolveExpertProvider(bareEnv({ AI_GATEWAY_API_KEY: "gw_test" }));
     expect(resolved.provider).toBe("gateway");
     expect(resolved.modelId).toBe(DEFAULT_GROK_GATEWAY_MODEL);
-    expect(resolved.modelId).toBe("xai/grok-4.5");
+    expect(resolved.modelId).toBe("spacexai/grok-4.6");
     expect(resolved.banner).toBe("grok");
     expect(expertAiEnabled(bareEnv({ AI_GATEWAY_API_KEY: "gw_test" }))).toBe(true);
-    expect(expertModelId(bareEnv({ AI_GATEWAY_API_KEY: "gw_test" }))).toBe("xai/grok-4.5");
+    expect(expertModelId(bareEnv({ AI_GATEWAY_API_KEY: "gw_test" }))).toBe("spacexai/grok-4.6");
   });
 
   it("does not treat VERCEL_OIDC_TOKEN alone as live Grok", () => {
@@ -85,7 +85,7 @@ describe("expert model provider selection", () => {
     const resolved = resolveExpertProvider(bareEnv());
     expect(resolved.provider).toBe("none");
     expect(resolved.banner).toBe("offline");
-    expect(resolved.modelId).toBe("xai/grok-4.5");
+    expect(resolved.modelId).toBe("spacexai/grok-4.6");
     expect(expertAiEnabled(bareEnv())).toBe(false);
     expect(expertBannerCopy("grok")).toBe("Grok connected");
     expect(expertBannerCopy("live")).toBe("Grok connected");
@@ -97,7 +97,15 @@ describe("expert model provider selection", () => {
       bareEnv({ AI_GATEWAY_API_KEY: "gw", XAI_API_KEY: "xai" }),
     );
     expect(resolved.provider).toBe("gateway");
-    expect(resolved.modelId).toBe("xai/grok-4.5");
+    expect(resolved.modelId).toBe("spacexai/grok-4.6");
+  });
+
+  it("honors an explicit Gateway EXPERT_MODEL", () => {
+    const resolved = resolveExpertProvider(
+      bareEnv({ AI_GATEWAY_API_KEY: "gw", EXPERT_MODEL: "spacexai/grok-4.6" }),
+    );
+    expect(resolved.provider).toBe("gateway");
+    expect(resolved.modelId).toBe("spacexai/grok-4.6");
   });
 });
 
@@ -228,7 +236,7 @@ describe("expert chat API validation (still 400 on bad body)", () => {
 
 describe("expert system prompt mastery", () => {
   it("locks Grok coach rules and the CRE audience matrix", () => {
-    expect(EXPERT_SYSTEM_PROMPT).toMatch(/xai\/grok-4\.5/);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/spacexai\/grok-4\.6/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/grok-4\.6/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/api\.x\.ai/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/read-only/i);
