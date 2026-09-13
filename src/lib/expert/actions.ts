@@ -1,3 +1,4 @@
+import { isDeleteDealQuery } from "./feature-intents";
 import { describePage, withContext } from "./nav";
 import type {
   AnomalyFlag,
@@ -94,6 +95,16 @@ const IMPORT_RR_CHIP: ExpertChip = {
 
 function queryChips(q: string): ExpertChip[] | null {
   if (!q) return null;
+  if (isDeleteDealQuery(q)) {
+    return [
+      {
+        id: "deals_list",
+        label: "Open Deals list",
+        prompt: "Show me the Deals list click path. Do not invent a delete button.",
+      },
+      ADD_DEAL_CHIP,
+    ];
+  }
   if (/add (a )?new deal|new deal|add deal|onboard/.test(q)) {
     return [ADD_DEAL_CHIP, IMPORT_RR_CHIP];
   }
@@ -157,6 +168,26 @@ export function rankSuggestedActions(
   const page = ctx.pathname;
   const viewer = isViewer(ctx.accessRole);
   const q = userText.trim().toLowerCase();
+
+  if (isDeleteDealQuery(q)) {
+    const dealActions: ExpertSuggestedAction[] = [
+      {
+        id: "act_deals",
+        kind: "navigate",
+        label: "Open Deals",
+        href: dest("/deals", ctx),
+      },
+    ];
+    if (!viewer) {
+      dealActions.push({
+        id: "act_add_deal",
+        kind: "navigate",
+        label: "Open Add Deal",
+        href: dest("/deals/new", ctx),
+      });
+    }
+    return dealActions;
+  }
 
   if (/noi/.test(q) && !/dscr|debt|missing/.test(q)) {
     const noiActions: ExpertSuggestedAction[] = [

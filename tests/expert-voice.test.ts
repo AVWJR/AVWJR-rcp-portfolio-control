@@ -1,4 +1,4 @@
-import { rankChips } from "@/lib/expert/actions";
+import { rankChips, rankSuggestedActions } from "@/lib/expert/actions";
 import { answerOffline, buildOpener, type OfflineBundle } from "@/lib/expert/offline-coach";
 import { readExpertContext } from "@/lib/expert/nav";
 import { buildSystemForTurn, summarizeExpertSnapshot } from "@/lib/expert/snapshot";
@@ -128,8 +128,11 @@ describe("expert coach voice", () => {
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/Do not recite related acronyms/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/Do not spray flags on open/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/clarifying question/i);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/does not delete SPEs/i);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/master of every page/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/1–3/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/spacexai\/grok-4\.6/);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/xai\/grok-4\.6/);
   });
 
   it("opens with a short greeting, not a watchlist essay", () => {
@@ -173,6 +176,33 @@ describe("expert coach voice", () => {
     const reply = answerOffline("hmm", ctx, flagHeavyBundle);
     expect(reply.content).toMatch(/not sure|clarif|asking about/i);
     expect(reply.content).not.toMatch(/LTV is gated|completeness 62|Leading items/i);
+  });
+
+  it("answers a clear delete-deal how-to without the vague clarifier", () => {
+    const ctx = readExpertContext("/dashboard/SPE-HCR", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
+    const reply = answerOffline("I need to delete a deal. How?", ctx, flagHeavyBundle);
+    expect(reply.content).toMatch(/does not delete SPEs yet/i);
+    expect(reply.content).toMatch(/not available on main yet|not available yet/i);
+    expect(reply.content).toMatch(/Deals/);
+    expect(reply.content).not.toMatch(/\]\(\/archive|href=.*archive/i);
+    expect(reply.content).not.toMatch(/number on this page/i);
+    expect(reply.content).not.toMatch(/something missing/i);
+    expect(reply.content).not.toMatch(/covenant watch/i);
+    expect(reply.chips?.some((c) => /covenant|dscr|vault|rent roll/i.test(c.label))).toBe(false);
+    expect(reply.chips?.some((c) => /Deals|Add a new deal/i.test(c.label))).toBe(true);
+    const actions = rankSuggestedActions(ctx, flagHeavyBundle, "I need to delete a deal. How?");
+    expect(actions.some((a) => a.href?.includes("/deals"))).toBe(true);
+    expect(actions.some((a) => /covenant/i.test(a.label))).toBe(false);
+  });
+
+  it("answers other clear feature how-tos instead of clarifying", () => {
+    const ctx = readExpertContext("/", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
+    const vault = answerOffline("How do I file a lease in the vault?", ctx, flagHeavyBundle);
+    expect(vault.content).toMatch(/Vault/i);
+    expect(vault.content).not.toMatch(/number on this page/i);
+    const narratives = answerOffline("How do I open Narratives?", ctx, flagHeavyBundle);
+    expect(narratives.content).toMatch(/Narratives/i);
+    expect(narratives.content).not.toMatch(/Are you asking about a number/i);
   });
 
   it("summarizes the tool snapshot instead of stuffing every flag into the model turn", () => {

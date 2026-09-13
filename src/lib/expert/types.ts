@@ -150,6 +150,8 @@ export type ExpertChatResponse = {
   modelId: string;
   banner: ExpertBannerKind;
   message: ExpertMessage;
+  /** Set when a live model was expected but the reply came from the offline coach. */
+  fallbackReason?: string;
 };
 
 export type ExpertStreamEvent =
@@ -162,4 +164,5 @@ export type ExpertStreamEvent =
       mode: "offline" | "ai";
     }
   | { type: "delta"; text: string }
+  | { type: "error"; message: string }
   | { type: "done"; response: ExpertChatResponse };

@@ -66,6 +66,8 @@ export function ExpertRoot() {
   const [banner, setBanner] = useState<ExpertBannerKind>("offline");
   const [accessRole, setAccessRole] = useState<ExpertAccessRole | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveConfirmed, setLiveConfirmed] = useState(false);
   const [composer, setComposer] = useState("");
   const [score, setScore] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -95,6 +97,8 @@ export function ExpertRoot() {
       openedFor.current = key;
       setPending(true);
       setError(null);
+      setLiveError(null);
+      setLiveConfirmed(false);
       try {
         const params = new URLSearchParams({
           entity: ctx.entityCode,
@@ -110,15 +114,43 @@ export function ExpertRoot() {
           opener?: ExpertMessage;
           completeness?: { score?: number };
         };
-        setAiEnabled(Boolean(data.aiEnabled));
+        const live = Boolean(data.aiEnabled);
+        setAiEnabled(live);
         setBanner(data.banner === "grok" || data.banner === "live" ? data.banner : "offline");
         if (data.context?.accessRole) setAccessRole(data.context.accessRole);
         if (typeof data.completeness?.score === "number") setScore(data.completeness.score);
-        if (force || stored.length === 0) {
-          if (data.opener) setMessages([data.opener]);
-        } else {
+        if (!force && stored.length > 0) {
           setMessages(stored);
+          return;
         }
+        if (live) {
+          try {
+            const openCtx = data.context?.accessRole ? { ...ctx, accessRole: data.context.accessRole } : ctx;
+            const chatRes = await fetch("/api/expert/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intent: "open", stream: true, context: openCtx }),
+            });
+            const contentType = chatRes.headers.get("content-type") ?? "";
+            if (!chatRes.ok) {
+              await consumeJsonChat(chatRes, []);
+              const opener = data.opener;
+              if (opener) setMessages((prev) => (prev.length ? prev : [opener]));
+              return;
+            }
+            if (contentType.includes("ndjson")) {
+              await consumeStreamChat(chatRes, []);
+              return;
+            }
+            await consumeJsonChat(chatRes, []);
+            return;
+          } catch {
+            setError("Expert could not reach live Grok. Using offline coach.");
+            if (data.opener) setMessages([data.opener]);
+            return;
+          }
+        }
+        if (data.opener) setMessages([data.opener]);
       } catch {
         setError("Expert context is unavailable. The rest of the app is fine.");
       } finally {
@@ -177,6 +209,13 @@ export function ExpertRoot() {
     }
     setAiEnabled(data.aiEnabled);
     setBanner(data.banner);
+    if (data.fallbackReason) {
+      setLiveError(data.fallbackReason);
+      setLiveConfirmed(false);
+    } else if (data.mode === "ai") {
+      setLiveError(null);
+      setLiveConfirmed(true);
+    }
     setMessages([...next, data.message]);
   }
 
@@ -214,6 +253,8 @@ export function ExpertRoot() {
       if (event.type === "start") {
         setAiEnabled(event.aiEnabled);
         setBanner(event.banner);
+      } else if (event.type === "error") {
+        setLiveError(event.message);
       } else if (event.type === "delta") {
         setMessages((prev) =>
           prev.map((message) =>
@@ -223,6 +264,13 @@ export function ExpertRoot() {
       } else if (event.type === "done") {
         setAiEnabled(event.response.aiEnabled);
         setBanner(event.response.banner);
+        if (event.response.fallbackReason) {
+          setLiveError(event.response.fallbackReason);
+          setLiveConfirmed(false);
+        } else if (event.response.mode === "ai") {
+          setLiveError(null);
+          setLiveConfirmed(true);
+        }
         setMessages((prev) => prev.map((message) => (message.id === draftId ? event.response.message : message)));
       }
     }
@@ -242,6 +290,8 @@ export function ExpertRoot() {
     setMessages(next);
     setPending(true);
     setError(null);
+    setLiveError(null);
+    setLiveConfirmed(false);
     try {
       const res = await fetch("/api/expert/chat", {
         method: "POST",
@@ -304,7 +354,9 @@ export function ExpertRoot() {
             messages={messages}
             pending={pending}
             aiEnabled={aiEnabled}
-            error={error}
+            error={error ?? liveError}
+            degraded={Boolean(liveError)}
+            liveReady={liveConfirmed}
             completenessScore={score}
             onClose={closePanel}
             onMinimize={() => setState("minimized")}

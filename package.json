@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/prisma-prepare.mjs -- generate && next build",
-    "vercel-build": "node scripts/prisma-prepare.mjs -- generate && node scripts/prisma-prepare.mjs -- db push --skip-generate && next build",
+    "vercel-build": "node scripts/prisma-prepare.mjs -- generate && PRISMA_PUSH_TOLERATE_DRIFT=1 node scripts/prisma-prepare.mjs -- db push --skip-generate && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",

@@ -26,6 +26,8 @@ export function ExpertPanel({
   onAction,
   onCopy,
   banner,
+  degraded,
+  liveReady,
   composer,
   setComposer,
   panelRef,
@@ -43,6 +45,8 @@ export function ExpertPanel({
   onAction: (action: ExpertSuggestedAction) => void;
   onCopy: () => void;
   banner: ExpertBannerKind;
+  degraded?: boolean;
+  liveReady?: boolean;
   composer: string;
   setComposer: (value: string) => void;
   panelRef: RefObject<HTMLDivElement | null>;
@@ -73,6 +77,17 @@ export function ExpertPanel({
   }
 
   const shownBanner: ExpertBannerKind = aiEnabled ? banner : "offline";
+  const display: "offline" | "degraded" | "connecting" | "unconfirmed" | "grok" | "live" = !aiEnabled
+    ? "offline"
+    : degraded
+      ? "degraded"
+      : liveReady
+        ? shownBanner === "offline"
+          ? "grok"
+          : shownBanner
+        : pending
+          ? "connecting"
+          : "unconfirmed";
   const lastExpert = [...messages].reverse().find((m) => m.role === "expert");
   const lastChips: ExpertChip[] = lastExpert?.chips ?? [];
   const lastActions: ExpertSuggestedAction[] = lastExpert?.actions ?? [];
@@ -145,17 +160,43 @@ export function ExpertPanel({
       </header>
 
       <div
-        data-testid={shownBanner === "offline" ? "expert-offline-banner" : "expert-live-banner"}
+        data-testid={
+          display === "offline"
+            ? "expert-offline-banner"
+            : display === "degraded"
+              ? "expert-degraded-banner"
+              : display === "connecting"
+                ? "expert-connecting-banner"
+                : display === "unconfirmed"
+                  ? "expert-unconfirmed-banner"
+                  : "expert-live-banner"
+        }
         className={
-          shownBanner === "offline"
+          display === "offline" || display === "degraded" || display === "connecting" || display === "unconfirmed"
             ? "border-b border-gold-500 bg-gold-100 px-3 py-1.5 text-[11px] text-navy-900"
             : "border-b border-emerald-700 bg-emerald-50 px-3 py-1.5 text-[11px] text-emerald-900"
         }
       >
-        {shownBanner === "offline"
+        {display === "offline"
           ? `${expertBannerCopy("offline")}. Coaching still uses live completeness and anomaly tools.`
-          : `${expertBannerCopy(shownBanner)}. Streaming live replies; tools stay read-only until you confirm a write.`}
+          : display === "degraded"
+            ? `${expertBannerCopy(shownBanner, { degraded: true })}. Coaching still uses live completeness and anomaly tools.`
+            : display === "connecting"
+              ? `${expertBannerCopy(shownBanner, { connecting: true })}. If this fails, the offline coach stays as last resort.`
+              : display === "unconfirmed"
+                ? "Grok key is set. Last reply was not live — send a message to retry."
+                : `${expertBannerCopy(shownBanner)}. Streaming live replies; tools stay read-only until you confirm a write.`}
       </div>
+
+      {error ? (
+        <p
+          data-testid="expert-error-strip"
+          role="status"
+          className="border-b border-gold-500 bg-gold-100 px-3 py-1.5 text-[12px] text-navy-900"
+        >
+          {error}
+        </p>
+      ) : null}
 
       <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
         {messages.map((message) => (
@@ -183,10 +224,11 @@ export function ExpertPanel({
         ))}
         {pending ? (
           <p className="text-[12px] italic text-ink-500" aria-live="polite">
-            {shownBanner === "grok" ? "Grok is reviewing the live books…" : "Expert is reviewing the live books…"}
+            {shownBanner === "grok" && !degraded
+              ? "Grok is reviewing the live books…"
+              : "Expert is reviewing the live books…"}
           </p>
         ) : null}
-        {error ? <p className="text-[12px] text-navy-800">{error}</p> : null}
       </div>
 
       {lastActions.length || lastChips.length ? (

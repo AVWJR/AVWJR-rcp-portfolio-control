@@ -6,8 +6,12 @@ import {
   expertAiEnabled,
   expertBannerCopy,
   expertModelId,
+  gatewayModelCandidates,
+  liveFallbackReason,
+  publicErrorMessage,
   resolveExpertProvider,
   toDirectXaiModelId,
+  toGatewayModelId,
 } from "@/lib/expert/ai-enabled";
 import { runExpertChat, validateChatBody } from "@/lib/expert/chat";
 import { readExpertContext } from "@/lib/expert/nav";
@@ -56,6 +60,11 @@ describe("expert model provider selection", () => {
     expect(resolved.modelId).toBe("grok-4.5");
     expect(toDirectXaiModelId("xai/grok-3-mini")).toBe("grok-3-mini");
     expect(toDirectXaiModelId("spacexai/grok-4.6")).toBe("grok-4.6");
+    expect(toGatewayModelId("xai/grok-4.6")).toBe("spacexai/grok-4.6");
+    expect(toGatewayModelId("grok-4.6")).toBe("spacexai/grok-4.6");
+    expect(toGatewayModelId("spacexai/grok-4.6")).toBe("spacexai/grok-4.6");
+    expect(toGatewayModelId("openai/gpt-5.4")).toBe("openai/gpt-5.4");
+    expect(gatewayModelCandidates("xai/grok-4.6")).toEqual(["spacexai/grok-4.6", "xai/grok-4.6"]);
   });
 
   it("honors EXPERT_MODEL on the direct xAI path", () => {
@@ -106,6 +115,30 @@ describe("expert model provider selection", () => {
     );
     expect(resolved.provider).toBe("gateway");
     expect(resolved.modelId).toBe("spacexai/grok-4.6");
+  });
+
+  it("rewrites a docs-era xai/ Gateway slug to the current catalog id", () => {
+    const resolved = resolveExpertProvider(
+      bareEnv({ AI_GATEWAY_API_KEY: "gw", EXPERT_MODEL: "xai/grok-4.6" }),
+    );
+    expect(resolved.provider).toBe("gateway");
+    expect(resolved.modelId).toBe(DEFAULT_GROK_GATEWAY_MODEL);
+    expect(resolved.modelId).toBe("spacexai/grok-4.6");
+  });
+});
+
+describe("expert live fallback copy", () => {
+  it("redacts secrets and maps Gateway failures to one line", () => {
+    expect(publicErrorMessage(new Error("AI_GATEWAY_API_KEY=sk-secret"))).toMatch(/could not read live books/i);
+    expect(publicErrorMessage(new Error("404 model not found"))).toMatch(/EXPERT_MODEL=spacexai\/grok-4\.6/);
+    expect(publicErrorMessage(new Error("401 Unauthorized"))).toMatch(/rejected the key/i);
+    expect(publicErrorMessage(new Error("No output generated. Check the stream for errors."))).toMatch(
+      /Gateway returned no text/,
+    );
+    expect(expertBannerCopy("grok", { degraded: true })).toMatch(/Live Grok failed/i);
+    const reason = liveFallbackReason(new Error("unknown model spacexai/nope"), "spacexai/nope");
+    expect(reason).toMatch(/Live Grok \(spacexai\/nope\) failed/);
+    expect(reason).toMatch(/offline coach/i);
   });
 });
 
@@ -198,6 +231,9 @@ describe("expert suggested actions + stream parse", () => {
     );
     expect(start?.type).toBe("start");
     if (start?.type === "start") expect(start.modelId).toBe("grok-4.6");
+    const err = parseExpertStreamLine(JSON.stringify({ type: "error", message: "Live Grok failed — using offline coach." }));
+    expect(err?.type).toBe("error");
+    if (err?.type === "error") expect(err.message).toMatch(/offline coach/i);
   });
 });
 
