@@ -95,7 +95,7 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
   const overlay = applied.results.find((row) => row.kind === "t12_overlay" && row.imported);
   if (overlay?.imported) {
     gaps.push(
-      `Broker T12 overlay wrote ${overlay.imported} monthly budget line(s) for ${uniqueCode}. Period GL tiles stay $0 until books are posted — use the dashboard overlay strip for EGI/NOI.`,
+      `Broker T12 overlay wrote ${overlay.imported} monthly budget line(s) for ${uniqueCode} and labeled broker_t12_overlay journals on the demo period. Cash-book codes (4022-000 etc.) are mapped to RCP CoA — not audited books.`,
     );
   }
 

@@ -20,6 +20,7 @@ export type RentRollColumnMap = Partial<Record<RentRollField | "beds_baths" | "b
 
 const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "resident", string[]> = {
   unit: [
+    "unitid",
     "unit_id",
     "unit id",
     "unit number",
@@ -47,6 +48,8 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
     "floorplan name",
     "floorplan code",
     "plan name",
+    "planid",
+    "plan id",
     "flrpln",
     "plan",
     "fp",
@@ -55,15 +58,28 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
   beds: ["bedrooms", "bedroom", "beds", "bed", "bdrms", "bdrm", "br", "bd"],
   baths: ["bathrooms", "bathroom", "baths", "bath", "ba"],
   beds_baths: ["bd ba", "beds baths", "bed bath", "br ba", "bds bas", "bed/bath", "bd/ba"],
-  sqft: ["square footage", "square feet", "unit sf", "sq ft", "sqft", "sf", "nra", "nsa"],
-  status: ["occupancy status", "unit occupancy", "unit status", "occ status", "occupancy", "occupied", "status", "occ"],
+  sqft: ["square footage", "square feet", "unit sf", "net sf", "netsf", "sq ft", "sqft", "sf", "nra", "nsa"],
+  status: [
+    "occupancy status",
+    "status occupancy",
+    "unit occupancy",
+    "unit status",
+    "occstatus",
+    "occ status",
+    "occupancy",
+    "occupied",
+    "status",
+    "occ",
+  ],
   market_rent: [
     "market rent",
+    "rent market",
     "asking rent",
     "street rent",
     "proforma rent",
     "monthly market",
     "scheduled market",
+    "mktrent",
     "mkt rent",
     "market",
     "asking",
@@ -71,7 +87,9 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
   ],
   in_place_rent: [
     "in_place_rent",
+    "inplacerent",
     "in place rent",
+    "rent contractual",
     "resident rent",
     "leased rent",
     "lease rent",
@@ -81,6 +99,8 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
     "charge amt",
     "in-place rent",
     "rent amount",
+    "code1",
+    "code 1",
     "charges",
     "in place",
     "actual",
@@ -88,10 +108,13 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
   ],
   lease_start: [
     "lease_start",
+    "leasesign",
+    "lease sign",
     "lease start",
     "lease from",
     "lease begin",
     "start date",
+    "moveindate",
     "move in date",
     "move-in",
     "move in",
@@ -99,6 +122,8 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
   ],
   lease_end: [
     "lease_end",
+    "leaseexp",
+    "lease exp",
     "lease end",
     "lease expiration",
     "lease expire",
@@ -108,7 +133,7 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
     "expiration",
     "le date",
   ],
-  concession: ["concessions", "concession", "free rent", "conc"],
+  concession: ["recconc", "rec conc", "concessions", "concession", "free rent", "conc"],
 };
 
 export function normalizeHeader(value: string): string {
@@ -166,6 +191,18 @@ export function mapRentRollHeaders(headers: string[]): {
   return { map, missing, detected: headers.filter((h) => h.trim()) };
 }
 
+export function rediqMachineHeaderBonus(headers: string[]): number {
+  const compact = headers.map((h) => normalizeHeader(h).replace(/\s+/g, ""));
+  let bonus = 0;
+  if (compact.includes("unitid")) bonus += 12;
+  if (compact.includes("occstatus")) bonus += 6;
+  if (compact.includes("mktrent")) bonus += 6;
+  if (compact.includes("inplacerent")) bonus += 6;
+  if (compact.includes("netsf")) bonus += 3;
+  if (compact.includes("planid")) bonus += 2;
+  return bonus;
+}
+
 export function scoreRentRollHeaderRow(headers: string[]): number {
   const { map } = mapRentRollHeaders(headers);
   let score = 0;
@@ -177,7 +214,7 @@ export function scoreRentRollHeaderRow(headers: string[]): number {
   if (map.beds != null || map.beds_baths != null) score += 1;
   if (map.sqft != null) score += 1;
   if (map.lease_start != null || map.lease_end != null) score += 1;
-  return score;
+  return score + rediqMachineHeaderBonus(headers);
 }
 
 function mergeHeaderCells(top: string, bot: string): string {
@@ -203,18 +240,23 @@ export function findRentRollHeader(
   maxScan = 40,
 ): { index: number; headers: string[]; score: number } | null {
   const limit = Math.min(rows.length, maxScan);
+  let best: { index: number; headers: string[]; score: number } | null = null;
+  const consider = (index: number, headers: string[], score: number) => {
+    if (score < 8) return;
+    if (!best || score > best.score) best = { index, headers, score };
+  };
   for (let i = 0; i < limit; i += 1) {
     const single = rows[i] ?? [];
-    const singleScore = scoreRentRollHeaderRow(single);
-    if (singleScore >= 8) return { index: i, headers: single, score: singleScore };
+    consider(i, single, scoreRentRollHeaderRow(single));
   }
+  if (best && rediqMachineHeaderBonus(best.headers) >= 12) return best;
   for (let i = 0; i < limit; i += 1) {
     const next = rows[i + 1];
     if (!next) continue;
     const merged = mergeHeaderRows(rows[i] ?? [], next);
-    const mergedScore = scoreRentRollHeaderRow(merged);
-    if (mergedScore >= 8) return { index: i + 1, headers: merged, score: mergedScore };
+    consider(i + 1, merged, scoreRentRollHeaderRow(merged));
   }
+  if (best) return best;
   const inferred = inferUnitColumnFromRows(rows);
   if (inferred != null) {
     const probe = rows.find((row) => scoreRentRollHeaderRow(row) > 0) ?? rows[0] ?? [];
@@ -321,7 +363,10 @@ function looksLikeSummary(unitCode: string, cols: string[]): boolean {
 }
 
 function looksLikeHeaderRepeat(unitCode: string): boolean {
-  return /^(unit|unit id|unit nbr|bldg|building|status|resident|market|charges|type)$/i.test(unitCode.trim());
+  const compact = unitCode.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return /^(unit|unitid|unitno|unitnbr|unitnumber|propname|planid|bldg|building|status|occstatus|renstatus|resident|market|mktrent|inplacerent|charges|netsf|type)$/.test(
+    compact,
+  );
 }
 
 function parseNonNegNumber(raw: string, field: string, line: number, integer: boolean, lenient: boolean): number {

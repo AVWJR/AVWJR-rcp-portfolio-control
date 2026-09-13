@@ -26,7 +26,7 @@ const SKIP_LABEL =
   /^(income|expense|expenses|operating expenses|revenue|revenues|other|totals?|subtotals?|net operating|noi|egi|egr|effective gross|net income|ebitda|below noi|debt service|cap(?:ital)? ex|depreciation|amortization)$/i;
 
 const ACCOUNT_ALIASES: { code: string; re: RegExp }[] = [
-  { code: "4010", re: /\b(gpr|gross potential|potential rent|apartment rent|residential rent|rental income|base rent|gross rent)\b/i },
+  { code: "4010", re: /\b(gpr|gross potential|potential rent|apartment rent|residential rent|unit rent|rental income|base rent|gross rent)\b/i },
   { code: "4020", re: /\b(vacancy|vacancy loss|loss to vacancy)\b/i },
   { code: "4030", re: /\b(concessions?|free rent|loss to lease|ltl)\b/i },
   { code: "4100", re: /\b(other income|laundry|parking|pet(s)? fee|misc(?:ellaneous)? income|utility reimb|ancillary)\b/i },
@@ -43,6 +43,36 @@ const ACCOUNT_ALIASES: { code: string; re: RegExp }[] = [
   { code: "6110", re: /\b(interest|mortgage interest)\b/i },
 ];
 
+/** Yardi cash-book prefixes (4022-000 Unit Rent) → RCP CoA. */
+export function mapYardiCodeToAccount(code: string, label = ""): string | null {
+  const n = Number(code);
+  if (!Number.isInteger(n)) return null;
+  const hay = `${code} ${label}`;
+  if (n >= 4022 && n <= 4029) return "4010";
+  if (n >= 4000 && n <= 4019) return "4010";
+  if (n >= 4030 && n <= 4034) return /concession|free rent|ltl|loss to lease/i.test(hay) ? "4030" : "4020";
+  if (n >= 4035 && n <= 4039) return "4030";
+  if (n >= 4100 && n <= 4199) return "4100";
+  if (n >= 5100 && n <= 5199) return "5110";
+  if (n >= 5200 && n <= 5299) return "5210";
+  if (n >= 5300 && n <= 5399) return "5310";
+  if (n >= 5400 && n <= 5499) return "5410";
+  if (n >= 5500 && n <= 5599) return "5510";
+  if (n >= 5600 && n <= 5699) return "5610";
+  if (n >= 5700 && n <= 5799) return "5710";
+  if (n >= 5800 && n <= 5899) return "5810";
+  if (n >= 5900 && n <= 5919) return "5910";
+  if (n >= 5920 && n <= 5999) return "5990";
+  if (n >= 6100 && n <= 6199) return "6110";
+  return null;
+}
+
+function stripYardiPrefix(label: string): { code: string | null; rest: string } {
+  const match = label.match(/^(\d{4})(?:-\d{3})?\s*(.*)$/);
+  if (!match) return { code: null, rest: label };
+  return { code: match[1]!, rest: match[2] ?? "" };
+}
+
 const MONTH_HEADER =
   /^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(\s|-|\/)?(\d{2,4})?$/i;
 
@@ -52,26 +82,36 @@ function normalizeLabel(value: string): string {
 
 export function mapT12LabelToAccount(label: string): string | null {
   const text = normalizeLabel(label);
-  if (!text || SKIP_LABEL.test(text)) return null;
+  if (!text) return null;
+  const { code: yardi, rest } = stripYardiPrefix(text);
+  const desc = normalizeLabel(rest || text);
+  if (SKIP_LABEL.test(desc) || SKIP_LABEL.test(text)) return null;
   for (const row of ACCOUNT_ALIASES) {
-    if (row.re.test(text)) return row.code;
+    if (row.re.test(desc) || row.re.test(text)) return row.code;
   }
+  if (yardi) return mapYardiCodeToAccount(yardi, desc);
   return null;
+}
+
+function cellLooksLikeMonth(raw: string): boolean {
+  const v = raw.trim().split(/\n/)[0]?.trim() ?? "";
+  if (!v) return false;
+  if (MONTH_HEADER.test(v)) return true;
+  if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(v)) return true;
+  if (/^\d{1,2}[./-]\d{4}$/.test(v) || /^\d{4}-\d{2}/.test(v)) return true;
+  return false;
 }
 
 function headerLooksLikeMonths(cells: string[]): number[] {
   const idxs: number[] = [];
   cells.forEach((cell, i) => {
-    const v = cell.trim();
-    if (!v) return;
-    if (MONTH_HEADER.test(v)) idxs.push(i);
-    else if (/^\d{1,2}[./-]\d{4}$/.test(v) || /^\d{4}-\d{2}/.test(v)) idxs.push(i);
+    if (cellLooksLikeMonth(cell)) idxs.push(i);
   });
   return idxs;
 }
 
 function findT12Header(rows: string[][]): { index: number; months: number[]; totalCol: number | null; labelCol: number } | null {
-  for (let i = 0; i < Math.min(rows.length, 20); i += 1) {
+  for (let i = 0; i < Math.min(rows.length, 30); i += 1) {
     const row = rows[i] ?? [];
     const months = headerLooksLikeMonths(row);
     if (months.length >= 2) {
@@ -122,8 +162,10 @@ export function parseT12WorkbookRows(rows: string[][], sheet: string): T12Workbo
   let monthCount = header.months.length;
 
   rows.slice(header.index + 1).forEach((cols, i) => {
-    const label = normalizeLabel(cols[header.labelCol] ?? cols[0] ?? "");
-    if (!label || SKIP_LABEL.test(label)) return;
+    const primary = cols[header.labelCol] ?? cols[0] ?? "";
+    const next = header.labelCol === 0 && cols[1] && !cellLooksLikeMonth(cols[1]) && !/^(t12|total)/i.test(cols[1]) ? cols[1] : "";
+    const label = normalizeLabel(next && !primary.includes(next) ? `${primary} ${next}` : primary);
+    if (!label || SKIP_LABEL.test(stripYardiPrefix(label).rest || label)) return;
     const code = mapT12LabelToAccount(label);
     if (!code) {
       if (!/^(total|noi|egi|income|expense)/i.test(label)) unmapped.push(label);

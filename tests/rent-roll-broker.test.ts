@@ -1,8 +1,14 @@
-import { workbookToCsv } from "@/lib/deals/workbook";
-import { CsvParseError, parseRentRollCsv } from "@rcp/properties";
+import { selectRentRollSheet, workbookToCsv } from "@/lib/deals/workbook";
+import { CsvParseError, findRentRollHeader, parseRentRollCsv } from "@rcp/properties";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { read } from "xlsx";
 import {
   HARRINGTON_BROKER_CSV,
+  HARRINGTON_REDIQ_UNIT_COUNT,
+  buildHarringtonRediqUnits,
+  harringtonRediqRentRollWorkbook,
   harringtonRentRollWorkbook,
   harringtonYardiResiWorkbook,
   unmappableWorkbook,
@@ -45,6 +51,30 @@ describe("broker rent-roll mapping", () => {
     expect(units[2]?.bathsTenths).toBe(20);
     expect(units[3]?.bathsTenths).toBe(25);
     expect(units[4]?.status).toBe("DOWN");
+  });
+
+  it("prefers redIQ machine headers (R9 UnitID/MktRent/InPlaceRent/OccStatus) over human R8", () => {
+    const units = buildHarringtonRediqUnits();
+    expect(units).toHaveLength(HARRINGTON_REDIQ_UNIT_COUNT);
+    const csv = workbookToCsv(harringtonRediqRentRollWorkbook(), "RR_-_Harrington_-_12.31.19_-_Resi.xlsx");
+    expect(csv.split(/\r?\n/)[0]).toMatch(/UnitID/);
+    expect(csv.split(/\r?\n/)[0]).toMatch(/MktRent/);
+    expect(csv.split(/\r?\n/)[0]).not.toMatch(/Unit No/);
+    const parsed = parseRentRollCsv(csv);
+    expect(parsed).toHaveLength(175);
+    expect(parsed[0]?.unitCode).toBe("A-01");
+    expect(parsed.find((u) => u.bathsTenths === 15)).toBeTruthy();
+    expect(parsed.find((u) => u.bathsTenths === 25)).toBeTruthy();
+    expect(parsed.some((u) => u.status === "OCCUPIED")).toBe(true);
+    expect(parsed.some((u) => u.status === "VACANT")).toBe(true);
+    const wb = read(harringtonRediqRentRollWorkbook(), { type: "buffer", raw: false });
+    const selected = selectRentRollSheet(wb);
+    expect(selected?.name).toBe("Rent Roll");
+    const found = findRentRollHeader(selected!.rows);
+    expect(found?.headers).toContain("UnitID");
+    expect(found?.headers).toContain("OccStatus");
+    const onDisk = readFileSync(resolve("data/samples/harrington/RR_-_Harrington_-_12.31.19_-_Resi.xlsx"));
+    expect(parseRentRollCsv(workbookToCsv(onDisk, "RR_-_Harrington_-_12.31.19_-_Resi.xlsx"))).toHaveLength(175);
   });
 
   it("surfaces detected headers when the sheet is not a rent roll", () => {

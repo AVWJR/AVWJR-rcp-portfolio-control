@@ -98,8 +98,11 @@ function sheetRows(sheet: WorkSheet): string[][] {
 }
 
 function sheetNameScore(name: string): number {
-  const lower = name.toLowerCase();
-  if (/cover|instr|toc|summary|index|check/.test(lower)) return -8;
+  const lower = name.trim().toLowerCase();
+  if (lower === "rent roll" || lower === "rentroll") return 24;
+  if (lower === "source data" || lower === "sourcedata") return 4;
+  if (/^(floor plan|floorplan|about|sheet\d+|cover)$/.test(lower)) return -12;
+  if (/cover|instr|toc|summary|index|check|about/.test(lower)) return -8;
   if (/rent|roll|unit|resi/.test(lower)) return 6;
   if (/budget/.test(lower)) return 2;
   return 0;
@@ -185,7 +188,9 @@ export function bytesToImportCsv(filename: string, mimeType: string, bytes: Buff
 }
 
 function t12SheetNameScore(name: string): number {
-  const lower = name.toLowerCase();
+  const lower = name.trim().toLowerCase();
+  if (lower === "ext") return 16;
+  if (lower === "report1") return 14;
   if (/cover|instr|toc|index|check/.test(lower)) return -6;
   if (/t12|t-12|ttm|trailing|p&l|pnl|noi|operat/.test(lower)) return 8;
   if (/budget/.test(lower)) return 2;

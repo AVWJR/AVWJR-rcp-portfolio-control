@@ -10,7 +10,7 @@ import { getIntake, updateIntake } from "./intake";
 import type { DealGoal } from "./types";
 import { bytesToImportCsv, isSpreadsheetFilename, parseT12WorkbookBytes } from "./workbook";
 import { t12ParseToBudgetRows } from "@rcp/properties";
-import { BROKER_T12_SOURCE, overlayNoteFromParse } from "@/lib/t12-overlay";
+import { BROKER_T12_SOURCE, overlayNoteFromParse, postBrokerT12OverlayJournals } from "@/lib/t12-overlay";
 
 function coachStructuredImportError(filename: string, error: unknown): never {
   const raw = error instanceof Error ? error.message : String(error);
@@ -19,7 +19,7 @@ function coachStructuredImportError(filename: string, error: unknown): never {
   }
   if (/missing required column|unit_id|account_code|no rows we can read|file is empty/i.test(raw)) {
     throw new Error(
-      `${filename} is stored, but columns do not match the importer (${raw}). Broker rent-roll headers (Unit, Floorplan, Beds, Market Rent, Lease Rent, Status) are accepted. If this still fails, ask Expert — do not invent rows.`,
+      `${filename} is stored, but columns do not match the importer (${raw}). Broker rent-roll headers (UnitID, Unit No., OccStatus, MktRent, InPlaceRent, NetSF) are accepted. If this still fails, ask Expert — do not invent rows.`,
     );
   }
   throw error instanceof Error ? error : new Error(raw);
@@ -205,11 +205,23 @@ export async function applyStructuredData(opts: {
             rows,
             source: BROKER_T12_SOURCE,
           });
+          const postedLines = await postBrokerT12OverlayJournals({
+            entityId: intake.entityId,
+            year: period.year,
+            month: period.month,
+            parsed,
+            filename: loaded.file.filename,
+          });
           if (t12File.vaultDocumentId) {
             await prisma.vaultDocument.update({
               where: { id: t12File.vaultDocumentId },
               data: {
-                notes: overlayNoteFromParse(parsed, loaded.file.filename, `${period.year}-${String(period.month).padStart(2, "0")}`),
+                notes: overlayNoteFromParse(
+                  parsed,
+                  loaded.file.filename,
+                  `${period.year}-${String(period.month).padStart(2, "0")}`,
+                  postedLines > 0,
+                ),
               },
             });
           }
