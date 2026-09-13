@@ -54,7 +54,7 @@ export const LTV_TODO =
   "TODO: LTV/LTC needs an appraisal (or a documented cost-basis policy). Do not divide UPB by book PPE.";
 
 export const PHASE_E_NARRATIVES_TODO =
-  "TODO(Phase E): audience narratives and PDF packs. Dashboards stay book/ratio math only.";
+  "Phase E live: audience narratives and PDF/PPTX packs at /narratives. Dashboards stay book/ratio math only.";
 
 export * from "./types";
 export * from "./formulas";
