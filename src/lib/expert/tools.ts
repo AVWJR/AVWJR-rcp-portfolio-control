@@ -387,11 +387,15 @@ export async function getAnomalies(
       href: href("/close", entityCode, periodLabel),
     });
   } else if (openChecklist.length > 0) {
+    const preview = openChecklist
+      .slice(0, 3)
+      .map((item) => item.label)
+      .join("; ");
     flags.push({
       id: "checklist_open",
       severity: "watch",
       title: "Open close checklist items",
-      detail: openChecklist.map((item) => item.label).join("; "),
+      detail: `${openChecklist.length} of ${period.checklist.length} still open. ${preview}${openChecklist.length > 3 ? "…" : ""}`,
       source: "From Period Close checklist",
       href: href("/close", entityCode, periodLabel),
     });

@@ -41,6 +41,8 @@ Every page mounts a lower-right **Expert** FAB that opens a miniature coaching d
 
 Sample: [http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1](http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1)
 
+Screenshots: [FAB](./docs/expert/expert_fab.png) · [opener](./docs/expert/expert_panel_opener.png) · [SPE-WBG flags](./docs/expert/expert_anomaly_spe_wbg.png) · [mobile](./docs/expert/expert_mobile_sheet.png)
+
 `.env` default:
 
 ```
