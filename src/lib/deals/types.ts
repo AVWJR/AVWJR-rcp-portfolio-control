@@ -13,6 +13,7 @@ export type DealGoal = (typeof DEAL_GOALS)[number];
 export const DEAL_FILE_CLASSES = [
   "rent_roll_csv",
   "budget_csv",
+  "t12_pl",
   "loan_doc",
   "lease",
   "om_cim",
@@ -24,6 +25,7 @@ export type DealFileClass = (typeof DEAL_FILE_CLASSES)[number];
 export const DEAL_FILE_CLASS_LABELS: Record<DealFileClass, string> = {
   rent_roll_csv: "Rent-roll CSV / XLSX",
   budget_csv: "Budget CSV / XLSX",
+  t12_pl: "T12 / P&L workbook",
   loan_doc: "Loan document",
   lease: "Lease",
   om_cim: "OM / CIM",
@@ -33,8 +35,9 @@ export const DEAL_FILE_CLASS_LABELS: Record<DealFileClass, string> = {
 
 export const DEFAULT_OPCO_CODE = "RCP-OPCO";
 export const DEFAULT_TARGET_PERIOD = "2026-08";
-export const INTAKE_MAX_BYTES = 10 * 1024 * 1024;
-export const INTAKE_MAX_BYTES_LABEL = "10 MB";
+/** Per-file intake / vault cap. Sequential uploads stay under the Vercel 100 MB function body limit. */
+export const INTAKE_MAX_BYTES = 32 * 1024 * 1024;
+export const INTAKE_MAX_BYTES_LABEL = "32 MB";
 
 export const DEAL_WIZARD_STEPS = [
   { id: 1, key: "goal", title: "Goal", hint: "What are you onboarding?" },

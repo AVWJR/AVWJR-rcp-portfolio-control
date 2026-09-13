@@ -47,6 +47,10 @@ describe("intake file classification", () => {
     expect(guessClassification("willow-rent-roll.xlsx")).toBe("rent_roll_csv");
     expect(guessClassification("2026-08-budget.csv")).toBe("budget_csv");
     expect(guessClassification("2026-08-budget.xls")).toBe("budget_csv");
+    expect(guessClassification("RR_-_Harrington_-_12.31.19_-_Resi.xlsx")).toBe("rent_roll_csv");
+    expect(guessClassification("Life_at_Harrington_Park_OM_Offering.pdf")).toBe("om_cim");
+    expect(guessClassification("T12_NOI_-_Life_at_Harrington_-_11.2019.xlsx")).toBe("t12_pl");
+    expect(classificationToVaultKind("t12_pl")).toBe("other");
   });
 });
 

@@ -10,9 +10,18 @@ import {
   type DealFileSource,
   type DealGoal,
 } from "@/lib/deals/types";
+import {
+  formatUploadFailure,
+  initialUploadRows,
+  isUntitledDealName,
+  parseApiErrorText,
+  suggestIdentityFromFilenames,
+  workingTitle,
+  type UploadRow,
+} from "@/lib/deals/upload-client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type IntakeFile = {
   id: string;
@@ -81,19 +90,7 @@ function fieldClass() {
 }
 
 async function readApiError(res: Response, fallback: string): Promise<string> {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text) as { error?: string };
-    if (json.error) return json.error;
-  } catch {
-    // platform 413 / HTML error pages
-  }
-  if (res.status === 413) {
-    return `File is too large for this server (HTTP 413). Use a file under ${INTAKE_MAX_BYTES_LABEL}.`;
-  }
-  if (res.status === 429) return "Too many Add Deal requests. Wait a minute and retry.";
-  if (!text) return `${fallback} (HTTP ${res.status}).`;
-  return text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 280) || fallback;
+  return parseApiErrorText(res.status, await res.text(), fallback);
 }
 
 export function AddDealWizard({
@@ -106,7 +103,7 @@ export function AddDealWizard({
   periodLabels: string[];
 }) {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(3);
   const [intake, setIntake] = useState<Intake | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [busy, setBusy] = useState(false);
@@ -115,10 +112,19 @@ export function AddDealWizard({
   const [dropboxFiles, setDropboxFiles] = useState<{ id: string; name: string }[]>([]);
   const [emailFiles, setEmailFiles] = useState<{ id: string; name: string }[]>([]);
   const [selectedRemote, setSelectedRemote] = useState<string[]>([]);
-  const [uploads, setUploads] = useState<{ name: string; progress: "queued" | "uploading" | "done" | "error"; error?: string }[]>([]);
+  const [uploads, setUploads] = useState<UploadRow[]>([]);
+  const intakeRef = useRef<Intake | null>(null);
+  const draftLockRef = useRef<Promise<Intake> | null>(null);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [needsConfirm, setNeedsConfirm] = useState(false);
   const [completeness, setCompleteness] = useState<Completeness | null>(null);
+  const [ingestReport, setIngestReport] = useState<{
+    inferred: { speName: string | null; speCode: string | null; address: string | null };
+    created: { entityCode: string | null; entityName: string | null };
+    results: { kind: string; imported?: number; skipped?: string }[];
+    gaps: string[];
+  } | null>(null);
+  const ingestLockRef = useRef(false);
   const [form, setForm] = useState({
     goal: "value_add" as DealGoal,
     targetPeriod: "2026-08",
@@ -139,13 +145,18 @@ export function AddDealWizard({
   });
 
   const hydrate = useCallback((row: Intake) => {
+    intakeRef.current = row;
     setIntake(row);
     setStep(Math.min(8, Math.max(1, row.currentStep || 1)));
     setForm((prev) => ({
       ...prev,
       goal: (row.goal as DealGoal) || prev.goal,
       targetPeriod: row.targetPeriod || prev.targetPeriod,
-      speName: row.speName || "",
+      speName: isUntitledDealName(row.speName)
+        ? isUntitledDealName(prev.speName)
+          ? ""
+          : prev.speName
+        : row.speName || "",
       speCode: row.speCode || "",
       unitCount: row.unitCount != null ? String(row.unitCount) : "",
       parentOpCoCode: row.parentOpCoCode || prev.parentOpCoCode,
@@ -178,12 +189,24 @@ export function AddDealWizard({
       });
   }, [hydrate, initialIntakeId]);
 
+  useEffect(() => {
+    intakeRef.current = intake;
+  }, [intake]);
+
+  useEffect(() => {
+    if (step !== 3) return;
+    if (intakeRef.current?.id || initialIntakeId) return;
+    void ensureDraft(3).catch(() => undefined);
+    // ensureDraft is recreated each render; run only when the Sources step is first opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, initialIntakeId]);
+
   const payload = useMemo(
     () => ({
       goal: form.goal,
       targetPeriod: form.targetPeriod,
-      speName: form.speName || null,
-      speCode: form.speCode || null,
+      speName: workingTitle(form.speName),
+      speCode: form.speCode.trim() || null,
       unitCount: form.unitCount ? Number(form.unitCount) : null,
       parentOpCoCode: form.parentOpCoCode,
       sources: form.sources,
@@ -208,16 +231,17 @@ export function AddDealWizard({
       const res = await fetch("/api/deals/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: intake?.id, ...payload, currentStep: nextStep }),
+        body: JSON.stringify({ id: intakeRef.current?.id, ...payload, currentStep: nextStep }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Could not save the draft.");
-      hydrate(json as Intake);
-      if (!intake?.id) {
+      if (!res.ok) throw new Error(await readApiError(res, "Could not save the draft."));
+      const json = (await res.json()) as Intake;
+      const firstSave = !intakeRef.current?.id;
+      hydrate(json);
+      if (firstSave) {
         router.replace(`/deals/new?intake=${json.id}`);
       }
       setMessage("Draft saved. You can refresh — this deal intake will still be here.");
-      return json as Intake;
+      return json;
     } catch (err) {
       const text = err instanceof Error ? err.message : "Save failed";
       setError(text);
@@ -227,9 +251,29 @@ export function AddDealWizard({
     }
   }
 
+  async function ensureDraft(nextStep = step): Promise<Intake> {
+    if (intakeRef.current?.id && draftLockRef.current) {
+      await draftLockRef.current.catch(() => undefined);
+    }
+    if (intakeRef.current?.id) {
+      if (intakeRef.current.currentStep === nextStep) return intakeRef.current;
+      return saveDraft(nextStep);
+    }
+    if (draftLockRef.current) return draftLockRef.current;
+    const pending = saveDraft(nextStep).finally(() => {
+      if (draftLockRef.current === pending) draftLockRef.current = null;
+    });
+    draftLockRef.current = pending;
+    return pending;
+  }
+
   async function go(next: number) {
-    const saved = await saveDraft(next);
-    if (saved) setStep(next);
+    setStep(next);
+    try {
+      await ensureDraft(next);
+    } catch {
+      // ensureDraft / saveDraft already surfaces the error; the step stays reachable
+    }
   }
 
   async function suggestCode() {
@@ -240,48 +284,116 @@ export function AddDealWizard({
   }
 
   async function uploadFiles(fileList: FileList | File[], source: DealFileSource = "upload") {
-    let current = intake;
-    if (!current) current = await saveDraft(3);
-    if (!current) return;
     const files = Array.from(fileList);
     if (!files.length) {
-      setError("Choose at least one file (rent-roll CSV or PDF).");
+      setError("Choose at least one file (CSV, XLSX, or PDF).");
       return;
     }
-    const oversized = files.filter((f) => f.size > INTAKE_MAX_BYTES);
-    if (oversized.length) {
-      const names = oversized.map((f) => f.name).join(", ");
-      setError(`${names} exceed the ${INTAKE_MAX_BYTES_LABEL} limit. Split the file or upload later on /vault.`);
-      setUploads(oversized.map((f) => ({ name: f.name, progress: "error", error: `Over ${INTAKE_MAX_BYTES_LABEL}` })));
-      return;
+    const rows = initialUploadRows(files);
+    setUploads(rows);
+    const blocked = rows.filter((row) => row.progress === "error");
+    if (blocked.length) {
+      setError(blocked.map((row) => `${row.name}: ${row.error}`).join(" "));
+    } else {
+      setError(null);
     }
-    const empty = files.filter((f) => f.size === 0);
-    if (empty.length) {
-      setError(`${empty.map((f) => f.name).join(", ")} is empty. Choose a file with content.`);
-      return;
-    }
-    setError(null);
-    setUploads(files.map((f) => ({ name: f.name, progress: "uploading" })));
-    const body = new FormData();
-    body.set("intakeId", current.id);
-    body.set("source", source);
-    for (const file of files) body.append("file", file);
+
+    let current: Intake;
     try {
-      const res = await fetch("/api/deals/intake/files", { method: "POST", body });
-      const message = res.ok ? null : await readApiError(res, "Upload failed");
+      current = await ensureDraft(3);
+    } catch (err) {
+      const text = formatUploadFailure({ networkMessage: err instanceof Error ? err.message : "Failed to fetch" });
+      setUploads(rows.map((row) => (row.progress === "queued" ? { ...row, progress: "error", error: text } : row)));
+      setError(text);
+      return;
+    }
+
+    if (isUntitledDealName(form.speName)) {
+      const suggested = suggestIdentityFromFilenames(files.map((file) => file.name));
+      if (suggested) setForm((prev) => ({ ...prev, speName: isUntitledDealName(prev.speName) ? suggested : prev.speName }));
+    }
+
+    let stored = 0;
+    let latest = current;
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i]!;
+      const key = `${i}:${file.name}`;
+      if (file.size <= 0 || file.size > INTAKE_MAX_BYTES) continue;
+      setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "uploading" } : row)));
+      const body = new FormData();
+      body.set("intakeId", latest.id);
+      body.set("source", source);
+      body.append("file", file);
+      try {
+        const res = await fetch("/api/deals/intake/files", { method: "POST", body });
+        if (!res.ok) {
+          const message = await readApiError(res, "Upload failed");
+          setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "error", error: message } : row)));
+          setError(message);
+          continue;
+        }
+        const json = (await res.json()) as { intake?: Intake };
+        if (json.intake) {
+          hydrate(json.intake);
+          latest = json.intake;
+        }
+        stored += 1;
+        setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "done", error: undefined } : row)));
+      } catch (err) {
+        const message = formatUploadFailure({
+          networkMessage: err instanceof Error ? err.message : "Failed to fetch",
+        });
+        setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "error", error: message } : row)));
+        setError(message);
+      }
+    }
+    if (stored) {
+      setMessage(`${stored} file(s) stored one at a time. Inferring the deal name and ingesting…`);
+      await autoIngest(latest.id);
+    }
+  }
+
+  async function autoIngest(intakeId: string) {
+    if (ingestLockRef.current) return;
+    ingestLockRef.current = true;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/deals/intake/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intakeId, action: "auto_ingest" }),
+      });
       if (!res.ok) {
-        setUploads(files.map((f) => ({ name: f.name, progress: "error", error: message ?? "Upload failed" })));
-        setError(message ?? "Upload failed. The file was not stored.");
+        setError(await readApiError(res, "Could not auto-ingest the deal."));
         return;
       }
-      const json = (await res.json()) as { intake?: Intake; stored?: { filename: string }[] };
-      setUploads(files.map((f) => ({ name: f.name, progress: "done" })));
+      const json = (await res.json()) as {
+        inferred: { speName: string | null; speCode: string | null; address: string | null };
+        created: { entityCode: string | null; entityName: string | null };
+        results: { kind: string; imported?: number; skipped?: string }[];
+        gaps: string[];
+        intake?: Intake;
+      };
+      setIngestReport({
+        inferred: json.inferred,
+        created: json.created,
+        results: json.results,
+        gaps: json.gaps,
+      });
       if (json.intake) hydrate(json.intake);
-      setMessage(`${files.length} file(s) stored. Classify them on the next step.`);
+      const imported = json.results.filter((row) => row.imported != null).map((row) => `${row.kind}: ${row.imported}`);
+      setMessage(
+        `Created ${json.created.entityName ?? "the SPE"} (${json.created.entityCode ?? "code pending"}). ${
+          imported.length ? `Imported ${imported.join(", ")}.` : "Structured import skipped where columns did not match."
+        }`,
+      );
+      setStep(8);
+      await loadCompleteness(json.created.entityCode, form.targetPeriod);
     } catch (err) {
-      const text = err instanceof Error ? err.message : "Upload failed";
-      setUploads(files.map((f) => ({ name: f.name, progress: "error", error: text })));
-      setError(`Upload failed: ${text}`);
+      setError(formatUploadFailure({ networkMessage: err instanceof Error ? err.message : "Failed to fetch" }));
+    } finally {
+      ingestLockRef.current = false;
+      setBusy(false);
     }
   }
 
@@ -331,8 +443,8 @@ export function AddDealWizard({
   }
 
   async function importRemote(kind: "dropbox" | "email") {
-    if (!intake) await saveDraft(3);
-    const id = intake?.id;
+    const draft = await ensureDraft(3).catch(() => null);
+    const id = draft?.id ?? intakeRef.current?.id;
     if (!id) return;
     const url = kind === "dropbox" ? "/api/deals/intake/from-dropbox" : "/api/deals/intake/from-email";
     const body = kind === "dropbox" ? { intakeId: id, paths: selectedRemote } : { intakeId: id, messageIds: selectedRemote };
@@ -443,9 +555,9 @@ export function AddDealWizard({
         <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">Add Deal · new property SPE</p>
         <h1 className="font-display text-4xl text-navy-900">Onboard a deal under OpCo</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-700">
-          New deals are <strong>SPE</strong> entities under {form.parentOpCoCode}. Upload files now. Dropbox,
-          email, and the RCP mailbox appear even when they are not connected yet — they will not crash this
-          page. Drafts save as you go.
+          New deals are <strong>SPE</strong> entities under {form.parentOpCoCode}. <strong>Drop files
+          only</strong> — we infer the name and SPE code, classify, create the SPE when we can, and vault the
+          rest. Dropbox, email, and the RCP mailbox stay visible even when they are not connected.
         </p>
       </div>
 
@@ -521,7 +633,9 @@ export function AddDealWizard({
           <section className="space-y-4">
             <h2 className="font-display text-2xl text-navy-900">SPE identity</h2>
             <p className="text-sm text-ink-600">
-              This becomes a legal entity under OpCo. The code should look like <code>SPE-XXX</code>.
+              This becomes a legal entity under OpCo. The code should look like <code>SPE-XXX</code>. You can
+              upload source files first and fill this in later — Create SPE still requires a real name and
+              code.
             </p>
             <label className="block text-sm text-ink-700">
               SPE legal name
@@ -578,9 +692,10 @@ export function AddDealWizard({
           <section className="space-y-5">
             <h2 className="font-display text-2xl text-navy-900">Source files</h2>
             <p className="text-sm text-ink-600">
-              Choose one or more intake modes. Upload works now (CSV, XLSX/XLS, PDF, images — max{" "}
-              {INTAKE_MAX_BYTES_LABEL} per file). Larger offering-memorandum PDFs can be noted and added later
-              on Vault.
+              Upload before naming the deal if you want. A draft titled <strong>Untitled deal</strong> is
+              created automatically. Files are sent <strong>one at a time</strong> (CSV, XLSX/XLS, PDF — max{" "}
+              {INTAKE_MAX_BYTES_LABEL} each). Prefer Vercel Blob (<code>BLOB_READ_WRITE_TOKEN</code>) for large
+              OM PDFs so they are not stored in Neon.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               {(
@@ -689,9 +804,9 @@ export function AddDealWizard({
             ) : null}
 
             {uploads.length ? (
-              <ul className="text-sm text-ink-700">
+              <ul className="space-y-1 text-sm text-ink-700">
                 {uploads.map((row) => (
-                  <li key={row.name}>
+                  <li key={row.key}>
                     {row.name} — {row.progress}
                     {row.error ? ` (${row.error})` : ""}
                   </li>
@@ -876,7 +991,9 @@ export function AddDealWizard({
 
         {step === 8 ? (
           <section className="space-y-4">
-            <h2 className="font-display text-2xl text-navy-900">Deal is on the books</h2>
+            <h2 className="font-display text-2xl text-navy-900">
+              {ingestReport?.created.entityCode ? "Here’s what we created" : "Deal is on the books"}
+            </h2>
             <p className="text-sm text-ink-700">
               {intake?.entityCode ? (
                 <>
@@ -884,9 +1001,39 @@ export function AddDealWizard({
                   switcher. Open the screens below, or ask Expert to walk you through month-end.
                 </>
               ) : (
-                "Create the SPE on step 5 to unlock deep links."
+                "Create the SPE on step 5 to unlock deep links, or drop files on Source files for upload-only ingest."
               )}
             </p>
+            {ingestReport ? (
+              <div className="space-y-3 border border-gold-300 bg-cream-50 px-4 py-3 text-sm text-ink-700">
+                <p>
+                  Inferred <strong>{ingestReport.inferred.speName ?? "name pending"}</strong>
+                  {ingestReport.inferred.speCode ? ` · ${ingestReport.inferred.speCode}` : ""}.
+                  {ingestReport.inferred.address
+                    ? ` Address: ${ingestReport.inferred.address}.`
+                    : " No street address in the filenames — left blank."}
+                </p>
+                <ul className="list-disc space-y-1 pl-5">
+                  {ingestReport.results.map((row) => (
+                    <li key={row.kind}>
+                      {row.kind}
+                      {row.imported != null ? ` — imported ${row.imported}` : ""}
+                      {row.skipped ? ` — ${row.skipped}` : ""}
+                    </li>
+                  ))}
+                </ul>
+                {ingestReport.gaps.length ? (
+                  <div>
+                    <p className="font-medium text-navy-900">Still needs a human / Expert</p>
+                    <ul className="mt-1 list-disc pl-5">
+                      {ingestReport.gaps.map((gap) => (
+                        <li key={gap}>{gap}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {intake?.entityCode ? (
               <div className="grid gap-3 md:grid-cols-2">
                 {[

@@ -1,8 +1,11 @@
 import { POST } from "@/app/api/deals/intake/files/route";
 import { applyStructuredData } from "@/lib/deals/apply";
+import { autoIngestIntake } from "@/lib/deals/auto-ingest";
 import { createSpeDeal } from "@/lib/deals/create-spe";
-import { createIntake, updateIntake } from "@/lib/deals/intake";
+import { createIntake, getIntake, updateIntake } from "@/lib/deals/intake";
 import { readIntakeFileBytes, removeIntakeFile, storeIntakeFile } from "@/lib/deals/files";
+import { INTAKE_MAX_BYTES } from "@/lib/deals/types";
+import { fileTooLargeMessage, UNTITLED_DEAL_NAME } from "@/lib/deals/upload-client";
 import { assertReadableWorkbook, workbookToCsv } from "@/lib/deals/workbook";
 import { describeFileStore, getStoredFile, putStoredFile, resolveFileStoreBackend } from "@/lib/file-store";
 import { prisma } from "@/lib/prisma";
@@ -285,5 +288,134 @@ describe("Add Deal intake upload", () => {
         bytes: Buffer.from("PK this is not a workbook"),
       }),
     ).rejects.toThrow(/not a readable Excel workbook|password-protected/i);
+  });
+
+  it("stores a file on a draft that has no SPE name or code", async () => {
+    const intake = await createIntake({
+      goal: "value_add",
+      targetPeriod: "2026-08",
+      sources: ["upload"],
+    });
+    intakeIds.push(intake.id);
+    expect(intake.speName).toBe(UNTITLED_DEAL_NAME);
+    expect(intake.speCode).toBeNull();
+
+    const file = await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "harrington-rent-roll.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from("unit_id,status\n101,OCCUPIED\n"),
+    });
+    expect(file.status).toBe("stored");
+    expect(file.filename).toBe("harrington-rent-roll.csv");
+  });
+
+  it("POST /api/deals/intake/files creates an Untitled deal when intakeId is omitted", async () => {
+    const csv = readFileSync(resolve("data/samples/rent-roll.csv"));
+    const body = new FormData();
+    body.set("source", "upload");
+    body.append("file", new File([new Uint8Array(csv)], "willow-rent-roll.csv", { type: "text/csv" }));
+
+    const res = await POST(new Request("http://localhost/api/deals/intake/files", { method: "POST", body }));
+    expect(res.ok).toBe(true);
+    const json = (await res.json()) as {
+      stored: { filename: string }[];
+      intake: { id: string; speName: string | null; speCode: string | null };
+    };
+    intakeIds.push(json.intake.id);
+    expect(json.stored).toHaveLength(1);
+    expect(json.intake.speName).toBe(UNTITLED_DEAL_NAME);
+    expect(json.intake.speCode).toBeNull();
+  });
+
+  it("POST accepts sequential single-file uploads onto one unnamed intake", async () => {
+    const intake = await createIntake({ sources: ["upload"] });
+    intakeIds.push(intake.id);
+    const payloads = [
+      { name: "a-rent-roll.csv", bytes: Buffer.from("unit_id,status\n1,OCCUPIED\n"), type: "text/csv" },
+      { name: "b-budget.csv", bytes: Buffer.from("account_code,amount\n4010,100\n"), type: "text/csv" },
+      { name: "c-om.pdf", bytes: MINI_PDF, type: "application/pdf" },
+    ];
+    for (const file of payloads) {
+      const body = new FormData();
+      body.set("intakeId", intake.id);
+      body.set("source", "upload");
+      body.append("file", new File([new Uint8Array(file.bytes)], file.name, { type: file.type }));
+      const res = await POST(new Request("http://localhost/api/deals/intake/files", { method: "POST", body }));
+      expect(res.ok).toBe(true);
+      const json = (await res.json()) as { stored: { filename: string }[] };
+      expect(json.stored).toHaveLength(1);
+      expect(json.stored[0]?.filename).toBe(file.name);
+    }
+    const latest = await getIntake(intake.id);
+    expect(latest?.speName).toBe(UNTITLED_DEAL_NAME);
+    expect(latest?.files).toHaveLength(3);
+  });
+
+  it("rejects an oversized file with File too large (max X MB)", async () => {
+    const intake = await createIntake({ sources: ["upload"] });
+    intakeIds.push(intake.id);
+    await expect(
+      storeIntakeFile({
+        intakeId: intake.id,
+        source: "upload",
+        filename: "huge-om.pdf",
+        mimeType: "application/pdf",
+        bytes: Buffer.alloc(INTAKE_MAX_BYTES + 1),
+      }),
+    ).rejects.toThrow(/File too large \(max 32 MB\)/);
+
+    const res = await POST(
+      new Request("http://localhost/api/deals/intake/files", {
+        method: "POST",
+        headers: { "content-length": String(INTAKE_MAX_BYTES + 2 * 1024 * 1024) },
+        body: new FormData(),
+      }),
+    );
+    expect(res.status).toBe(413);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe(fileTooLargeMessage());
+  });
+
+  it("auto-ingests Harrington-named files without a typed SPE name", async () => {
+    const intake = await createIntake({ sources: ["upload"], goal: "value_add" });
+    intakeIds.push(intake.id);
+    expect(intake.speName).toBe(UNTITLED_DEAL_NAME);
+
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "Life_at_Harrington_Park_OM_Offering.pdf",
+      mimeType: "application/pdf",
+      bytes: MINI_PDF,
+    });
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "RR_-_Harrington_-_12.31.19_-_Resi.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: readFileSync(resolve("data/samples/rent-roll.xlsx")),
+    });
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "T12_NOI_-_Life_at_Harrington_-_11.2019.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: readFileSync(resolve("data/samples/budget.xlsx")),
+    });
+
+    const report = await autoIngestIntake(intake.id);
+    if (report.created.entityId) entityIds.push(report.created.entityId);
+    expect(report.inferred.speName).toMatch(/Harrington Park/i);
+    expect(report.created.entityCode).toMatch(/^SPE-/);
+    expect(report.created.entityName).toMatch(/Harrington Park/i);
+    expect(report.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 1)).toBe(true);
+    expect(report.gaps.some((gap) => /T12|P&L/i.test(gap))).toBe(true);
+
+    const latest = await getIntake(intake.id);
+    expect(latest?.entityId).toBeTruthy();
+    const vaulted = await prisma.vaultDocument.count({ where: { entityId: latest!.entityId! } });
+    expect(vaulted).toBeGreaterThanOrEqual(1);
   });
 });

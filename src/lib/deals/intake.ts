@@ -1,6 +1,7 @@
 import type { DealIntake, DealIntakeFile, SpeStrategy } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
+import { workingTitle } from "./upload-client";
 import { defaultOpCoCode, isDealFileSource, type DealFileSource, type DealIntakePatch } from "./types";
 
 export type IntakeWithFiles = DealIntake & { files: DealIntakeFile[]; entity: { code: string; name: string } | null };
@@ -12,8 +13,8 @@ export async function createIntake(patch: DealIntakePatch = {}) {
       currentStep: patch.currentStep ?? 1,
       goal: patch.goal ?? null,
       targetPeriod: patch.targetPeriod ?? "2026-08",
-      speName: patch.speName ?? null,
-      speCode: patch.speCode ?? null,
+      speName: workingTitle(patch.speName),
+      speCode: patch.speCode?.trim() ? patch.speCode.trim() : null,
       unitCount: patch.unitCount ?? null,
       strategy: (patch.strategy as SpeStrategy | null) ?? null,
       parentOpCoCode: patch.parentOpCoCode ?? defaultOpCoCode(),
@@ -51,7 +52,7 @@ export async function updateIntake(id: string, patch: DealIntakePatch) {
       status,
       goal: patch.goal === undefined ? existing.goal : patch.goal,
       targetPeriod: patch.targetPeriod === undefined ? existing.targetPeriod : patch.targetPeriod,
-      speName: patch.speName === undefined ? existing.speName : patch.speName,
+      speName: patch.speName === undefined ? existing.speName : workingTitle(patch.speName),
       speCode: patch.speCode === undefined ? existing.speCode : patch.speCode,
       unitCount: patch.unitCount === undefined ? existing.unitCount : patch.unitCount,
       strategy: patch.strategy === undefined ? existing.strategy : patch.strategy,

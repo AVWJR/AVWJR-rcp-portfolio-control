@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { deleteStoredFile, getStoredFile, putStoredFile } from "@/lib/file-store";
-import { storeVaultDocument, VAULT_MAX_BYTES } from "@/lib/vault";
+import { storeVaultDocument } from "@/lib/vault";
 import { safeVaultFilename, type VaultKind } from "@rcp/documents";
+import { inferFileRole } from "./infer";
 import { getIntake } from "./intake";
-import { INTAKE_MAX_BYTES, isDealFileClass, type DealFileClass, type DealFileSource } from "./types";
+import { INTAKE_MAX_BYTES, INTAKE_MAX_BYTES_LABEL, isDealFileClass, type DealFileClass, type DealFileSource } from "./types";
+import { fileTooLargeMessage } from "./upload-client";
 import { assertReadableWorkbook, isAllowedIntakeFilename, isSpreadsheetFilename, SPREADSHEET_MIME_TYPES } from "./workbook";
 
 export function classificationToVaultKind(classification: string): VaultKind {
@@ -20,22 +22,15 @@ export function classificationToVaultKind(classification: string): VaultKind {
       return "om_cim";
     case "insurance":
       return "insurance";
+    case "t12_pl":
+      return "other";
     default:
       return "other";
   }
 }
 
-export function guessClassification(filename: string): DealFileClass {
-  const lower = filename.toLowerCase();
-  const tabular = lower.endsWith(".csv") || isSpreadsheetFilename(filename);
-  if (tabular && /rent|unit|roll/.test(lower)) return "rent_roll_csv";
-  if (tabular && /budget/.test(lower)) return "budget_csv";
-  if (tabular) return "other";
-  if (/loan|note|mortgage|deed/.test(lower)) return "loan_doc";
-  if (/lease/.test(lower)) return "lease";
-  if (/\bom\b|cim|offering/.test(lower)) return "om_cim";
-  if (/insur|binder|policy/.test(lower)) return "insurance";
-  return "other";
+export function guessClassification(filename: string, bytes?: Buffer): DealFileClass {
+  return inferFileRole(filename, bytes);
 }
 
 export async function storeIntakeFile(opts: {
@@ -52,13 +47,11 @@ export async function storeIntakeFile(opts: {
   }
   if (!isAllowedIntakeFilename(opts.filename)) {
     throw new Error(
-      `${opts.filename} is not an accepted intake type. Use CSV, XLSX/XLS, PDF, image, or a typical vault document (max ${Math.round(VAULT_MAX_BYTES / (1024 * 1024))} MB).`,
+      `${opts.filename} is not an accepted intake type. Use CSV, XLSX/XLS, PDF, image, or a typical vault document (max ${INTAKE_MAX_BYTES_LABEL}).`,
     );
   }
   if (opts.bytes.length > INTAKE_MAX_BYTES) {
-    throw new Error(
-      `File exceeds the ${Math.round(VAULT_MAX_BYTES / (1024 * 1024))} MB intake limit. Split large files or note them for a later vault upload.`,
-    );
+    throw new Error(`${fileTooLargeMessage()}. Split the file or note it for a later vault upload.`);
   }
   const intake = await getIntake(opts.intakeId);
   if (!intake) throw new Error("Intake draft not found. Save the draft, then upload again.");
@@ -68,7 +61,9 @@ export async function storeIntakeFile(opts: {
     assertReadableWorkbook(opts.bytes, filename);
   }
   const classification =
-    opts.classification && isDealFileClass(opts.classification) ? opts.classification : guessClassification(filename);
+    opts.classification && isDealFileClass(opts.classification)
+      ? opts.classification
+      : guessClassification(filename, opts.bytes);
 
   const created = await prisma.dealIntakeFile.create({
     data: {

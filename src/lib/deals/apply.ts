@@ -55,6 +55,7 @@ export async function applyStructuredData(opts: {
   importRentRoll?: boolean;
   importBudget?: boolean;
   saveLoan?: boolean;
+  lenient?: boolean;
 }) {
   const intake = await getIntake(opts.intakeId);
   if (!intake) throw new Error("Intake draft not found.");
@@ -80,13 +81,25 @@ export async function applyStructuredData(opts: {
             });
           } catch (error) {
             if (error instanceof ReplaceRequiresConfirmError) throw error;
-            coachStructuredImportError(loaded.file.filename, error);
+            if (opts.lenient) {
+              const message = error instanceof Error ? error.message : String(error);
+              await prisma.dealIntakeFile.update({
+                where: { id: csvFile.id },
+                data: { status: "needs_mapping", lastError: message.slice(0, 500) },
+              });
+              results.push({ kind: "rent_roll", skipped: `${loaded.file.filename} stored in vault; columns need mapping.` });
+              units = undefined;
+            } else {
+              coachStructuredImportError(loaded.file.filename, error);
+            }
           }
+          if (units) {
           await prisma.dealIntakeFile.update({
             where: { id: csvFile.id },
             data: { status: "imported", lastError: null },
           });
           results.push({ kind: "rent_roll", imported: units.length });
+          }
         }
       } else {
         results.push({ kind: "rent_roll", skipped: "No file classified as rent-roll CSV / XLSX." });
@@ -110,13 +123,25 @@ export async function applyStructuredData(opts: {
             });
           } catch (error) {
             if (error instanceof ReplaceRequiresConfirmError) throw error;
-            coachStructuredImportError(loaded.file.filename, error);
+            if (opts.lenient) {
+              const message = error instanceof Error ? error.message : String(error);
+              await prisma.dealIntakeFile.update({
+                where: { id: csvFile.id },
+                data: { status: "needs_mapping", lastError: message.slice(0, 500) },
+              });
+              results.push({ kind: "budget", skipped: `${loaded.file.filename} stored in vault; columns need mapping.` });
+              rows = undefined;
+            } else {
+              coachStructuredImportError(loaded.file.filename, error);
+            }
           }
+          if (rows) {
           await prisma.dealIntakeFile.update({
             where: { id: csvFile.id },
             data: { status: "imported", lastError: null },
           });
           results.push({ kind: "budget", imported: rows.length });
+          }
         }
       } else {
         results.push({ kind: "budget", skipped: "No file classified as budget CSV / XLSX." });

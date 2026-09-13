@@ -313,8 +313,8 @@ Do this in the product — click paths only.
 
 1. Gold nav **Deals** → ${list}, or Overview → **Add Deal**. Open ${start}.
 2. **Goal** — stabilize / value-add / light rehab, plus the target period.
-3. **Identity** — SPE legal name, code (use **Suggest** for \`SPE-XXX\`), unit count, parent OpCo (usually RCP-OPCO).
-4. **Source files** — **Upload files** works now. Dropbox / email / RCP mailbox stay visible; if they are not connected, follow the on-screen note and keep uploading.
+3. **Identity** — SPE legal name, code (use **Suggest** for \`SPE-XXX\`), unit count, parent OpCo (usually RCP-OPCO). You can skip this and upload first.
+4. **Source files** — **Upload files** works now, including before the deal is named (an Untitled deal draft is created; files go one at a time, max 32 MB). Dropbox / email / RCP mailbox stay visible; if they are not connected, follow the on-screen note and keep uploading.
 5. **Classify files** — rent-roll CSV/XLSX, budget CSV/XLSX, loan, lease, OM/CIM, insurance, or other. Files land in ${vault} after the SPE exists. Password-protected workbooks are rejected; ambiguous columns stay stored — ask me to map them.
 6. **Create entity** — creates the SPE, clones the master chart of accounts, opens periods. The new code appears in the navy **Entity** switcher after a refresh.
 7. **Apply data** — optional rent-roll and budget import for the target period. If rows already exist, check **confirm replace** (this overwrites). Capture lender, UPB, rate, payment, maturity, DSCR / debt-yield thresholds on the existing loan file. Do not invent LTV.
