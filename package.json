@@ -8,16 +8,18 @@
   ],
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/prisma-prepare.mjs -- generate && next build",
+    "vercel-build": "node scripts/prisma-prepare.mjs -- generate && node scripts/prisma-prepare.mjs -- db push --skip-generate && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "prisma generate",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "postinstall": "node scripts/prisma-prepare.mjs -- generate",
+    "db:generate": "node scripts/prisma-prepare.mjs -- generate",
+    "db:push": "node scripts/prisma-prepare.mjs -- db push",
+    "db:prepare": "node scripts/prisma-prepare.mjs",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
-    "db:reset": "prisma db push && tsx --env-file=.env prisma/seed.ts",
+    "db:reset": "node scripts/prisma-prepare.mjs -- db push && tsx --env-file=.env prisma/seed.ts",
     "verify": "tsx --env-file=.env scripts/verify-phase-a.ts && tsx --env-file=.env scripts/verify-phase-b.ts && tsx --env-file=.env scripts/verify-phase-c.ts && tsx --env-file=.env scripts/verify-phase-d.ts && tsx --env-file=.env scripts/verify-phase-e.ts && tsx --env-file=.env scripts/verify-phase-f.ts",
     "verify:a": "tsx --env-file=.env scripts/verify-phase-a.ts",
     "verify:b": "tsx --env-file=.env scripts/verify-phase-b.ts",
@@ -33,6 +35,8 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "@prisma/adapter-neon": "^6.16.1",
     "@prisma/client": "^6.16.1",
     "@rcp/analytics": "file:packages/analytics",
     "@rcp/debt": "file:packages/debt",
@@ -48,11 +52,13 @@
     "pptxgenjs": "^4.0.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "recharts": "^2.15.4"
+    "recharts": "^2.15.4",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/pdfkit": "^0.17.3",
     "@types/node": "^22.18.1",
+    "@types/ws": "^8.18.1",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "autoprefixer": "^10.4.21",

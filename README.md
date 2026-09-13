@@ -8,13 +8,18 @@ Locked stack: TypeScript, Next.js App Router, Prisma, PostgreSQL in production, 
 
 Entity tree: **HoldCo → OpCo → Property SPE/LLC**. Seed SPEs are 100% owned. OpCo asset management fees sit **below NOI** on the SPE. OpCo’s multi-SPE view is a **combined roll-up** (eliminates IC `1310`/`2310` and AM `6310`/`7010`) — not a GAAP consolidation. See [docs/RCP_INTERCOMPANY.md](./docs/RCP_INTERCOMPANY.md).
 
-## Install / run / seed (local SQLite demo)
+## Local (SQLite) vs Vercel (Neon Postgres)
+
+Prisma cannot put `sqlite` and `postgresql` in one schema file. This repo keeps **SQLite as the committed default** so a non-technical Principal can run the demo on a laptop. A generate step (`scripts/prisma-prepare.mjs`) copies `prisma/schema.prisma` → `prisma/schema.active.prisma` for local, or writes a PostgreSQL `prisma/schema.prod.prisma` (pooled `DATABASE_URL` + unpooled `DIRECT_URL`) when the URL is `postgres://` / `postgresql://` or when Vercel builds.
+
+`npm run build` only runs `prisma generate` (no live database). Vercel’s build command is `npm run vercel-build`, which also runs `prisma db push` against Neon so the first deploy creates tables.
+
+### Local SQLite demo
 
 ```bash
 cp .env.example .env
 npm install
-npx prisma generate
-npm run db:reset    # prisma db push && seed (deletes ledger, units, budgets, loans, capex, close)
+npm run db:reset    # prisma db push && seed (wipes demo rows)
 npm test
 npm run verify:f    # Phase F tax / vault / scheduler
 npm run verify      # Phase A through F
@@ -28,15 +33,50 @@ App: [http://localhost:3000](http://localhost:3000)
 
 ```
 DATABASE_URL="file:./dev.db"
+TZ=America/New_York
+NEXT_PUBLIC_RCP_CURRENCY=USD
+NEXT_PUBLIC_RCP_LOCALE=en-US
+NEXT_PUBLIC_RCP_TIMEZONE=America/New_York
 ```
 
-Prisma resolves that path relative to `prisma/`, so the file is `prisma/dev.db`.
+Prisma resolves `file:./dev.db` relative to `prisma/`, so the file is `prisma/dev.db`. Do **not** point local `.env` at Neon unless you intend to work against that database.
 
-### PostgreSQL (production)
+### Vercel + Neon Postgres
 
-1. Change `provider = "postgresql"` in `prisma/schema.prisma`.
-2. Set `DATABASE_URL` to a Postgres URL.
-3. Run `npx prisma migrate dev` (or `db push`) and `npm run db:seed`.
+1. Create a Vercel project from this GitHub repo (framework: Next.js; this repo ships `vercel.json` with `buildCommand: npm run vercel-build`).
+2. Provision Neon (preferred: [Vercel Marketplace](https://vercel.com/marketplace) → Neon, or `vercel integration add neon`). Copy the **pooled** and **unpooled** connection strings.
+3. Set the environment variables below on **Production** and **Preview**.
+4. Deploy. The build generates a PostgreSQL Prisma client and pushes the schema.
+5. Open `https://<your-app>/admin/seed`, paste `SEED_SECRET`, and load demo data once. Or:
+
+```bash
+curl -X POST "https://<your-app>/api/admin/seed" \
+  -H "Authorization: Bearer $SEED_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+If rows already exist, the route does nothing unless you send `{ "force": true }` (wipes the demo database). Wrong or missing `SEED_SECRET` is rejected; if `SEED_SECRET` is unset, the route returns 404.
+
+Seed data is **demo books and sample tax-bridge rows only**. This system does not file taxes.
+
+#### Environment variables to set on Vercel
+
+| Name | Required | Value |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | Neon **pooled** URL (`-pooler` in the hostname), e.g. `postgresql://USER:PASSWORD@ep-xxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require` |
+| `DIRECT_URL` | Yes | Neon **unpooled** URL (no `-pooler`) for `prisma db push` |
+| `SEED_SECRET` | Yes (to seed) | Random string, **at least 16 characters**. Protects `POST /api/admin/seed` |
+| `TZ` | Yes | `America/New_York` |
+| `NEXT_PUBLIC_RCP_CURRENCY` | Yes | `USD` |
+| `NEXT_PUBLIC_RCP_LOCALE` | Yes | `en-US` |
+| `NEXT_PUBLIC_RCP_TIMEZONE` | Yes | `America/New_York` |
+
+Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POSTGRES_URL` for the pooled URL; `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` for the direct URL.
+
+Runtime uses `@prisma/adapter-neon` (Prisma 6.16 driver adapters, GA) with the pooled URL. The Prisma CLI uses `DIRECT_URL` so migrations / `db push` never go through PgBouncer.
+
+Laptop seed against Neon (optional): put the same URLs in `.env` and run `npm run db:reset`. That **wipes** the remote database — prefer `/admin/seed` for a first empty deploy.
 
 ## Seed entities
 

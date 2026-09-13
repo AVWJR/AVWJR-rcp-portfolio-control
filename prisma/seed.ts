@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { dollars, type JournalDraftLine } from "@rcp/ledger";
 import {
   SPE_BUDGETS_2026_08,
@@ -10,12 +11,11 @@ import {
 } from "@rcp/properties";
 import { cloneCoaToEntity, createEntityWithCoa, seedMasterCoaTemplate } from "../src/lib/entities";
 import { postJournal } from "../src/lib/journals";
+import { prisma } from "../src/lib/prisma";
 import { replaceBudget } from "../src/lib/budgets";
 import { replaceRentRoll } from "../src/lib/rent-roll";
 import { seedCapexProjects, seedCloseDemo, seedLoansAndRolls } from "./seed-phase-c";
 import { seedPhaseF } from "./seed-phase-f";
-
-const prisma = new PrismaClient();
 
 function ny(year: number, month: number, day: number) {
   return new Date(Date.UTC(year, month - 1, day, 16, 0, 0));
@@ -330,7 +330,25 @@ async function seedBudgets(byCode: Record<string, string>) {
   }
 }
 
-async function main() {
+export async function isDemoSeeded() {
+  return (await prisma.entity.count()) > 0;
+}
+
+export type SeedSummary = {
+  alreadySeeded: boolean;
+  journals: number;
+  lines: number;
+  units: number;
+  budgets: number;
+  loans: number;
+  projects: number;
+  locked: number;
+  partners: number;
+  vault: number;
+  jobs: number;
+};
+
+async function wipeDemoData() {
   await prisma.reportJobRun.deleteMany();
   await prisma.reportJob.deleteMany();
   await prisma.vaultDocument.deleteMany();
@@ -353,6 +371,28 @@ async function main() {
   await prisma.period.deleteMany();
   await prisma.account.deleteMany();
   await prisma.entity.deleteMany();
+}
+
+export async function runSeed(options: { wipe?: boolean } = {}): Promise<SeedSummary> {
+  const wipe = options.wipe ?? true;
+  const alreadySeeded = await isDemoSeeded();
+  if (alreadySeeded && !wipe) {
+    return {
+      alreadySeeded: true,
+      journals: await prisma.journal.count(),
+      lines: await prisma.journalLine.count(),
+      units: await prisma.unit.count(),
+      budgets: await prisma.budgetLine.count(),
+      loans: await prisma.loan.count(),
+      projects: await prisma.capexProject.count(),
+      locked: await prisma.period.count({ where: { status: "CLOSED" } }),
+      partners: await prisma.partner.count(),
+      vault: await prisma.vaultDocument.count(),
+      jobs: await prisma.reportJob.count(),
+    };
+  }
+
+  await wipeDemoData();
 
   await seedMasterCoaTemplate();
 
@@ -418,34 +458,55 @@ async function main() {
   await seedCloseDemo(prisma, byCode);
   await seedPhaseF(prisma, byCode);
 
-  const journals = await prisma.journal.count();
-  const lines = await prisma.journalLine.count();
-  const units = await prisma.unit.count();
-  const budgets = await prisma.budgetLine.count();
-  const loans = await prisma.loan.count();
-  const projects = await prisma.capexProject.count();
-  const locked = await prisma.period.count({ where: { status: "CLOSED" } });
-  const partners = await prisma.partner.count();
-  const vault = await prisma.vaultDocument.count();
-  const jobs = await prisma.reportJob.count();
-  console.log(`Seeded ${journals} journals / ${lines} lines`);
-  console.log(`Seeded ${units} rent-roll units / ${budgets} budget lines`);
-  console.log(`Seeded ${loans} loans / ${projects} capex projects / ${locked} hard-locked period(s)`);
-  console.log(`Seeded ${partners} partners / ${vault} vault docs / ${jobs} scheduled jobs`);
+  const summary: SeedSummary = {
+    alreadySeeded: false,
+    journals: await prisma.journal.count(),
+    lines: await prisma.journalLine.count(),
+    units: await prisma.unit.count(),
+    budgets: await prisma.budgetLine.count(),
+    loans: await prisma.loan.count(),
+    projects: await prisma.capexProject.count(),
+    locked: await prisma.period.count({ where: { status: "CLOSED" } }),
+    partners: await prisma.partner.count(),
+    vault: await prisma.vaultDocument.count(),
+    jobs: await prisma.reportJob.count(),
+  };
+  console.log(`Seeded ${summary.journals} journals / ${summary.lines} lines`);
+  console.log(`Seeded ${summary.units} rent-roll units / ${summary.budgets} budget lines`);
+  console.log(`Seeded ${summary.loans} loans / ${summary.projects} capex projects / ${summary.locked} hard-locked period(s)`);
+  console.log(`Seeded ${summary.partners} partners / ${summary.vault} vault docs / ${summary.jobs} scheduled jobs`);
   console.log("Entities:");
   console.log("  Roche Capital Partners HoldCo (RCP-HOLD)");
   console.log("  RCP Operating Company LLC (RCP-OPCO)");
   console.log("  Willow Bend Gardens LLC (SPE-WBG) — 264 units, value-add garden");
   console.log("  Crestview Commons LLC (SPE-CVC) — 192 units, stabilized");
   console.log("  Harbor Court Residences LLC (SPE-HCR) — 84 units, light rehab");
+  console.log("Demo data only — this system does not file taxes.");
+  return summary;
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (error) => {
-    console.error(error);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+function invokedFromCli() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(path.resolve(entry)).href;
+  } catch {
+    return /seed\.ts$/.test(entry);
+  }
+}
+
+async function main() {
+  await runSeed({ wipe: true });
+}
+
+if (invokedFromCli()) {
+  main()
+    .then(async () => {
+      await prisma.$disconnect();
+    })
+    .catch(async (error) => {
+      console.error(error);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}

@@ -8,6 +8,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@": path.resolve(__dirname, "src"),
       "@rcp/ledger": path.resolve(__dirname, "packages/ledger/src/index.ts"),
       "@rcp/properties": path.resolve(__dirname, "packages/properties/src/index.ts"),
       "@rcp/reporting": path.resolve(__dirname, "packages/reporting/src/index.ts"),
