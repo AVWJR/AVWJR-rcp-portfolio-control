@@ -1,4 +1,5 @@
-import { expertAiEnabled } from "@/lib/expert/ai-enabled";
+import { currentAccessRole } from "@/lib/access-server";
+import { expertAiEnabled, resolveExpertProvider } from "@/lib/expert/ai-enabled";
 import { resolveContext } from "@/lib/expert/chat";
 import { describePage } from "@/lib/expert/nav";
 import { buildOpener } from "@/lib/expert/offline-coach";
@@ -12,6 +13,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const pathname = url.searchParams.get("pathname") || "/";
   const page = describePage(pathname);
+  const accessRole = await currentAccessRole();
+  const resolved = resolveExpertProvider();
   const ctx = resolveContext({
     pathname,
     entityCode: url.searchParams.get("entity") ?? undefined,
@@ -19,6 +22,7 @@ export async function GET(request: Request) {
     view: url.searchParams.get("view") === "combined" ? "combined" : undefined,
     pageTitle: page.title,
     uiHints: page.hints,
+    accessRole,
   });
 
   try {
@@ -26,6 +30,9 @@ export async function GET(request: Request) {
     const opener = buildOpener(ctx, tools);
     return NextResponse.json({
       aiEnabled: expertAiEnabled(),
+      provider: resolved.provider,
+      modelId: resolved.modelId,
+      banner: resolved.banner,
       context: ctx,
       opener,
       ...tools,
@@ -35,6 +42,9 @@ export async function GET(request: Request) {
     if (/NO_SEED|No entities|Unknown entity/i.test(message)) {
       return NextResponse.json({
         aiEnabled: expertAiEnabled(),
+        provider: resolved.provider,
+        modelId: resolved.modelId,
+        banner: resolved.banner,
         context: ctx,
         seeded: false,
         opener: {

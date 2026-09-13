@@ -1,24 +1,15 @@
+import { pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
   AnomalyFlag,
   CompletenessItem,
-  DataCompleteness,
-  EntitySummary,
-  ExpertChip,
   ExpertClientContext,
   ExpertMessage,
-  KpiSnapshot,
-  PeriodStatusView,
+  OfflineBundle,
 } from "./types";
 
-export type OfflineBundle = {
-  entity: EntitySummary | { ok: false; error: string };
-  period: PeriodStatusView | { ok: false; error: string };
-  completeness: DataCompleteness | { ok: false; error: string };
-  anomalies: { entityCode: string; periodLabel: string; flags: AnomalyFlag[] } | { ok: false; error: string };
-  kpis: KpiSnapshot | { ok: false; error: string };
-};
+export type { OfflineBundle };
 
 function isErr(value: unknown): value is { ok: false; error: string } {
   return Boolean(value && typeof value === "object" && "ok" in value && (value as { ok: unknown }).ok === false);
@@ -41,94 +32,11 @@ function missingItems(items: CompletenessItem[]): CompletenessItem[] {
   return items.filter((item) => item.status === "missing" || item.status === "partial");
 }
 
-function rankChips(ctx: ExpertClientContext, bundle: OfflineBundle): ExpertChip[] {
-  const chips: ExpertChip[] = [];
-  const flags = !isErr(bundle.anomalies) ? bundle.anomalies.flags : [];
-  const complete = !isErr(bundle.completeness) ? bundle.completeness : null;
-  const lead = blockers(flags)[0] ?? flags.find((f) => f.severity === "watch");
-  if (lead) {
-    chips.push({
-      id: "lead_flag",
-      label: lead.title.length > 28 ? "Review flagged issue" : lead.title,
-      prompt: `What's wrong: ${lead.title}. Walk me through the click path and what to verify.`,
-    });
-  }
-  const gap = complete ? missingItems(complete.items)[0] : null;
-  if (gap && !chips.some((c) => c.prompt.includes(gap.label))) {
-    chips.push({
-      id: "fill_gap",
-      label: gap.status === "partial" ? `Finish ${gap.label}` : `Fill ${gap.label}`,
-      prompt: `Help me complete: ${gap.label}. Where do I enter it?`,
-    });
-  }
-  const page = ctx.pathname;
-  if (page === "/" || page.startsWith("/deals")) {
-    return [
-      {
-        id: "add_deal",
-        label: "Add a new deal",
-        prompt: "Add a new deal. Walk me through the Add Deal wizard click path for a new property SPE under OpCo.",
-      },
-      {
-        id: "whats_missing_spe",
-        label: "What's missing for this SPE?",
-        prompt: "What's missing for this SPE? Use the live completeness score and tell me which screen to open.",
-      },
-      {
-        id: "import_rent_roll",
-        label: "Import rent roll",
-        prompt: "How do I import a rent roll for this SPE? Include the confirm-replace step if units already exist.",
-      },
-    ];
-  }
-  const extras: ExpertChip[] = [
-    {
-      id: "add_deal",
-      label: "Add a new deal",
-      prompt: "Add a new deal. Walk me through the Add Deal wizard click path for a new property SPE under OpCo.",
-    },
-    {
-      id: "audit_page",
-      label: "What's wrong on this page?",
-      prompt: "What's wrong on this page? Audit the current screen with live completeness and anomalies.",
-    },
-    {
-      id: "checklist",
-      label: "Month-end checklist",
-      prompt: "Start checklist mode for month-end close. Sequence the work for this entity and period.",
-    },
-    {
-      id: "noi",
-      label: "Check NOI bridge",
-      prompt: "Walk me through the NOI bridge and whether AM fees sit below NOI.",
-    },
-    {
-      id: "dscr",
-      label: "Review DSCR",
-      prompt: "Review DSCR and debt yield against the loan-file thresholds. Do not invent LTV.",
-    },
-    {
-      id: "lp",
-      label: "Prepare LP pack",
-      prompt: "Prepare the Monthly Investor Pack. What inputs are required and where do I export PDF/PPTX?",
-    },
-    {
-      id: "lender",
-      label: "Prepare lender pack",
-      prompt: "Prepare the Quarterly Lender Pack. Call out covenants, reserves, and gated LTV.",
-    },
-  ];
-  if (page.startsWith("/close")) {
-    extras.unshift(extras.find((e) => e.id === "checklist")!);
-  }
-  if (page.startsWith("/debt") || page.startsWith("/dashboard")) {
-    extras.unshift(extras.find((e) => e.id === "dscr")!);
-  }
-  for (const extra of extras) {
-    if (chips.length >= 3) break;
-    if (!chips.some((c) => c.id === extra.id)) chips.push(extra);
-  }
-  return chips.slice(0, 3);
+function coachChrome(ctx: ExpertClientContext, bundle: OfflineBundle): Pick<ExpertMessage, "chips" | "actions"> {
+  return {
+    chips: rankChips(ctx, bundle),
+    actions: rankSuggestedActions(ctx, bundle),
+  };
 }
 
 function whereTheyAre(ctx: ExpertClientContext, bundle: OfflineBundle): string {
@@ -160,14 +68,19 @@ export function buildOpener(ctx: ExpertClientContext, bundle: OfflineBundle): Ex
     ctx.entityCode === "SPE-WBG"
       ? "Willow Bend is the value-add garden — we will stay on the books, not on guesses."
       : "I will stay on the live books and this product’s screens.";
+  const process = pageProcessLead(ctx);
+  const partner =
+    ctx.accessRole === "viewer"
+      ? " You are in **partner view** — dashboards and packs only. I will not send you to Add Deal or ask you to mutate."
+      : "";
   const content = `${greet} ${whereTheyAre(ctx, bundle)}${score}${leadFlags(flags, ctx)}
 
-Three useful next moves are on the chips below. I can also run checklist mode, audit this page, or sequence a lender / LP pack. Tax surfaces are CPA-export only — this system does not file.`;
+${process}${partner} Ranked next moves are on the chips and action buttons below. I will lead begin / continue / finish / troubleshoot — I do not write the books until you confirm on the cited screen. Tax surfaces are CPA-export only — this system does not file.`;
   return {
     id: newId(),
     role: "expert",
     content,
-    chips: rankChips(ctx, bundle),
+    ...coachChrome(ctx, bundle),
     sources: ["From live Expert context tools"],
     createdAt: new Date().toISOString(),
   };
@@ -447,7 +360,7 @@ ${anomaliesCopy(ctx, bundle)}`;
     id: newId(),
     role: "expert",
     content,
-    chips: rankChips(ctx, bundle),
+    ...coachChrome(ctx, bundle),
     sources: ["From live Expert tools (offline coach)"],
     createdAt: new Date().toISOString(),
   };
