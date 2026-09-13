@@ -29,6 +29,10 @@ export type ExpertMessage = {
   actions?: ExpertSuggestedAction[];
   sources?: string[];
   createdAt: string;
+  /** How this reply was produced. Banner green only when this is `ai`. */
+  mode?: "offline" | "ai";
+  /** One-liner when a live model was expected and the offline coach answered. */
+  fallbackReason?: string;
 };
 
 export type ExpertAccessRole = "principal" | "viewer";
@@ -145,9 +149,12 @@ export type ExpertBannerKind = "grok" | "live" | "offline";
 
 export type ExpertChatResponse = {
   mode: "offline" | "ai";
+  /** True when a Gateway / xAI key is configured — not "last reply was live". */
   aiEnabled: boolean;
+  keyPresent: boolean;
   provider: ExpertModelProvider;
   modelId: string;
+  /** `grok` only when `mode` is `ai`. Offline fallbacks stay `offline`. */
   banner: ExpertBannerKind;
   message: ExpertMessage;
   /** Set when a live model was expected but the reply came from the offline coach. */
@@ -158,6 +165,7 @@ export type ExpertStreamEvent =
   | {
       type: "start";
       aiEnabled: boolean;
+      keyPresent: boolean;
       provider: ExpertModelProvider;
       modelId: string;
       banner: ExpertBannerKind;

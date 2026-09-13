@@ -1,4 +1,4 @@
-import { pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
+import { composeExpertChrome, pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
 import { isClearHowToQuery, isDeleteDealQuery, isVagueQuery } from "./feature-intents";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
@@ -38,10 +38,7 @@ function coachChrome(
   bundle: OfflineBundle,
   userText = "",
 ): Pick<ExpertMessage, "chips" | "actions"> {
-  return {
-    chips: rankChips(ctx, bundle, userText),
-    actions: rankSuggestedActions(ctx, bundle, userText),
-  };
+  return composeExpertChrome(rankSuggestedActions(ctx, bundle, userText), rankChips(ctx, bundle, userText));
 }
 
 function whereTheyAre(ctx: ExpertClientContext, bundle: OfflineBundle): string {
@@ -96,6 +93,7 @@ export function buildOpener(ctx: ExpertClientContext, bundle: OfflineBundle): Ex
     content,
     ...coachChrome(ctx, bundle),
     sources: ["From live Expert context tools"],
+    mode: "offline",
     createdAt: new Date().toISOString(),
   };
 }
@@ -497,6 +495,7 @@ export function answerOffline(
     content,
     ...coachChrome(ctx, bundle, userText),
     sources: ["From live Expert tools (offline coach)"],
+    mode: "offline",
     createdAt: new Date().toISOString(),
   };
 }

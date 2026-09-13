@@ -30,9 +30,10 @@ export async function GET(request: Request) {
     const opener = buildOpener(ctx, tools);
     return NextResponse.json({
       aiEnabled: expertAiEnabled(),
+      keyPresent: expertAiEnabled(),
       provider: resolved.provider,
       modelId: resolved.modelId,
-      banner: resolved.banner,
+      banner: "offline",
       context: ctx,
       opener,
       ...tools,
@@ -42,9 +43,10 @@ export async function GET(request: Request) {
     if (/NO_SEED|No entities|Unknown entity/i.test(message)) {
       return NextResponse.json({
         aiEnabled: expertAiEnabled(),
+        keyPresent: expertAiEnabled(),
         provider: resolved.provider,
         modelId: resolved.modelId,
-        banner: resolved.banner,
+        banner: "offline",
         context: ctx,
         seeded: false,
         opener: {
@@ -53,6 +55,7 @@ export async function GET(request: Request) {
           content:
             "The ledger is empty. Load demo books on this machine with `npm run db:reset`, then reload. I will not invent balances while the database has no entities.",
           chips: [],
+          mode: "offline",
           createdAt: new Date().toISOString(),
         },
       });

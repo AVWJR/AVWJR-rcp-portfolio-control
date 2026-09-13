@@ -171,7 +171,35 @@ export function publicErrorMessage(err: unknown): string {
   return cleaned.length > 160 ? `${cleaned.slice(0, 157)}…` : cleaned;
 }
 
+export function enrichGatewayError(err: unknown): Error {
+  const rec = err && typeof err === "object" ? (err as Record<string, unknown>) : null;
+  const status = rec ? rec.statusCode ?? rec.status : undefined;
+  const body =
+    rec && typeof rec.responseBody === "string" ? rec.responseBody.replace(/\s+/g, " ").trim().slice(0, 160) : "";
+  const base = err instanceof Error ? err.message : String(err);
+  const extra = [typeof status === "number" ? `HTTP ${status}` : "", body].filter(Boolean).join(" ");
+  if (!extra || base.includes(String(status))) {
+    return err instanceof Error ? err : new Error(base);
+  }
+  return new Error(`${base} (${extra})`);
+}
+
 export function liveFallbackReason(err: unknown, modelId: string): string {
-  const line = `Live Grok (${modelId}) failed — using offline coach. ${publicErrorMessage(err)}`;
+  const line = `Live Grok (${modelId}) failed — using offline coach. ${publicErrorMessage(enrichGatewayError(err))}`;
   return line.length > 240 ? `${line.slice(0, 237)}…` : line;
+}
+
+/** Plain `provider/model` string is the AI SDK default. Pass the key explicitly when createGateway exists. */
+export async function resolveGatewayModel(modelId: string, apiKey: string | null): Promise<unknown> {
+  try {
+    const ai = await import("ai");
+    const createGateway = (ai as { createGateway?: (opts: { apiKey: string }) => (id: string) => unknown }).createGateway;
+    if (apiKey && typeof createGateway === "function") {
+      const gw = createGateway({ apiKey });
+      if (typeof gw === "function") return gw(modelId);
+    }
+  } catch {
+    // Plain "provider/model" still routes through AI Gateway when the key is in env.
+  }
+  return modelId;
 }

@@ -155,8 +155,11 @@ describe("expert offline fallback", () => {
   it("builds an opener with ranked chips and suggested actions", () => {
     const ctx = readExpertContext("/", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
     const opener = buildOpener(ctx, emptyBundle);
-    expect(opener.chips?.map((c) => c.id)).toEqual(["add_deal", "whats_missing_spe", "import_rent_roll"]);
+    const chrome = [...(opener.actions ?? []), ...(opener.chips ?? [])];
+    expect(chrome.length).toBeGreaterThan(0);
+    expect(chrome.length).toBeLessThanOrEqual(3);
     expect(opener.actions?.some((a) => a.kind === "navigate" && a.href?.includes("/deals/new"))).toBe(true);
+    expect(opener.chips?.some((c) => /Add a new deal/i.test(c.label))).toBeFalsy();
   });
 
   it("stays offline in runExpertChat when keys are unset (mocked provider)", async () => {

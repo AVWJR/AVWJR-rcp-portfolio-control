@@ -188,8 +188,12 @@ describe("expert coach voice", () => {
     expect(reply.content).not.toMatch(/number on this page/i);
     expect(reply.content).not.toMatch(/something missing/i);
     expect(reply.content).not.toMatch(/covenant watch/i);
-    expect(reply.chips?.some((c) => /covenant|dscr|vault|rent roll/i.test(c.label))).toBe(false);
-    expect(reply.chips?.some((c) => /Deals|Add a new deal/i.test(c.label))).toBe(true);
+    const chromeLabels = [...(reply.actions ?? []), ...(reply.chips ?? [])].map((row) => row.label);
+    expect(chromeLabels.every((label) => !/covenant|dscr|vault|rent roll/i.test(label))).toBe(true);
+    expect(chromeLabels.some((label) => /Deals|Add/i.test(label))).toBe(true);
+    expect(chromeLabels.length).toBeGreaterThan(0);
+    expect(chromeLabels.length).toBeLessThanOrEqual(3);
+    expect(reply.chips?.some((c) => /Open Deals/i.test(c.label))).toBe(false);
     const actions = rankSuggestedActions(ctx, flagHeavyBundle, "I need to delete a deal. How?");
     expect(actions.some((a) => a.href?.includes("/deals"))).toBe(true);
     expect(actions.some((a) => /covenant/i.test(a.label))).toBe(false);
