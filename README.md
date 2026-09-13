@@ -37,7 +37,7 @@ Every page mounts a lower-right **Expert** FAB that opens a miniature coaching d
 - **Live model** — set a **server-only** key, then restart `npm run dev`. Preferred: Vercel AI Gateway via `AI_GATEWAY_API_KEY` or the OIDC token from `vercel env pull` / a Vercel deploy. Also accepted: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Optional `EXPERT_MODEL` (default `openai/gpt-5.4`). Keys never go in `NEXT_PUBLIC_*`. If the model call fails, the Expert falls back to the offline coach.
 - Conversation is stored in `localStorage` keyed by entity + period. **New chat** clears that thread. `Esc` closes the panel; focus returns to the FAB.
 - `GET /api/expert/context?entity=SPE-WBG&period=2026-08&pathname=/dashboard/SPE-WBG` · `POST /api/expert/chat` (JSON `{ context, messages?, intent? }`). The chat route is rate-limited and read-only.
-- Follow-on (not in this release): partner auth / multi-tenant permissions if the demo URL is public. The Expert is a read-only coach on the seeded ledger.
+- Partner demo links stay read-only (see **Partner viewer link**). The Expert is a read-only coach on the seeded ledger. This is not multi-tenant auth.
 
 ### Add Deal (new property SPE)
 
@@ -89,6 +89,16 @@ curl -X POST "https://<your-app>/api/admin/seed" \
 
 If rows already exist, the route does nothing unless you send `{ "force": true }` (wipes the demo database). Wrong or missing `SEED_SECRET` is rejected; if `SEED_SECRET` is unset, the route returns 404.
 
+### Partner viewer link (optional)
+
+This is **not** multi-tenant auth. When `PARTNER_VIEW_TOKEN` (or `VIEWER_PASSWORD`) and/or `PRINCIPAL_PASSWORD` are set (8+ characters), the public URL defaults to **partner view**: dashboards, narratives, and packs are readable; Add Deal, `/admin/seed`, intake uploads, and other writes return 403. Local `npm run dev` stays Principal if those vars are unset.
+
+**Share with an LP / lender:** `https://<your-app>/?share=<PARTNER_VIEW_TOKEN>` (or `/partner`). A gold **Partner view — read only** banner appears.
+
+**Principal writes:** open `/unlock` and enter `PRINCIPAL_PASSWORD`, or `https://<your-app>/?unlock=<PRINCIPAL_PASSWORD>`.
+
+Alternatively, lock the whole deployment with [Vercel Deployment Protection](https://vercel.com/docs/security/deployment-protection) and only give the Vercel password to people who should open the app at all; then use the partner token so LPs still cannot mutate.
+
 Seed data is **demo books and sample tax-bridge rows only**. This system does not file taxes.
 
 #### Environment variables to set on Vercel
@@ -112,6 +122,8 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | `RCP_DEFAULT_OPCO` | No | Parent OpCo code for new deals, default `RCP-OPCO` |
 | `BLOB_READ_WRITE_TOKEN` | **Required on Vercel for OM / files over ~3.5 MB** | Vercel Blob read-write token. Without it, a 5.5 MB OM gets a Principal message — not a naked 413. Small files still persist in Neon (`StoredBlob`) |
 | `RCP_FILE_STORE` | No | Force `blob`, `db`, or `fs`. Default: Blob when the token is set, `db` on Vercel, `fs` on a laptop |
+| `PARTNER_VIEW_TOKEN` / `VIEWER_PASSWORD` | No | 8+ chars. Turns the public URL into partner view (share `/?share=<token>`). Alias: `VIEWER_PASSWORD` |
+| `PRINCIPAL_PASSWORD` | No | 8+ chars. Unlock writes at `/unlock` or `/?unlock=<password>` |
 
 Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POSTGRES_URL` for the pooled URL; `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` for the direct URL.
 
