@@ -7,7 +7,7 @@ import {
 } from "./ai-enabled";
 import { DEFAULT_ENTITY, DEFAULT_PERIOD, describePage } from "./nav";
 import { answerOffline, buildOpener, type OfflineBundle } from "./offline-coach";
-import { EXPERT_SYSTEM_PROMPT } from "./system-prompt";
+import { buildSystemForTurn } from "./snapshot";
 import { runExpertTools } from "./tools";
 import type {
   ExpertChatRequest,
@@ -111,13 +111,14 @@ function wrapMessage(
   bundle: OfflineBundle,
   sources: string[],
   proposed: ExpertSuggestedAction[] = [],
+  userText = "",
 ): ExpertMessage {
   const fallback = answerOffline("", ctx, bundle);
   return {
     ...fallback,
     content: text,
-    chips: rankChips(ctx, bundle),
-    actions: mergeSuggestedActions(proposed, rankSuggestedActions(ctx, bundle)),
+    chips: rankChips(ctx, bundle, userText),
+    actions: mergeSuggestedActions(proposed, rankSuggestedActions(ctx, bundle, userText)),
     sources,
     createdAt: new Date().toISOString(),
   };
@@ -139,13 +140,11 @@ function responseEnvelope(
 }
 
 function systemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle): string {
-  return `${EXPERT_SYSTEM_PROMPT}
+  return buildSystemForTurn(ctx, bundle);
+}
 
-Current UI context (authoritative for where they are):
-${JSON.stringify(ctx)}
-
-Preloaded tool snapshot (you may call tools again if this is stale):
-${JSON.stringify(bundle)}`;
+function openCoachPrompt(): string {
+  return "The Principal just opened Expert. Greet them in 2–4 sentences: where they are, and one useful next click. Do not list flags, acronyms, completeness rows, or the product map unless a blocker is on this page.";
 }
 
 async function answerWithGateway(
@@ -206,7 +205,7 @@ async function answerWithGateway(
       execute: async ({ intakeId }) => getDealIntakeStatus(intakeId),
     }),
     proposeSuggestedActions: tool({
-      description: "Propose 1-4 ranked UI action buttons (navigate, intent, or confirm_mutation). Call before you finish.",
+      description: "Propose 1-3 ranked UI action buttons tightly relevant to the last question or current page. Call before you finish.",
       inputSchema: z.object({
         actions: z
           .array(
@@ -219,7 +218,7 @@ async function answerWithGateway(
               mutation: z.string().optional(),
             }),
           )
-          .max(4),
+          .max(3),
       }),
       execute: async ({ actions }) => {
         proposed.splice(0, proposed.length, ...sanitizeSuggestedActions(actions));
@@ -233,7 +232,7 @@ async function answerWithGateway(
     system: systemForTurn(ctx, bundle),
     messages: [
       ...historyMessages(history),
-      { role: "user" as const, content: userText || "Open the coach for this page. Speak first with ranked next moves." },
+      { role: "user" as const, content: userText || openCoachPrompt() },
     ],
     tools,
     stopWhen: stepCountIs(6),
@@ -247,7 +246,7 @@ async function answerWithGateway(
 
   const text = (await result.text)?.trim();
   if (!text) return null;
-  return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok"], proposed);
+  return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok"], proposed, userText);
 }
 
 async function answerWithXai(
@@ -262,7 +261,7 @@ async function answerWithXai(
   const messages: XaiChatMessage[] = [
     { role: "system", content: systemForTurn(ctx, bundle) },
     ...historyMessages(history),
-    { role: "user", content: userText || "Open the coach for this page. Speak first with ranked next moves." },
+    { role: "user", content: userText || openCoachPrompt() },
   ];
 
   if (onDelta) {
@@ -273,12 +272,12 @@ async function answerWithXai(
     }
     const trimmed = text.trim();
     if (!trimmed) return null;
-    return wrapMessage(trimmed, ctx, bundle, ["From live Expert tools + Grok (xAI)"]);
+    return wrapMessage(trimmed, ctx, bundle, ["From live Expert tools + Grok (xAI)"], [], userText);
   }
 
   const text = await completeXai({ apiKey: resolved.apiKey, model: resolved.modelId, messages });
   if (!text) return null;
-  return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok (xAI)"]);
+  return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok (xAI)"], [], userText);
 }
 
 async function answerWithModel(
