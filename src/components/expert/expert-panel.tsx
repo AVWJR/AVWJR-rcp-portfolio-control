@@ -1,9 +1,16 @@
 "use client";
 
 import { ExpertMarkdown } from "@/components/expert/expert-markdown";
+import { expertBannerCopy } from "@/lib/expert/ai-enabled";
 import { formatContextChip } from "@/lib/expert/period";
-import type { ExpertChip, ExpertClientContext, ExpertMessage } from "@/lib/expert/types";
-import { useEffect, useId, useRef, type FormEvent, type KeyboardEvent, type RefObject } from "react";
+import type {
+  ExpertBannerKind,
+  ExpertChip,
+  ExpertClientContext,
+  ExpertMessage,
+  ExpertSuggestedAction,
+} from "@/lib/expert/types";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 
 export function ExpertPanel({
   ctx,
@@ -16,7 +23,9 @@ export function ExpertPanel({
   onMinimize,
   onNewChat,
   onSend,
+  onAction,
   onCopy,
+  banner,
   composer,
   setComposer,
   panelRef,
@@ -31,7 +40,9 @@ export function ExpertPanel({
   onMinimize: () => void;
   onNewChat: () => void;
   onSend: (text: string) => void;
+  onAction: (action: ExpertSuggestedAction) => void;
   onCopy: () => void;
+  banner: ExpertBannerKind;
   composer: string;
   setComposer: (value: string) => void;
   panelRef: RefObject<HTMLDivElement | null>;
@@ -61,7 +72,19 @@ export function ExpertPanel({
     }
   }
 
-  const lastChips: ExpertChip[] = [...messages].reverse().find((m) => m.role === "expert" && m.chips?.length)?.chips ?? [];
+  const shownBanner: ExpertBannerKind = aiEnabled ? banner : "offline";
+  const lastExpert = [...messages].reverse().find((m) => m.role === "expert");
+  const lastChips: ExpertChip[] = lastExpert?.chips ?? [];
+  const lastActions: ExpertSuggestedAction[] = lastExpert?.actions ?? [];
+  const [confirmAction, setConfirmAction] = useState<ExpertSuggestedAction | null>(null);
+
+  function handleAction(action: ExpertSuggestedAction) {
+    if (action.kind === "confirm_mutation") {
+      setConfirmAction(action);
+      return;
+    }
+    onAction(action);
+  }
 
   return (
     <div
@@ -121,14 +144,18 @@ export function ExpertPanel({
         <p className="mt-1 text-[11px] text-cream-200/90">{ctx.pageTitle}</p>
       </header>
 
-      {!aiEnabled ? (
-        <div
-          data-testid="expert-offline-banner"
-          className="border-b border-gold-500 bg-gold-100 px-3 py-1.5 text-[11px] text-navy-900"
-        >
-          AI replies disabled — add API key. Coaching still uses live completeness and anomaly tools.
-        </div>
-      ) : null}
+      <div
+        data-testid={shownBanner === "offline" ? "expert-offline-banner" : "expert-live-banner"}
+        className={
+          shownBanner === "offline"
+            ? "border-b border-gold-500 bg-gold-100 px-3 py-1.5 text-[11px] text-navy-900"
+            : "border-b border-emerald-700 bg-emerald-50 px-3 py-1.5 text-[11px] text-emerald-900"
+        }
+      >
+        {shownBanner === "offline"
+          ? `${expertBannerCopy("offline")}. Coaching still uses live completeness and anomaly tools.`
+          : `${expertBannerCopy(shownBanner)}. Streaming live replies; tools stay read-only until you confirm a write.`}
+      </div>
 
       <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
         {messages.map((message) => (
@@ -156,24 +183,76 @@ export function ExpertPanel({
         ))}
         {pending ? (
           <p className="text-[12px] italic text-ink-500" aria-live="polite">
-            Expert is reviewing the live books…
+            {shownBanner === "grok" ? "Grok is reviewing the live books…" : "Expert is reviewing the live books…"}
           </p>
         ) : null}
         {error ? <p className="text-[12px] text-navy-800">{error}</p> : null}
       </div>
 
-      {lastChips.length ? (
-        <div className="flex flex-wrap gap-1.5 border-t border-cream-300 bg-cream-100 px-3 py-2">
-          {lastChips.map((chip) => (
+      {lastActions.length || lastChips.length ? (
+        <div className="space-y-2 border-t border-cream-300 bg-cream-100 px-3 py-2">
+          {lastActions.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {lastActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  data-testid={`expert-action-${action.kind}`}
+                  onClick={() => handleAction(action)}
+                  className="border border-gold-500 bg-navy-900 px-2 py-1 text-[11px] text-gold-400 hover:bg-navy-800"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {lastChips.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {lastChips.map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => onSend(chip.prompt)}
+                  className="border border-navy-700 bg-white px-2 py-1 text-[11px] text-navy-900 hover:border-gold-500 hover:bg-gold-100"
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {confirmAction ? (
+        <div
+          role="alertdialog"
+          aria-label="Confirm later write"
+          className="border-t border-gold-500 bg-gold-100 px-3 py-2 text-[12px] text-navy-900"
+        >
+          <p>
+            Expert does not write the books. {confirmAction.mutation ?? confirmAction.label} — confirm on the cited
+            screen.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
             <button
-              key={chip.id}
               type="button"
-              onClick={() => onSend(chip.prompt)}
-              className="border border-navy-700 bg-white px-2 py-1 text-[11px] text-navy-900 hover:border-gold-500 hover:bg-gold-100"
+              className="border border-navy-800 bg-navy-900 px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-gold-400"
+              onClick={() => {
+                const action = confirmAction;
+                setConfirmAction(null);
+                onAction(action);
+              }}
             >
-              {chip.label}
+              Open screen
             </button>
-          ))}
+            <button
+              type="button"
+              className="border border-navy-700 bg-white px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-navy-900"
+              onClick={() => setConfirmAction(null)}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       ) : null}
 

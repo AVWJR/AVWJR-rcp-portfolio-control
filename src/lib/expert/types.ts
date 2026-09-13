@@ -8,14 +8,30 @@ export type ExpertChip = {
   prompt: string;
 };
 
+/** UI buttons that navigate, reopen an Expert intent, or ask for a later write confirm. */
+export type ExpertActionKind = "navigate" | "intent" | "confirm_mutation";
+
+export type ExpertSuggestedAction = {
+  id: string;
+  kind: ExpertActionKind;
+  label: string;
+  href?: string;
+  intent?: string;
+  prompt?: string;
+  mutation?: string;
+};
+
 export type ExpertMessage = {
   id: string;
   role: ExpertRole;
   content: string;
   chips?: ExpertChip[];
+  actions?: ExpertSuggestedAction[];
   sources?: string[];
   createdAt: string;
 };
+
+export type ExpertAccessRole = "principal" | "viewer";
 
 export type ExpertClientContext = {
   pathname: string;
@@ -24,6 +40,7 @@ export type ExpertClientContext = {
   view?: "combined";
   pageTitle: string;
   uiHints: string[];
+  accessRole?: ExpertAccessRole;
 };
 
 export type CompletenessStatus = "ready" | "missing" | "partial" | "na";
@@ -107,14 +124,42 @@ export type ExpertToolError = {
   error: string;
 };
 
+export type OfflineBundle = {
+  entity: EntitySummary | ExpertToolError;
+  period: PeriodStatusView | ExpertToolError;
+  completeness: DataCompleteness | ExpertToolError;
+  anomalies: { entityCode: string; periodLabel: string; flags: AnomalyFlag[] } | ExpertToolError;
+  kpis: KpiSnapshot | ExpertToolError;
+};
+
 export type ExpertChatRequest = {
   messages?: { role: string; content: string }[];
   context?: Partial<ExpertClientContext>;
   intent?: string;
+  stream?: boolean;
 };
+
+export type ExpertModelProvider = "gateway" | "xai" | "openai" | "anthropic" | "none";
+
+export type ExpertBannerKind = "grok" | "live" | "offline";
 
 export type ExpertChatResponse = {
   mode: "offline" | "ai";
   aiEnabled: boolean;
+  provider: ExpertModelProvider;
+  modelId: string;
+  banner: ExpertBannerKind;
   message: ExpertMessage;
 };
+
+export type ExpertStreamEvent =
+  | {
+      type: "start";
+      aiEnabled: boolean;
+      provider: ExpertModelProvider;
+      modelId: string;
+      banner: ExpertBannerKind;
+      mode: "offline" | "ai";
+    }
+  | { type: "delta"; text: string }
+  | { type: "done"; response: ExpertChatResponse };

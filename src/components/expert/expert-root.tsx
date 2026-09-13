@@ -4,8 +4,16 @@ import { ExpertPanel } from "@/components/expert/expert-panel";
 import { readExpertContext } from "@/lib/expert/nav";
 import { nextPanelState, type ExpertPanelState } from "@/lib/expert/panel-state";
 import { formatContextChip } from "@/lib/expert/period";
-import type { ExpertChatResponse, ExpertClientContext, ExpertMessage } from "@/lib/expert/types";
-import { usePathname, useSearchParams } from "next/navigation";
+import { parseExpertStreamLine } from "@/lib/expert/stream";
+import type {
+  ExpertAccessRole,
+  ExpertBannerKind,
+  ExpertChatResponse,
+  ExpertClientContext,
+  ExpertMessage,
+  ExpertSuggestedAction,
+} from "@/lib/expert/types";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const STORAGE_PREFIX = "rcp-expert:v1:";
@@ -45,6 +53,7 @@ function focusables(root: HTMLElement): HTMLElement[] {
 export function ExpertRoot() {
   const pathname = usePathname() ?? "/";
   const searchParams = useSearchParams();
+  const router = useRouter();
   const ctx = useMemo(
     () => readExpertContext(pathname, new URLSearchParams(searchParams.toString())),
     [pathname, searchParams],
@@ -54,6 +63,8 @@ export function ExpertRoot() {
   const [messages, setMessages] = useState<ExpertMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [banner, setBanner] = useState<ExpertBannerKind>("offline");
+  const [accessRole, setAccessRole] = useState<ExpertAccessRole | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
   const [score, setScore] = useState<number | null>(null);
@@ -94,10 +105,14 @@ export function ExpertRoot() {
         const res = await fetch(`/api/expert/context?${params.toString()}`);
         const data = (await res.json()) as {
           aiEnabled?: boolean;
+          banner?: ExpertBannerKind;
+          context?: { accessRole?: ExpertAccessRole };
           opener?: ExpertMessage;
           completeness?: { score?: number };
         };
         setAiEnabled(Boolean(data.aiEnabled));
+        setBanner(data.banner === "grok" || data.banner === "live" ? data.banner : "offline");
+        if (data.context?.accessRole) setAccessRole(data.context.accessRole);
         if (typeof data.completeness?.score === "number") setScore(data.completeness.score);
         if (force || stored.length === 0) {
           if (data.opener) setMessages([data.opener]);
@@ -149,6 +164,70 @@ export function ExpertRoot() {
     return () => document.removeEventListener("keydown", onKey);
   }, [state, closePanel]);
 
+  const chatContext = useMemo(
+    () => (accessRole ? { ...ctx, accessRole } : ctx),
+    [ctx, accessRole],
+  );
+
+  async function consumeJsonChat(res: Response, next: ExpertMessage[]) {
+    const data = (await res.json()) as ExpertChatResponse & { error?: string };
+    if (!res.ok) {
+      setError(data.error ?? "Expert could not reply.");
+      return;
+    }
+    setAiEnabled(data.aiEnabled);
+    setBanner(data.banner);
+    setMessages([...next, data.message]);
+  }
+
+  async function consumeStreamChat(res: Response, next: ExpertMessage[]) {
+    if (!res.body) {
+      await consumeJsonChat(res, next);
+      return;
+    }
+    const draftId = `expert_${Date.now()}`;
+    const draft: ExpertMessage = {
+      id: draftId,
+      role: "expert",
+      content: "",
+      createdAt: new Date().toISOString(),
+    };
+    setMessages([...next, draft]);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      applyStreamLines(lines, draftId);
+    }
+    if (buffer.trim()) applyStreamLines([buffer], draftId);
+  }
+
+  function applyStreamLines(lines: string[], draftId: string) {
+    for (const line of lines) {
+      const event = parseExpertStreamLine(line);
+      if (!event) continue;
+      if (event.type === "start") {
+        setAiEnabled(event.aiEnabled);
+        setBanner(event.banner);
+      } else if (event.type === "delta") {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === draftId ? { ...message, content: `${message.content}${event.text}` } : message,
+          ),
+        );
+      } else if (event.type === "done") {
+        setAiEnabled(event.response.aiEnabled);
+        setBanner(event.response.banner);
+        setMessages((prev) => prev.map((message) => (message.id === draftId ? event.response.message : message)));
+      }
+    }
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || pending) return;
@@ -169,21 +248,38 @@ export function ExpertRoot() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: next.map((m) => ({ role: m.role, content: m.content })),
-          context: ctx,
+          context: chatContext,
+          stream: true,
         }),
       });
-      const data = (await res.json()) as ExpertChatResponse & { error?: string };
+      const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
-        setError(data.error ?? "Expert could not reply.");
+        await consumeJsonChat(res, next);
         return;
       }
-      setAiEnabled(data.aiEnabled);
-      setMessages([...next, data.message]);
+      if (contentType.includes("ndjson")) {
+        await consumeStreamChat(res, next);
+        return;
+      }
+      await consumeJsonChat(res, next);
     } catch {
       setError("Expert could not reply. Try again.");
     } finally {
       setPending(false);
     }
+  }
+
+  function onAction(action: ExpertSuggestedAction) {
+    if (action.kind === "navigate" && action.href) {
+      router.push(action.href);
+      return;
+    }
+    if (action.kind === "confirm_mutation" && action.href) {
+      router.push(action.href);
+      return;
+    }
+    const prompt = action.prompt?.trim() || action.intent?.trim() || action.label;
+    if (prompt) void send(prompt);
   }
 
   function copyLink() {
@@ -219,7 +315,9 @@ export function ExpertRoot() {
               void loadOpener(true);
             }}
             onSend={send}
+            onAction={onAction}
             onCopy={copyLink}
+            banner={banner}
             composer={composer}
             setComposer={setComposer}
             panelRef={panelRef}

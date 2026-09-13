@@ -1,6 +1,7 @@
-import { runExpertChat, validateChatBody } from "@/lib/expert/chat";
+import { runExpertChat, streamExpertChat, validateChatBody } from "@/lib/expert/chat";
 import { publicErrorMessage } from "@/lib/expert/ai-enabled";
 import { allowRequest, clientKey } from "@/lib/expert/rate-limit";
+import { encodeExpertStream, EXPERT_STREAM_CONTENT_TYPE } from "@/lib/expert/stream";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -24,6 +25,16 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (parsed.value.stream) {
+      const stream = encodeExpertStream(streamExpertChat(parsed.value));
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          "Content-Type": EXPERT_STREAM_CONTENT_TYPE,
+          "Cache-Control": "no-cache, no-transform",
+        },
+      });
+    }
     const result = await runExpertChat(parsed.value);
     return NextResponse.json(result);
   } catch (error) {

@@ -93,9 +93,9 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     test: /^\/deals\/new$/,
     title: "Add Deal",
     hints: [
-      "Eight guided steps: goal → identity → source files → classify → create SPE → apply CSVs/loan → completeness → done.",
-      "Upload works now. Dropbox / email / RCP mailbox show honest empty states until tokens or RCP_INGEST_MAILBOX exist.",
-      "Rent-roll and budget imports replace existing rows only after you confirm.",
+      "Upload-first: drop OM / redIQ or Yardi XLSX / T12. Filenames infer SPE-HRP-style codes. Files go one at a time (32 MB each).",
+      "On Vercel, files over ~3.5 MB need BLOB_READ_WRITE_TOKEN (Add Deal and /vault share Blob). A 5.5 MB Harrington OM is valid.",
+      "0 units is a failure: could not map columns + Detected headers. Re-apply rent roll on Properties / Dashboard. Writes need confirm.",
     ],
   },
   {
