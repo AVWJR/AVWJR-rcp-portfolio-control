@@ -29,6 +29,20 @@ npm run dev
 
 App: [http://localhost:3000](http://localhost:3000)
 
+### RCP Expert coach
+
+Every page mounts a lower-right **Expert** FAB that opens a miniature coaching dialogue (not a generic chatbot). The Expert reads the current **entity** and **period** from the URL, speaks first with where you are and three next-move chips, and can audit missing data, errant journals, and anomalous KPIs from the **same** dashboard / close / rent-roll / loan math as the rest of the app.
+
+- **Offline (default)** — no model key required. The panel still opens, shows a gold banner (“AI replies disabled — add API key”), and answers from live tools (`getEntitySummary`, `getPeriodStatus`, `getKpiSnapshot`, `getDataCompleteness`, `getAnomalies`, `listNavTargets`). It will not invent GL balances or covenants.
+- **Live model** — set a **server-only** key, then restart `npm run dev`. Preferred: Vercel AI Gateway via `AI_GATEWAY_API_KEY` or the OIDC token from `vercel env pull` / a Vercel deploy. Also accepted: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Optional `EXPERT_MODEL` (default `openai/gpt-5.4`). Keys never go in `NEXT_PUBLIC_*`. If the model call fails, the Expert falls back to the offline coach.
+- Conversation is stored in `localStorage` keyed by entity + period. **New chat** clears that thread. `Esc` closes the panel; focus returns to the FAB.
+- `GET /api/expert/context?entity=SPE-WBG&period=2026-08&pathname=/dashboard/SPE-WBG` · `POST /api/expert/chat` (JSON `{ context, messages?, intent? }`). The chat route is rate-limited and read-only.
+- Follow-on (not in this release): partner auth / multi-tenant permissions if the demo URL is public. The Expert is a read-only coach on the seeded ledger.
+
+Sample: [http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1](http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1)
+
+Screenshots: [FAB](./docs/expert/expert_fab.png) · [opener](./docs/expert/expert_panel_opener.png) · [SPE-WBG flags](./docs/expert/expert_anomaly_spe_wbg.png) · [mobile](./docs/expert/expert_mobile_sheet.png)
+
 `.env` default:
 
 ```
@@ -71,6 +85,9 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | `NEXT_PUBLIC_RCP_CURRENCY` | Yes | `USD` |
 | `NEXT_PUBLIC_RCP_LOCALE` | Yes | `en-US` |
 | `NEXT_PUBLIC_RCP_TIMEZONE` | Yes | `America/New_York` |
+| `AI_GATEWAY_API_KEY` | No | Enables live Expert model replies (Vercel AI Gateway). Offline coach works without it |
+| `EXPERT_MODEL` | No | Gateway model id, default `openai/gpt-5.4` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | No | Alternate server-only keys for live Expert replies |
 
 Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POSTGRES_URL` for the pooled URL; `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` for the direct URL.
 
