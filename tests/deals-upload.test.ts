@@ -12,6 +12,8 @@ import { prisma } from "@/lib/prisma";
 import { afterAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { harringtonRentRollWorkbook, unmappableWorkbook } from "./fixtures/harrington-rent-roll";
+import { resolveReportScope } from "@/lib/reports-server";
 
 const intakeIds: string[] = [];
 const blobIds: string[] = [];
@@ -395,7 +397,7 @@ describe("Add Deal intake upload", () => {
       source: "upload",
       filename: "RR_-_Harrington_-_12.31.19_-_Resi.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      bytes: readFileSync(resolve("data/samples/rent-roll.xlsx")),
+      bytes: harringtonRentRollWorkbook(),
     });
     await storeIntakeFile({
       intakeId: intake.id,
@@ -410,12 +412,70 @@ describe("Add Deal intake upload", () => {
     expect(report.inferred.speName).toMatch(/Harrington Park/i);
     expect(report.created.entityCode).toMatch(/^SPE-/);
     expect(report.created.entityName).toMatch(/Harrington Park/i);
-    expect(report.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 1)).toBe(true);
+    expect(report.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 5)).toBe(true);
     expect(report.gaps.some((gap) => /T12|P&L/i.test(gap))).toBe(true);
 
     const latest = await getIntake(intake.id);
+    expect(latest?.targetPeriod).toBe("2026-08");
     expect(latest?.entityId).toBeTruthy();
+    const units = await prisma.unit.count({ where: { entityId: latest!.entityId! } });
+    expect(units).toBe(5);
+    const spe = await prisma.entity.findUnique({ where: { id: latest!.entityId! } });
+    expect(spe?.unitCount).toBe(5);
     const vaulted = await prisma.vaultDocument.count({ where: { entityId: latest!.entityId! } });
     expect(vaulted).toBeGreaterThanOrEqual(1);
+  });
+
+  it("surfaces could not map columns with detected headers instead of silent vault-only success", async () => {
+    const suffix = Date.now().toString(36).toUpperCase().slice(-3);
+    const { entity } = await createSpeDeal({
+      name: `Unmapped Court ${suffix} LLC`,
+      code: `SPE-M${suffix}`,
+      goal: "stabilize",
+      targetPeriod: "2026-08",
+    });
+    entityIds.push(entity.id);
+    const intake = await createIntake({
+      goal: "stabilize",
+      targetPeriod: "2026-08",
+      speName: entity.name,
+      speCode: entity.code,
+      sources: ["upload"],
+    });
+    intakeIds.push(intake.id);
+    await updateIntake(intake.id, { entityId: entity.id });
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "RR_-_Mystery_-_notes.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: unmappableWorkbook(),
+      classification: "rent_roll_csv",
+    });
+    const applied = await applyStructuredData({
+      intakeId: intake.id,
+      confirmReplace: true,
+      importRentRoll: true,
+      importBudget: false,
+      saveLoan: false,
+      lenient: true,
+    });
+    const skipped = applied.results.find((row) => row.kind === "rent_roll")?.skipped ?? "";
+    expect(skipped).toMatch(/could not map columns/i);
+    expect(skipped).toMatch(/Detected headers/i);
+    expect(await prisma.unit.count({ where: { entityId: entity.id } })).toBe(0);
+  });
+
+  it("opens a missing header period instead of throwing Period not found", async () => {
+    const wbg = await prisma.entity.findUnique({ where: { code: "SPE-WBG" } });
+    if (!wbg) return;
+    const scope = await resolveReportScope({
+      entityId: wbg.id,
+      year: 2019,
+      month: 11,
+      consolidated: false,
+    });
+    expect(scope.period.label).toBe("2019-11");
+    expect(scope.period.status).toBe("OPEN");
   });
 });

@@ -44,7 +44,8 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
   await updateIntake(intake.id, {
     speName: workingTitle(speName),
     speCode: uniqueCode,
-    targetPeriod: inferred.targetPeriod ?? intake.targetPeriod,
+    // Filename as-of (OM/RR vintage) is not the OpCo close month. Keep the wizard period (default 2026-08).
+    targetPeriod: intake.targetPeriod,
     currentStep: 5,
     lastError: null,
   });
@@ -72,6 +73,10 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
 
   for (const row of applied.results) {
     if (row.skipped) gaps.push(row.skipped);
+  }
+  const rr = applied.results.find((row) => row.kind === "rent_roll");
+  if (rr?.imported) {
+    gaps.push(`Open Properties / Dashboard for ${uniqueCode} — occupancy now uses ${rr.imported} rent-roll units.`);
   }
 
   const latest = applied.intake ?? (await getIntake(intake.id));

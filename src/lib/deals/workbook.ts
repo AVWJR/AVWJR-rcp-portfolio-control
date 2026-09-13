@@ -1,4 +1,10 @@
-import { utils, read } from "xlsx";
+import { utils, read, type WorkBook, type WorkSheet } from "xlsx";
+import {
+  couldNotMapColumnsMessage,
+  findRentRollHeaderRow,
+  looksLikeRentRollHeaders,
+  scoreRentRollHeaderRow,
+} from "@rcp/properties";
 
 export const SPREADSHEET_EXTENSIONS = [".xlsx", ".xls"] as const;
 export const SPREADSHEET_MIME_TYPES = [
@@ -84,11 +90,62 @@ export function assertReadableWorkbook(bytes: Buffer, filename: string): void {
   }
 }
 
+function sheetRows(sheet: WorkSheet): string[][] {
+  const aoa = utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: "", blankrows: false });
+  return aoa.map((row) => (Array.isArray(row) ? row.map((cell) => String(cell ?? "").trim()) : []));
+}
+
+function sheetNameScore(name: string): number {
+  const lower = name.toLowerCase();
+  if (/cover|instr|toc|summary|index|check/.test(lower)) return -8;
+  if (/rent|roll|unit|resi/.test(lower)) return 6;
+  if (/budget/.test(lower)) return 2;
+  return 0;
+}
+
+export function selectRentRollSheet(workbook: WorkBook): { name: string; rows: string[][]; headerRow: number; score: number } | null {
+  let best: { name: string; rows: string[][]; headerRow: number; score: number } | null = null;
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) continue;
+    const rows = sheetRows(sheet);
+    const headerRow = findRentRollHeaderRow(rows);
+    const headerScore = headerRow >= 0 ? scoreRentRollHeaderRow(rows[headerRow] ?? []) : 0;
+    const score = sheetNameScore(name) + headerScore;
+    if (!best || score > best.score) {
+      best = { name, rows, headerRow, score };
+    }
+  }
+  if (!best || best.headerRow < 0 || best.score < 8) return null;
+  return best;
+}
+
+function rowsToCsv(headers: string[], body: string[][]): string {
+  const escape = (value: string) => {
+    if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+    return value;
+  };
+  return [headers, ...body].map((row) => row.map((cell) => escape(String(cell ?? ""))).join(",")).join("\n");
+}
+
 export function workbookToCsv(bytes: Buffer, filename: string): string {
   assertReadableWorkbook(bytes, filename);
   const workbook = read(bytes, { type: "buffer", cellDates: true, raw: false });
+  const selected = selectRentRollSheet(workbook);
+  if (selected) {
+    const headers = selected.rows[selected.headerRow] ?? [];
+    const body = selected.rows.slice(selected.headerRow + 1);
+    const csv = rowsToCsv(headers, body);
+    if (!csv.trim()) {
+      throw new Error(
+        `${filename} sheet "${selected.name}" has no rows we can read. ${couldNotMapColumnsMessage(headers)}.`,
+      );
+    }
+    return csv;
+  }
+
   const preferred =
-    workbook.SheetNames.find((name) => /rent|roll|unit/i.test(name)) ??
+    workbook.SheetNames.find((name) => /rent|roll|unit|resi/i.test(name)) ??
     workbook.SheetNames.find((name) => /budget/i.test(name)) ??
     workbook.SheetNames[0];
   if (!preferred) {
@@ -98,10 +155,15 @@ export function workbookToCsv(bytes: Buffer, filename: string): string {
   if (!sheet) {
     throw new Error(`${filename} sheet "${preferred}" is empty. The file is stored — ask Expert to map columns or save the first sheet as CSV.`);
   }
+  const rows = sheetRows(sheet);
+  const detected = rows.find((row) => row.some((cell) => cell.trim())) ?? [];
+  if (!looksLikeRentRollHeaders(detected) && !/account.?code/i.test(detected.join(" "))) {
+    throw new Error(`${couldNotMapColumnsMessage(detected.filter(Boolean))}. Sheet "${preferred}".`);
+  }
   const csv = utils.sheet_to_csv(sheet, { blankrows: false });
   if (!csv.trim()) {
     throw new Error(
-      `${filename} sheet "${preferred}" has no rows we can read. The file is stored in the vault — ask Expert to map columns (unit_id / account_code) or save as CSV.`,
+      `${filename} sheet "${preferred}" has no rows we can read. ${couldNotMapColumnsMessage(detected.filter(Boolean))}.`,
     );
   }
   return csv;

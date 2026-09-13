@@ -694,7 +694,8 @@ export function AddDealWizard({
             <p className="text-sm text-ink-600">
               Upload before naming the deal if you want. A draft titled <strong>Untitled deal</strong> is
               created automatically. Files are sent <strong>one at a time</strong> (CSV, XLSX/XLS, PDF — max{" "}
-              {INTAKE_MAX_BYTES_LABEL} each). Prefer Vercel Blob (<code>BLOB_READ_WRITE_TOKEN</code>) for large
+              {INTAKE_MAX_BYTES_LABEL} <strong>each</strong>, never summed). A 5.5 MB OM plus three small
+              workbooks is under the cap. Prefer Vercel Blob (<code>BLOB_READ_WRITE_TOKEN</code>) for large
               OM PDFs so they are not stored in Neon.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
@@ -746,7 +747,7 @@ export function AddDealWizard({
             {form.sources.includes("upload") ? (
               <FileDropzone
                 onFiles={(files) => void uploadFiles(files, "upload")}
-                hint={`Drop rent-roll CSV or XLSX, budget workbook, loan PDFs, OM, insurance. Max ${INTAKE_MAX_BYTES_LABEL}.`}
+                hint={`Drop rent-roll XLSX/CSV, budget workbook, loan PDFs, OM. Max ${INTAKE_MAX_BYTES_LABEL} per file (not combined).`}
               />
             ) : null}
 
@@ -824,10 +825,10 @@ export function AddDealWizard({
           <section className="space-y-4">
             <h2 className="font-display text-2xl text-navy-900">Classify files</h2>
             <p className="text-sm text-ink-600">
-              Map each file so it lands in the vault with the right kind. Tag an XLSX as rent-roll,
-              budget, or other (OM / loan supporting). Rent-roll and budget workbooks use the first
-              matching sheet (RentRoll / Budget / first sheet) after the SPE exists. If columns do not
-              match, the file stays stored — ask Expert to map them. Do not leave a workbook unclassified.
+              Map each file so it lands in the vault with the right kind. Broker rent-roll XLSX
+              (Unit / Market Rent / Lease Rent / Status) is applied to Unit rows — not vault-only.
+              If columns cannot be mapped you will see <strong>could not map columns</strong> with the
+              detected headers.
             </p>
             {!intake?.files.length ? (
               <p className="text-sm text-ink-600">No files yet. Go back and upload, or continue if you will add files later.</p>
@@ -897,8 +898,8 @@ export function AddDealWizard({
           <section className="space-y-4">
             <h2 className="font-display text-2xl text-navy-900">Apply structured data</h2>
             <p className="text-sm text-ink-600">
-              Optional. Rent-roll and budget CSV / XLSX files use the existing importers (xlsx first
-              sheet or a RentRoll / Budget tab). If rows already exist, you must confirm a full replace.
+              Optional. Rent-roll XLSX/CSV (broker headers or the RCP template) writes Unit rows used
+              by occupancy KPIs. If rows already exist, you must confirm a full replace.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               <label className="block text-sm text-ink-700">

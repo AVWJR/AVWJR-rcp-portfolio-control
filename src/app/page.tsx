@@ -1,5 +1,6 @@
 import { KpiStrip } from "@/components/kpi-strip";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
+import { currentAccessRole } from "@/lib/access-server";
 import { formatUsd } from "@rcp/ledger";
 import Link from "next/link";
 
@@ -9,6 +10,7 @@ export default async function HomePage({
   searchParams: Promise<ReportSearch>;
 }) {
   const params = await searchParams;
+  const role = await currentAccessRole();
   return (
     <ReportShell searchParams={params} pathname="/">
       {(ctx) => {
@@ -50,7 +52,15 @@ export default async function HomePage({
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {[
-                { href: "/deals/new", title: "Add Deal", copy: "Guided intake for a new property SPE under OpCo. Upload files now; Dropbox and email hooks when connected." },
+                ...(role === "principal"
+                  ? [
+                      {
+                        href: "/deals/new",
+                        title: "Add Deal",
+                        copy: "Guided intake for a new property SPE under OpCo. Upload files now; Dropbox and email hooks when connected.",
+                      },
+                    ]
+                  : []),
                 { href: "/deals", title: "Deals / SPE list", copy: "Every property SPE plus saved Add Deal drafts. New deals appear in the entity switcher after create." },
                 { href: "/dashboard", title: "OpCo / property dashboards", copy: "Live ratio tiles with formula drill-down. Combined roll-up is not GAAP consolidation." },
                 { href: "/narratives", title: "Narratives / report packs", copy: "Five audience tones plus Monthly Investor, Lender, IC Memo, and Management Flash PDF/PPTX." },

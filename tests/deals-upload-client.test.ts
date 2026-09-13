@@ -64,4 +64,18 @@ describe("Add Deal upload client helpers", () => {
     expect(requestExceedsIntakeLimit(INTAKE_MAX_BYTES)).toBe(false);
     expect(requestExceedsIntakeLimit(INTAKE_MAX_BYTES + 2 * 1024 * 1024)).toBe(true);
   });
+
+  it("does not treat a 5.5 MB file or a 6 MB four-file drop as over the 32 MB per-file cap", () => {
+    const om = 5.5 * 1024 * 1024;
+    const xlsx = 180 * 1024;
+    const rows = initialUploadRows([
+      { name: "Life_at_Harrington_Park_OM.pdf", size: om },
+      { name: "RR_-_Harrington_-_12.31.19_-_Resi.xlsx", size: xlsx },
+      { name: "T12_NOI.xlsx", size: xlsx },
+      { name: "PL.xlsx", size: xlsx },
+    ]);
+    expect(rows.every((row) => row.progress === "queued")).toBe(true);
+    expect(om + xlsx * 3).toBeLessThan(10 * 1024 * 1024);
+    expect(requestExceedsIntakeLimit(om)).toBe(false);
+  });
 });

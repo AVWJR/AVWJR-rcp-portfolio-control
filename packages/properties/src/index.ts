@@ -3,5 +3,6 @@
 export * from "./types";
 export * from "./occupancy";
 export * from "./csv";
+export * from "./rent-roll-map";
 export * from "./demo-rent-roll";
 export * from "./demo-budget";
