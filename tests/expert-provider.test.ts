@@ -181,7 +181,7 @@ describe("expert suggested actions + stream parse", () => {
       emptyBundle,
     ));
     expect(merged.length).toBeGreaterThan(0);
-    expect(merged.length).toBeLessThanOrEqual(4);
+    expect(merged.length).toBeLessThanOrEqual(3);
   });
 
   it("parses NDJSON stream lines", () => {

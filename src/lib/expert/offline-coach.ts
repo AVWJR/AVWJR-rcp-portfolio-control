@@ -32,10 +32,14 @@ function missingItems(items: CompletenessItem[]): CompletenessItem[] {
   return items.filter((item) => item.status === "missing" || item.status === "partial");
 }
 
-function coachChrome(ctx: ExpertClientContext, bundle: OfflineBundle): Pick<ExpertMessage, "chips" | "actions"> {
+function coachChrome(
+  ctx: ExpertClientContext,
+  bundle: OfflineBundle,
+  userText = "",
+): Pick<ExpertMessage, "chips" | "actions"> {
   return {
-    chips: rankChips(ctx, bundle),
-    actions: rankSuggestedActions(ctx, bundle),
+    chips: rankChips(ctx, bundle, userText),
+    actions: rankSuggestedActions(ctx, bundle, userText),
   };
 }
 
@@ -50,32 +54,39 @@ function whereTheyAre(ctx: ExpertClientContext, bundle: OfflineBundle): string {
   return `You are on **${page.title}** looking at **${entity}**${type}, period **${period}**.${view}`;
 }
 
-function leadFlags(flags: AnomalyFlag[], ctx: ExpertClientContext): string {
-  const top = [...blockers(flags), ...flags.filter((f) => f.severity === "watch")].slice(0, 3);
-  if (!top.length) return "";
-  const lines = top.map((flag, i) => {
-    const dest = withContext(flag.href.split("?")[0] || flag.href, ctx.entityCode, ctx.periodLabel, ctx.view);
-    return `${i + 1}. **${flag.title}** — ${flag.detail} (${flag.source}) [${flag.title}](${dest.startsWith("/") ? dest : flag.href})`;
+function pageRelevantBlocker(flags: AnomalyFlag[], ctx: ExpertClientContext): AnomalyFlag | null {
+  const path = ctx.pathname;
+  const hits = blockers(flags).filter((flag) => {
+    const hay = `${flag.id} ${flag.title} ${flag.href}`.toLowerCase();
+    if (path.startsWith("/debt")) return /dscr|debt|yield|maturity/.test(hay);
+    if (path.startsWith("/properties")) return /unit|occupancy|rent/.test(hay);
+    if (path.startsWith("/close")) return /check|period|lock|ic|journal|tb_|bs_|cf_|draft/.test(hay);
+    if (path.startsWith("/tax")) return /tax/.test(hay);
+    if (path.startsWith("/reports/trial")) return /tb_|journal|draft|balance/.test(hay);
+    if (path.includes("operating")) return /noi|variance/.test(hay);
+    return true;
   });
-  return `\n\nLeading items from the live books:\n${lines.join("\n")}`;
+  return hits[0] ?? null;
+}
+
+function greetFor(ctx: ExpertClientContext): string {
+  if (ctx.entityCode === "SPE-WBG") return "I'm with you on Willow Bend.";
+  if (ctx.entityCode === "RCP-OPCO") return "I'm with you on the OpCo roll-up.";
+  if (/hrp|harrington/i.test(ctx.entityCode)) return "I'm with you on Harrington.";
+  return "I'm right here with you.";
 }
 
 export function buildOpener(ctx: ExpertClientContext, bundle: OfflineBundle): ExpertMessage {
-  const complete = isErr(bundle.completeness) ? null : bundle.completeness;
   const flags = isErr(bundle.anomalies) ? [] : bundle.anomalies.flags;
-  const score = complete ? ` Data completeness is **${complete.score}/100** (${complete.ready}/${complete.applicable} ready).` : "";
-  const greet =
-    ctx.entityCode === "SPE-WBG"
-      ? "Willow Bend is the value-add garden — we will stay on the books, not on guesses."
-      : "I will stay on the live books and this product’s screens.";
-  const process = pageProcessLead(ctx);
+  const blocker = pageRelevantBlocker(flags, ctx);
+  const next = blocker
+    ? `One blocker on this page: **${blocker.title}**. Open [${blocker.title}](${blocker.href}) when you want to unwind it.`
+    : pageProcessLead(ctx);
   const partner =
     ctx.accessRole === "viewer"
-      ? " You are in **partner view** — dashboards and packs only. I will not send you to Add Deal or ask you to mutate."
+      ? " You are in **partner view** — dashboards and packs only. I will not send you to Add Deal."
       : "";
-  const content = `${greet} ${whereTheyAre(ctx, bundle)}${score}${leadFlags(flags, ctx)}
-
-${process}${partner} Ranked next moves are on the chips and action buttons below. I will lead begin / continue / finish / troubleshoot — I do not write the books until you confirm on the cited screen. Tax surfaces are CPA-export only — this system does not file.`;
+  const content = `${greetFor(ctx)} ${whereTheyAre(ctx, bundle)} ${next}${partner}`;
   return {
     id: newId(),
     role: "expert",
@@ -131,18 +142,50 @@ Work the sequence — do not skip to packs if the books do not foot:
 Demo reminder: SPE-WBG 2026-07 is hard locked; 2026-08 stays open.`;
 }
 
-function completenessCopy(ctx: ExpertClientContext, bundle: OfflineBundle): string {
-  if (isErr(bundle.completeness)) return `I cannot score completeness: ${bundle.completeness.error}.`;
+const NAMED_ASSETS: { match: RegExp; code: string; name: string }[] = [
+  { match: /harrington|spe-hrp|\bhrp\b/, code: "SPE-HRP", name: "Harrington" },
+  { match: /willow|spe-wbg|\bwbg\b/, code: "SPE-WBG", name: "Willow Bend" },
+  { match: /canyon|spe-cvc|\bcvc\b/, code: "SPE-CVC", name: "Canyon View" },
+  { match: /harbor|spe-hcr|\bhcr\b/, code: "SPE-HCR", name: "Harbor Court" },
+];
+
+function mentionedAsset(text: string): { code: string; name: string } | null {
+  const q = text.toLowerCase();
+  return NAMED_ASSETS.find((row) => row.match.test(q)) ?? null;
+}
+
+function itemMatchesAsset(item: CompletenessItem, asset: { code: string; name: string }): boolean {
+  const hay = `${item.id} ${item.label} ${item.href} ${item.detail}`.toLowerCase();
+  return hay.includes(asset.code.toLowerCase()) || hay.includes(asset.name.toLowerCase());
+}
+
+function completenessCopy(ctx: ExpertClientContext, bundle: OfflineBundle, userText = ""): string {
+  if (isErr(bundle.completeness)) {
+    const named = mentionedAsset(userText);
+    if (named) {
+      return `I cannot score **${named.name}** yet: ${bundle.completeness.error}. Open Properties or the dashboard for \`${named.code}\` — I will not invent gaps.`;
+    }
+    return `I cannot score completeness: ${bundle.completeness.error}.`;
+  }
   const c = bundle.completeness;
-  const rows = c.items
-    .filter((item) => item.status !== "na")
-    .map((item) => `- **${item.label}** — ${item.status}. ${item.detail} (${item.source}) [${item.label}](${item.href})`)
+  const named = mentionedAsset(userText);
+  const gaps = c.items.filter((item) => item.status === "missing" || item.status === "partial");
+  const focused = named ? gaps.filter((item) => itemMatchesAsset(item, named)) : gaps;
+  if (named && !focused.length) {
+    return `Nothing in the live completeness list is tagged to **${named.name}** (\`${named.code}\`) for ${formatContextChip(c.entityCode, c.periodLabel)}. I will not invent Harrington units or other SPE gaps. Open [${named.name} dashboard](/dashboard/${named.code}?entity=${named.code}&period=${ctx.periodLabel}) if you want to switch onto that SPE.`;
+  }
+  const rows = focused
+    .map((item) => `- **${item.label}** — ${item.status}. ${item.detail} [${item.label}](${item.href})`)
     .join("\n");
-  return `**Data completeness ${c.score}/100** for ${formatContextChip(c.entityCode, c.periodLabel)} (${c.ready}/${c.applicable} ready).
+  const who = named ? ` for **${named.name}**` : ` for ${formatContextChip(c.entityCode, c.periodLabel)}`;
+  const next = focused[0]
+    ? `Open **${focused[0].label}** next.`
+    : "Nothing looks missing on this completeness pass.";
+  return `${named ? `${named.name} gaps` : "What's missing"}${who}: ${focused.length} open item(s) (score ${c.score}/100).
 
-${rows}
+${rows || "No missing or partial rows."}
 
-Missing rows are entered on the linked screen — I will not invent balances to fill them.`;
+${next} I will not invent balances to fill them.`;
 }
 
 function anomaliesCopy(ctx: ExpertClientContext, bundle: OfflineBundle): string {
@@ -289,13 +332,42 @@ function kpiCopy(ctx: ExpertClientContext, bundle: OfflineBundle, topic: string)
     ctx,
     "Dashboard",
   );
+  const notes = k.notes.filter((note) => !/watchlist|covenant|dscr/i.test(note));
   return `**Live KPIs** from ${dash} (${k.viewLabel}) for ${formatContextChip(k.entityCode, k.periodLabel)}:
 
 ${rows || "No matching tiles. Open the dashboard and pick a ratio tile for drill-down."}
 
-${k.notes.join("\n")}
+${notes.join("\n")}
 
-Click a tile → ${link("/dashboard/ratios", ctx, "ratio drill-down")} for the formula. LTV and delinquency stay gated.`;
+Click a tile → ${link("/dashboard/ratios", ctx, "ratio drill-down")} for the formula.`;
+}
+
+function explainNoi(ctx: ExpertClientContext, bundle: OfflineBundle): string {
+  const name = isErr(bundle.entity) ? ctx.entityCode : bundle.entity.name;
+  const type = isErr(bundle.entity) ? (ctx.entityCode === "RCP-OPCO" ? "OPCO" : "") : bundle.entity.type;
+  const tile = !isErr(bundle.kpis)
+    ? bundle.kpis.tiles.find((t) => t.id === "noi_period" || t.id.includes("noi"))
+    : undefined;
+  const figure = tile ? ` The card shows **${tile.display}** for ${ctx.periodLabel}.` : "";
+  const os = link("/reports/operating-statement", ctx, "Operating Statement");
+  if (type === "OPCO" || ctx.entityCode === "RCP-OPCO") {
+    return `On this OpCo card, **NOI** is Net Operating Income — period operating profit after operating expenses, before debt service. AM fees sit **below** NOI, so they are not in this number.${figure}
+
+This is the combined roll-up of the SPE stack after eliminating IC 1310/2310 and AM 6310/7010 — not a GAAP consolidation.
+
+Open the ${os} for the GPR → EGI → NOI bridge, or click the NOI tile for the formula.`;
+  }
+  return `On this card, **NOI** is Net Operating Income for **${name}** — operating profit after operating expenses, before debt service. AM fees sit **below** NOI.${figure}
+
+Open the ${os} for the bridge, or click the NOI tile for the formula. I will not invent a figure if the books are empty.`;
+}
+
+function clarifyCopy(userText: string): string {
+  return `I want to stay on your question, and I am not sure what you need yet.
+
+You asked: “${userText.trim()}”
+
+Are you asking about a number on this page, something missing for this entity, or a click path?`;
 }
 
 function navHelp(text: string, ctx: ExpertClientContext): string {
@@ -331,8 +403,10 @@ export function answerOffline(
     content = checklistMode(ctx, bundle);
   } else if (/wrong on this page|audit/.test(q) || (q.includes("wrong") && q.includes("page"))) {
     content = pageAudit(ctx, bundle);
-  } else if (/completeness|missing data|score/.test(q)) {
-    content = completenessCopy(ctx, bundle);
+  } else if (/what does |what is |mean\b|explain /.test(q) && /noi/.test(q)) {
+    content = explainNoi(ctx, bundle);
+  } else if (/what.?s missing|missing for|missing data|completeness|gaps? for|score/.test(q)) {
+    content = completenessCopy(ctx, bundle, userText);
   } else if (/anomal|dscr|debt yield|occupan|variance|what.?s wrong/.test(q)) {
     content = /dscr|debt yield|occupan|noi|bridge/.test(q)
       ? `${kpiCopy(ctx, bundle, q)}\n\n${anomaliesCopy(ctx, bundle)}`
@@ -348,19 +422,13 @@ export function answerOffline(
   } else if (/noi|bridge|kpi|ratio/.test(q)) {
     content = kpiCopy(ctx, bundle, q);
   } else {
-    content = `${buildOpener(ctx, bundle).content}
-
-You asked: “${userText.trim()}”
-
-I can only answer from live tools and this product’s screens. ${completenessCopy(ctx, bundle)}
-
-${anomaliesCopy(ctx, bundle)}`;
+    content = clarifyCopy(userText);
   }
   return {
     id: newId(),
     role: "expert",
     content,
-    ...coachChrome(ctx, bundle),
+    ...coachChrome(ctx, bundle, userText),
     sources: ["From live Expert tools (offline coach)"],
     createdAt: new Date().toISOString(),
   };
