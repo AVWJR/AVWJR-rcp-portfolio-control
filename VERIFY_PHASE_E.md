@@ -50,8 +50,8 @@ npm run dev
 - PDF begins with `%PDF`; PPTX is a ZIP (`PK`).
 - AM fees remain below NOI; LTV and delinquency stay gated in the snapshot.
 - OpCo copy rejects a GAAP consolidation claim.
-- Phase F vault / tax remain stubs.
+- Phase F vault / tax are out of scope for this script (implemented in Phase F).
 
 ## Out of scope (must remain undone)
 
-Phase F tax / K-1 / document vault / scheduler beyond stubs. No live PMS or bank. No promote waterfall. No LTV from book cost. Do not redefine Phase D KPIs.
+Phase F tax / K-1 / document vault / scheduler (see VERIFY_PHASE_F.md). No live PMS or bank. No promote waterfall. No LTV from book cost. Do not redefine Phase D KPIs.

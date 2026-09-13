@@ -61,6 +61,6 @@ UI: Export PDF / Export PPTX on `/narratives` and `/narratives/packs/[id]`.
 - LTV gated without appraisal. Delinquency stubbed (no charge/receipt subledger).
 - No promote waterfall. No live PMS or bank rec.
 
-## Phase F (stub only)
+## Phase F
 
-Document vault, K-1 packets, and scheduled delivery are not implemented. See `@rcp/documents` `PHASE_F_VAULT_TODO` / `PHASE_F_SCHEDULER_TODO` and `@rcp/tax-bridge`.
+Document vault (`/vault`), K-1-oriented capital export (`/tax/k1`), books-to-tax (`/tax`), and scheduled pack generation (`/scheduler`, `npm run reports:run`) are live. They do **not** file returns or send email. See [RCP_TAX_BRIDGE.md](./RCP_TAX_BRIDGE.md), [RCP_DOCUMENT_VAULT.md](./RCP_DOCUMENT_VAULT.md), [RCP_SCHEDULER.md](./RCP_SCHEDULER.md).

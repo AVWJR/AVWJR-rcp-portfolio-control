@@ -1,6 +1,8 @@
 # Roche Capital Partners — Portfolio Control
 
-OpCo accounting / portfolio control for **Roche Capital Partners**. Phase A is the book ledger. Phase B is the property operating package. Phase C adds the debt file, CapEx/CIP, intercompany matching, and period-close workflow. Phase D is the live ratio dictionary plus OpCo and property dashboards with formula drill-down. **Phase E** is the chart / infographic layer, five-audience narratives, and PDF / PPTX report packs.
+OpCo accounting / portfolio control for **Roche Capital Partners**. Phase A is the book ledger. Phase B is the property operating package. Phase C adds the debt file, CapEx/CIP, intercompany matching, and period-close workflow. Phase D is the live ratio dictionary plus OpCo and property dashboards with formula drill-down. Phase E is the chart / infographic layer, five-audience narratives, and PDF / PPTX report packs. **Phase F (final)** is books-to-tax worksheets, K-1-oriented capital exports, 1099 vendor hooks, the document vault, and scheduled pack generation.
+
+**This system does not file taxes and does not replace CPA or counsel.** Books-to-tax and K-1 exports support CPA preparation only.
 
 Locked stack: TypeScript, Next.js App Router, Prisma, PostgreSQL in production, **SQLite for local demo**. Server actions + API routes. USD, `en-US`, `America/New_York`. Integer cents. Double-entry intact.
 
@@ -14,8 +16,9 @@ npm install
 npx prisma generate
 npm run db:reset    # prisma db push && seed (deletes ledger, units, budgets, loans, capex, close)
 npm test
-npm run verify:e    # Phase E narratives + PDF/PPTX packs
-npm run verify      # Phase A then B then C then D then E
+npm run verify:f    # Phase F tax / vault / scheduler
+npm run verify      # Phase A through F
+npm run reports:run -- --pack=monthly_investor --entity=SPE-WBG --period=2026-08
 npm run dev
 ```
 
@@ -48,6 +51,10 @@ Prisma resolves that path relative to `prisma/`, so the file is `prisma/dev.db`.
 Books: opening **2026-07**, operating month **2026-08**. Switch entity and period in the navy header. On OpCo, choose **Combined roll-up** to stack wholly owned SPEs.
 
 Sample SPE to click: **Willow Bend Gardens (`SPE-WBG`)**  
+http://localhost:3000/tax?entity=SPE-WBG&period=2026-08  
+http://localhost:3000/tax/k1?entity=SPE-WBG&period=2026-08  
+http://localhost:3000/vault?entity=SPE-WBG&period=2026-08  
+http://localhost:3000/scheduler?entity=SPE-WBG&period=2026-08  
 http://localhost:3000/narratives?entity=SPE-WBG&period=2026-08  
 http://localhost:3000/narratives/packs/monthly_investor?entity=SPE-WBG&period=2026-08  
 http://localhost:3000/dashboard  
@@ -59,6 +66,18 @@ http://localhost:3000/capex?entity=SPE-WBG&period=2026-08
 http://localhost:3000/close?entity=SPE-WBG&period=2026-07
 
 Close demo: WBG `2026-07` is **hard locked**. CVC `2026-07` is **soft closed**. August stays open.
+
+## Phase F — tax bridges, vault, scheduled reporting
+
+- **Books-to-tax** — `/tax` worksheet per entity: book NI, 6210 depreciation, 6110 interest, 6310 AM fees (below NOI) vs tax columns. MACRS lives hooks (27.5-year residential, 15-year site, 5-year FF&E). Every line labeled **BOOKS** / **TAX** / **BRIDGE**. Sample adjustments seeded on SPE-WBG and RCP-OPCO. Combined roll-up is **not a tax consolidation**.
+- **Partner capital / K-1 export** — `/tax/k1` rollforward `beg + contrib − dist ± book NI = end`. CSV / Excel for CPA K-1 prep. **Not a filed Schedule K-1.** Seed SPEs stay 100% owned.
+- **1099 vendor hooks** — `/vendors` master (form, TIN last4) plus reportable-payment overlay. Phase A AP (`2010`/`2020`) has no invoice subledger; empty overlay stubs honestly. Not a filed 1099.
+- **Document vault** — `/vault` stores metadata + local FS blobs (leases, loans, K-1s, draws, insurance) linked to an entity. Upload / list / download.
+- **Scheduled reporting** — `/scheduler` job defs for monthly investor and quarterly lender packs. CLI `npm run reports:run -- --pack=...`. Writes PDF/PPTX under `data/reports/` and persists last-run status. No email send.
+
+Docs: [docs/RCP_TAX_BRIDGE.md](./docs/RCP_TAX_BRIDGE.md) · [docs/RCP_DOCUMENT_VAULT.md](./docs/RCP_DOCUMENT_VAULT.md) · [docs/RCP_SCHEDULER.md](./docs/RCP_SCHEDULER.md) · [VERIFY_PHASE_F.md](./VERIFY_PHASE_F.md).
+
+API: `GET /api/tax/bridge` · `GET /api/tax/k1` · `GET /api/vendors/1099` · `GET|POST /api/vault` · `GET /api/vault/{id}` · `GET /api/scheduler` · `POST /api/scheduler/run`
 
 ## Phase E — infographics, narratives, report packs
 
@@ -150,8 +169,8 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 | `@rcp/analytics` | Live ratio dictionary + formula helpers; LTV and delinquency still gated |
 | `@rcp/rcp-brand` | Institutional brand tokens + chart themes |
 | `@rcp/entities` | HoldCo / OpCo / SPE types |
-| `@rcp/tax-bridge` | Phase F stub |
-| `@rcp/documents` | PDF / PPTX pack export; vault / scheduler remain Phase F stubs |
+| `@rcp/tax-bridge` | Books-to-tax worksheet, MACRS hooks, capital / K-1 export, 1099 overlay |
+| `@rcp/documents` | PDF / PPTX packs + document vault + scheduled job catalog |
 
 ## Docs
 
@@ -161,6 +180,7 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 - [VERIFY_PHASE_C.md](./VERIFY_PHASE_C.md)
 - [VERIFY_PHASE_D.md](./VERIFY_PHASE_D.md)
 - [VERIFY_PHASE_E.md](./VERIFY_PHASE_E.md)
+- [VERIFY_PHASE_F.md](./VERIFY_PHASE_F.md)
 - [docs/RCP_COA_OUTLINE.md](./docs/RCP_COA_OUTLINE.md)
 - [docs/RCP_SPE_MONTHLY_CLOSE.md](./docs/RCP_SPE_MONTHLY_CLOSE.md)
 - [docs/RCP_DEBT.md](./docs/RCP_DEBT.md)
@@ -169,7 +189,10 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 - [docs/RCP_OPERATING_KPIS.md](./docs/RCP_OPERATING_KPIS.md)
 - [docs/RCP_RATIO_DICTIONARY_STUB.md](./docs/RCP_RATIO_DICTIONARY_STUB.md)
 - [docs/RCP_REPORT_CATALOG.md](./docs/RCP_REPORT_CATALOG.md)
+- [docs/RCP_TAX_BRIDGE.md](./docs/RCP_TAX_BRIDGE.md)
+- [docs/RCP_DOCUMENT_VAULT.md](./docs/RCP_DOCUMENT_VAULT.md)
+- [docs/RCP_SCHEDULER.md](./docs/RCP_SCHEDULER.md)
 
 ## Out of scope
 
-Phase F tax / K-1 / document vault / scheduler (stubs only). No live PMS or bank feed. No promote waterfall. No BigBrainRE underwriting. No LTV from book cost.
+No live PMS or bank feed. No promote waterfall. No IRS e-file / SSO. No full AP invoice subledger (1099 overlay only). No BigBrainRE underwriting. No LTV from book cost. Does not file taxes.

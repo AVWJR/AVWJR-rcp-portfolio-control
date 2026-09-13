@@ -1,4 +1,4 @@
-// Roche Capital Partners — Phase A–C ledger, operating, debt, capex, close
+// Roche Capital Partners — Phase A–F ledger, operating, debt, dashboards, tax, vault
 // Local demo: SQLite via DATABASE_URL="file:./dev.db"
 // Production: change provider to "postgresql" and point DATABASE_URL at Postgres.
 // Amounts are integer USD cents (BigInt) to keep trial-balance math exact.
@@ -102,13 +102,18 @@ model Entity {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  accounts      Account[]
-  periods       Period[]
-  journals      Journal[]
-  units         Unit[]
-  budgetLines   BudgetLine[]
-  loans         Loan[]
-  capexProjects CapexProject[]
+  accounts         Account[]
+  periods          Period[]
+  journals         Journal[]
+  units            Unit[]
+  budgetLines      BudgetLine[]
+  loans            Loan[]
+  capexProjects    CapexProject[]
+  taxAdjustments   TaxAdjustment[]
+  partners         Partner[]
+  vendorPayments   VendorPayment[]
+  vaultDocuments   VaultDocument[]
+  reportJobs       ReportJob[]
 }
 
 /// Master template rows use entityId = null. Entity CoA is cloned from the template.
@@ -346,4 +351,161 @@ model PeriodCloseEvent {
   createdAt DateTime          @default(now())
 
   @@index([periodId])
+}
+
+/// CPA books-to-tax overlay. Live book columns come from the GL; these rows
+/// are seeded sample adjustments (and optional CPA notes). Not a filed return.
+model TaxAdjustment {
+  id              String   @id @default(cuid())
+  entityId        String
+  entity          Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year            Int
+  month           Int
+  lineCode        String
+  label           String
+  basis           String
+  booksCents      BigInt   @default(0)
+  taxCents        BigInt   @default(0)
+  notes           String?
+  source          String   @default("seed")
+  createdAt       DateTime @default(now())
+
+  @@unique([entityId, year, month, lineCode])
+  @@index([entityId, year, month])
+}
+
+/// MACRS recovery-period reference table (hooks, not a depreciation engine).
+model MacrsLifeHook {
+  id            String  @id @default(cuid())
+  assetClass    String  @unique
+  label         String
+  accountCode   String?
+  recoveryYears Float?
+  convention    String
+  depreciable   Boolean
+  notes         String
+}
+
+model Partner {
+  id           String   @id @default(cuid())
+  entityId     String
+  entity       Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  code         String
+  name         String
+  role         String
+  ownershipBps Int
+  tinLast4     String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  activities PartnerCapitalActivity[]
+
+  @@unique([entityId, code])
+  @@index([entityId])
+}
+
+model PartnerCapitalActivity {
+  id                 String   @id @default(cuid())
+  partnerId          String
+  partner            Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  year               Int
+  month              Int
+  beginningCents     BigInt
+  contributionsCents BigInt   @default(0)
+  distributionsCents BigInt   @default(0)
+  bookNiAllocCents   BigInt   @default(0)
+  endingCents        BigInt
+  notes              String?
+
+  @@unique([partnerId, year, month])
+}
+
+model Vendor {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  form1099    String   @default("NONE")
+  tinLast4    String?
+  addressLine String?
+  city        String?
+  state       String?
+  zip         String?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  payments VendorPayment[]
+}
+
+/// Reportable-payment overlay. Phase A AP has no vendor invoice subledger.
+model VendorPayment {
+  id          String   @id @default(cuid())
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  entityId    String
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year        Int
+  month       Int
+  amountCents BigInt
+  accountCode String
+  memo        String?
+  reportable  Boolean  @default(true)
+  source      String   @default("seed")
+  createdAt   DateTime @default(now())
+
+  @@index([entityId, year, month])
+  @@index([vendorId])
+}
+
+model VaultDocument {
+  id          String   @id @default(cuid())
+  entityId    String
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  kind        String
+  title       String
+  filename    String
+  mimeType    String
+  storagePath String
+  byteSize    Int
+  notes       String?
+  uploadedAt  DateTime @default(now())
+
+  @@index([entityId, kind])
+}
+
+model ReportJob {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  packId        String
+  title         String
+  cadence       String
+  entityCode    String
+  periodLabel   String
+  enabled       Boolean   @default(true)
+  lastRunAt     DateTime?
+  lastStatus    String    @default("IDLE")
+  lastOutputDir String?
+  lastError     String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  entityId      String?
+  entity        Entity?   @relation(fields: [entityId], references: [id], onDelete: SetNull)
+
+  runs ReportJobRun[]
+}
+
+model ReportJobRun {
+  id          String    @id @default(cuid())
+  jobId       String
+  job         ReportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  status      String
+  outputDir   String?
+  filesJson   String?
+  error       String?
+  packId      String
+  entityCode  String
+  periodLabel String
+
+  @@index([jobId, startedAt])
 }

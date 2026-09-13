@@ -14,3 +14,7 @@ coverage
 .DS_Store
 *.log
 .vercel
+data/vault/**
+!data/vault/.gitkeep
+data/reports/**
+!data/reports/.gitkeep

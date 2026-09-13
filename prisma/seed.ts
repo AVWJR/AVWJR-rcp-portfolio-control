@@ -13,6 +13,7 @@ import { postJournal } from "../src/lib/journals";
 import { replaceBudget } from "../src/lib/budgets";
 import { replaceRentRoll } from "../src/lib/rent-roll";
 import { seedCapexProjects, seedCloseDemo, seedLoansAndRolls } from "./seed-phase-c";
+import { seedPhaseF } from "./seed-phase-f";
 
 const prisma = new PrismaClient();
 
@@ -330,6 +331,15 @@ async function seedBudgets(byCode: Record<string, string>) {
 }
 
 async function main() {
+  await prisma.reportJobRun.deleteMany();
+  await prisma.reportJob.deleteMany();
+  await prisma.vaultDocument.deleteMany();
+  await prisma.vendorPayment.deleteMany();
+  await prisma.vendor.deleteMany();
+  await prisma.partnerCapitalActivity.deleteMany();
+  await prisma.partner.deleteMany();
+  await prisma.taxAdjustment.deleteMany();
+  await prisma.macrsLifeHook.deleteMany();
   await prisma.periodCloseEvent.deleteMany();
   await prisma.closeChecklistItem.deleteMany();
   await prisma.loanPayment.deleteMany();
@@ -406,6 +416,7 @@ async function main() {
   await seedLoansAndRolls(prisma, byCode, post);
   await seedCapexProjects(prisma, byCode, post);
   await seedCloseDemo(prisma, byCode);
+  await seedPhaseF(prisma, byCode);
 
   const journals = await prisma.journal.count();
   const lines = await prisma.journalLine.count();
@@ -414,9 +425,13 @@ async function main() {
   const loans = await prisma.loan.count();
   const projects = await prisma.capexProject.count();
   const locked = await prisma.period.count({ where: { status: "CLOSED" } });
+  const partners = await prisma.partner.count();
+  const vault = await prisma.vaultDocument.count();
+  const jobs = await prisma.reportJob.count();
   console.log(`Seeded ${journals} journals / ${lines} lines`);
   console.log(`Seeded ${units} rent-roll units / ${budgets} budget lines`);
   console.log(`Seeded ${loans} loans / ${projects} capex projects / ${locked} hard-locked period(s)`);
+  console.log(`Seeded ${partners} partners / ${vault} vault docs / ${jobs} scheduled jobs`);
   console.log("Entities:");
   console.log("  Roche Capital Partners HoldCo (RCP-HOLD)");
   console.log("  RCP Operating Company LLC (RCP-OPCO)");

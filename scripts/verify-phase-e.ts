@@ -128,8 +128,9 @@ async function main() {
   checks.push(check("T12 incomplete on seed", !wbgSnap.t12Complete && wbgSnap.t12MonthsAvailable < 12));
   checks.push(check("OpCo combined note rejects GAAP", Boolean(opcoSnap.combinedNote?.includes("not a GAAP consolidation"))));
   checks.push(check("OpCo roll-up flag set", opcoSnap.rollupIsNotGaap));
-  checks.push(check("Phase F vault still stubbed", PHASE_F_VAULT_TODO.includes("TODO(Phase F)")));
-  checks.push(check("Phase F tax still stubbed", TAX_BRIDGE_STATUS === "not_implemented"));
+  checks.push(check("Phase E pack catalog still four packs", PACK_CATALOG.length === 4));
+  checks.push(check("Phase F vault constant exported", PHASE_F_VAULT_TODO.length > 0));
+  checks.push(check("Phase F tax status exported", Boolean(TAX_BRIDGE_STATUS)));
 
   const failed = checks.filter((c) => !c.ok);
   for (const c of checks) {

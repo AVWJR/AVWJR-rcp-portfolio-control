@@ -2,7 +2,7 @@
   "name": "rcp-portfolio-control",
   "version": "0.1.0",
   "private": true,
-  "description": "Roche Capital Partners — Portfolio Control / OpCo Accounting System (Phase E narratives and report packs)",
+  "description": "Roche Capital Partners — Portfolio Control / OpCo Accounting System (Phase F tax, vault, scheduler)",
   "workspaces": [
     "packages/*"
   ],
@@ -18,12 +18,14 @@
     "db:push": "prisma db push",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
     "db:reset": "prisma db push && tsx --env-file=.env prisma/seed.ts",
-    "verify": "tsx --env-file=.env scripts/verify-phase-a.ts && tsx --env-file=.env scripts/verify-phase-b.ts && tsx --env-file=.env scripts/verify-phase-c.ts && tsx --env-file=.env scripts/verify-phase-d.ts && tsx --env-file=.env scripts/verify-phase-e.ts",
+    "verify": "tsx --env-file=.env scripts/verify-phase-a.ts && tsx --env-file=.env scripts/verify-phase-b.ts && tsx --env-file=.env scripts/verify-phase-c.ts && tsx --env-file=.env scripts/verify-phase-d.ts && tsx --env-file=.env scripts/verify-phase-e.ts && tsx --env-file=.env scripts/verify-phase-f.ts",
     "verify:a": "tsx --env-file=.env scripts/verify-phase-a.ts",
     "verify:b": "tsx --env-file=.env scripts/verify-phase-b.ts",
     "verify:c": "tsx --env-file=.env scripts/verify-phase-c.ts",
     "verify:d": "tsx --env-file=.env scripts/verify-phase-d.ts",
     "verify:e": "tsx --env-file=.env scripts/verify-phase-e.ts",
+    "verify:f": "tsx --env-file=.env scripts/verify-phase-f.ts",
+    "reports:run": "tsx --env-file=.env scripts/run-reports.ts",
     "import:rent-roll": "tsx --env-file=.env scripts/import-rent-roll.ts",
     "import:budget": "tsx --env-file=.env scripts/import-budget.ts"
   },
