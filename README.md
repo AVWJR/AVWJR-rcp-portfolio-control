@@ -89,6 +89,16 @@ curl -X POST "https://<your-app>/api/admin/seed" \
 
 If rows already exist, the route does nothing unless you send `{ "force": true }` (wipes the demo database). Wrong or missing `SEED_SECRET` is rejected; if `SEED_SECRET` is unset, the route returns 404.
 
+### Partner viewer link (optional)
+
+This is **not** multi-tenant auth. When `PARTNER_VIEW_TOKEN` (or `VIEWER_PASSWORD`) and/or `PRINCIPAL_PASSWORD` are set (8+ characters), the public URL defaults to **partner view**: dashboards, narratives, and packs are readable; Add Deal, `/admin/seed`, intake uploads, and other writes return 403. Local `npm run dev` stays Principal if those vars are unset.
+
+**Share with an LP / lender:** `https://<your-app>/?share=<PARTNER_VIEW_TOKEN>` (or `/partner`). A gold **Partner view — read only** banner appears.
+
+**Principal writes:** open `/unlock` and enter `PRINCIPAL_PASSWORD`, or `https://<your-app>/?unlock=<PRINCIPAL_PASSWORD>`.
+
+Alternatively, lock the whole deployment with [Vercel Deployment Protection](https://vercel.com/docs/security/deployment-protection) and only give the Vercel password to people who should open the app at all; then use the partner token so LPs still cannot mutate.
+
 Seed data is **demo books and sample tax-bridge rows only**. This system does not file taxes.
 
 #### Environment variables to set on Vercel
