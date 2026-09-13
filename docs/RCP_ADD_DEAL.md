@@ -8,7 +8,7 @@ Route: [`/deals/new`](/deals/new) · list: [`/deals`](/deals)
 
 | Mode | Status | Notes |
 | --- | --- | --- |
-| 1. Upload files | **Live** | Multi-file dropzone → intake draft → vault after SPE create. Accepts **CSV, XLSX/XLS, PDF, images**, and typical vault docs. Max **10 MB** per file (same as vault). Rent-roll / budget **XLSX** uses the first matching sheet (RentRoll / Budget / first sheet) then the existing CSV importers. Password-protected workbooks fail with a clear error. Larger OMs: note and add later on `/vault`. On Vercel, bytes persist in Neon `StoredBlob` (or Vercel Blob if configured) — not the ephemeral function disk. |
+| 1. Upload files | **Live** | Multi-file dropzone → **untitled draft is auto-created** (naming the SPE is optional until Create SPE). Files upload **one per request**. Accepts **CSV, XLSX/XLS, PDF, images**, and typical vault docs. Max **32 MB** per file (same as vault). Client and API reject oversized files with `File too large (max 32 MB)` (HTTP 413) instead of a silent `Failed to fetch`. Rent-roll / budget **XLSX** uses the first matching sheet (RentRoll / Budget / first sheet) then the existing CSV importers. Password-protected workbooks fail with a clear error. Prefer `BLOB_READ_WRITE_TOKEN` (Vercel Blob) for large OM PDFs; otherwise bytes persist in Neon `StoredBlob`. Function request bodies can be up to 100 MB; this product cap is per file. |
 | 2. Dropbox | **Hook + UI** | “Connect Dropbox” when `DROPBOX_ACCESS_TOKEN` is missing. List/download when the server token is set. OAuth app keys (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`) are reserved for a follow-on login. |
 | 3. Email attachment | **Hook + UI** | Always accept `.eml` / attachment uploads. Optional Gmail or Microsoft Graph fetch when `GMAIL_ACCESS_TOKEN` or `MICROSOFT_ACCESS_TOKEN` is set. |
 | 4. RCP mailbox auto-ingest | **Stub** | `DealFileSource = rcp_mailbox`. Set `RCP_INGEST_MAILBOX` when the inbox exists. **The mailbox address is not decided yet — do not hardcode one.** **Scan RCP inbox** is an honest no-op until mailbox + connector exist. |
@@ -30,7 +30,7 @@ Drafts persist in `DealIntake` / `DealIntakeFile` so refresh does not lose work.
 
 - `GET|POST /api/deals` — list SPEs / create SPE (unique code, parent OpCo must exist)  
 - `GET|POST /api/deals/intake` — create or update a draft (`?id=` / `{ id }`)  
-- `POST /api/deals/intake/files` — multipart upload → intake store (and vault after SPE exists)  
+- `POST /api/deals/intake/files` — **one file per request** (client). Missing `intakeId` creates an **Untitled deal** draft. Multipart → intake store (and vault after SPE exists)  
 - `POST /api/deals/intake/import` — `action=create_entity` or apply CSVs/loan (`confirmReplace`)  
 - `GET|POST /api/deals/intake/from-dropbox`  
 - `GET|POST /api/deals/intake/from-email`  

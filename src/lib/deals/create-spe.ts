@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isValidSpeCode, normalizeSpeCode, suggestSpeCode } from "./codes";
 import { openDealPeriods } from "./periods";
 import { DEFAULT_OPCO_CODE, defaultOpCoCode, goalToStrategy, isDealGoal, type DealGoal } from "./types";
+import { isUntitledDealName } from "./upload-client";
 
 export class DealValidationError extends Error {
   readonly field?: string;
@@ -25,7 +26,9 @@ export type CreateSpeInput = {
 
 export async function validateCreateSpe(input: CreateSpeInput) {
   const name = input.name?.trim();
-  if (!name) throw new DealValidationError("Enter the SPE legal name (for example Harbor Court Residences LLC).", "speName");
+  if (!name || isUntitledDealName(name)) {
+    throw new DealValidationError("Enter the SPE legal name (for example Harbor Court Residences LLC).", "speName");
+  }
 
   const code = normalizeSpeCode(input.code);
   if (!isValidSpeCode(code)) {

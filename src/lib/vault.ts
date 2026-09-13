@@ -1,8 +1,10 @@
 import { isVaultKind, safeVaultFilename, type VaultDocumentMeta, type VaultKind } from "@rcp/documents";
+import { INTAKE_MAX_BYTES, INTAKE_MAX_BYTES_LABEL } from "@/lib/deals/types";
+import { fileTooLargeMessage } from "@/lib/deals/upload-client";
 import { deleteStoredFile, getStoredFile, putStoredFile } from "./file-store";
 import { prisma } from "./prisma";
 
-export const VAULT_MAX_BYTES = 10 * 1024 * 1024;
+export const VAULT_MAX_BYTES = INTAKE_MAX_BYTES;
 const MAX_BYTES = VAULT_MAX_BYTES;
 
 export async function listVaultDocuments(entityId?: string): Promise<VaultDocumentMeta[]> {
@@ -34,7 +36,7 @@ export async function storeVaultDocument(opts: {
   bytes: Buffer;
   notes?: string;
 }) {
-  if (opts.bytes.length > MAX_BYTES) throw new Error("File exceeds 10 MB vault limit");
+  if (opts.bytes.length > MAX_BYTES) throw new Error(`${fileTooLargeMessage()} vault limit (${INTAKE_MAX_BYTES_LABEL}).`);
   const filename = safeVaultFilename(opts.filename);
   const entity = await prisma.entity.findUnique({ where: { id: opts.entityId } });
   if (!entity) throw new Error("Unknown entity");

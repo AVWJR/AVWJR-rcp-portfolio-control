@@ -29,6 +29,9 @@ export function dealErrorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
   const message = error instanceof Error ? error.message : "Request failed";
+  if (/file too large/i.test(message)) {
+    return NextResponse.json({ error: message }, { status: 413 });
+  }
   const status = error instanceof DealValidationError ? 400 : 400;
   return NextResponse.json({ error: message }, { status });
 }

@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { deleteStoredFile, getStoredFile, putStoredFile } from "@/lib/file-store";
-import { storeVaultDocument, VAULT_MAX_BYTES } from "@/lib/vault";
+import { storeVaultDocument } from "@/lib/vault";
 import { safeVaultFilename, type VaultKind } from "@rcp/documents";
 import { getIntake } from "./intake";
-import { INTAKE_MAX_BYTES, isDealFileClass, type DealFileClass, type DealFileSource } from "./types";
+import { INTAKE_MAX_BYTES, INTAKE_MAX_BYTES_LABEL, isDealFileClass, type DealFileClass, type DealFileSource } from "./types";
+import { fileTooLargeMessage } from "./upload-client";
 import { assertReadableWorkbook, isAllowedIntakeFilename, isSpreadsheetFilename, SPREADSHEET_MIME_TYPES } from "./workbook";
 
 export function classificationToVaultKind(classification: string): VaultKind {
@@ -52,13 +53,11 @@ export async function storeIntakeFile(opts: {
   }
   if (!isAllowedIntakeFilename(opts.filename)) {
     throw new Error(
-      `${opts.filename} is not an accepted intake type. Use CSV, XLSX/XLS, PDF, image, or a typical vault document (max ${Math.round(VAULT_MAX_BYTES / (1024 * 1024))} MB).`,
+      `${opts.filename} is not an accepted intake type. Use CSV, XLSX/XLS, PDF, image, or a typical vault document (max ${INTAKE_MAX_BYTES_LABEL}).`,
     );
   }
   if (opts.bytes.length > INTAKE_MAX_BYTES) {
-    throw new Error(
-      `File exceeds the ${Math.round(VAULT_MAX_BYTES / (1024 * 1024))} MB intake limit. Split large files or note them for a later vault upload.`,
-    );
+    throw new Error(`${fileTooLargeMessage()}. Split the file or note it for a later vault upload.`);
   }
   const intake = await getIntake(opts.intakeId);
   if (!intake) throw new Error("Intake draft not found. Save the draft, then upload again.");

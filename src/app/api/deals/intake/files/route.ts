@@ -1,8 +1,9 @@
 import { classifyIntakeFile, guessClassification, removeIntakeFile, storeIntakeFile } from "@/lib/deals/files";
-import { getIntake, publicIntake } from "@/lib/deals/intake";
+import { createIntake, getIntake, publicIntake } from "@/lib/deals/intake";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { extractEmlAttachments } from "@/lib/deals/providers";
-import { isDealFileSource, type DealFileSource } from "@/lib/deals/types";
+import { INTAKE_MAX_BYTES, isDealFileSource, type DealFileSource } from "@/lib/deals/types";
+import { fileTooLargeMessage, requestExceedsIntakeLimit } from "@/lib/deals/upload-client";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -12,14 +13,29 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (contentLength > 0 && requestExceedsIntakeLimit(contentLength)) {
+    return NextResponse.json({ error: fileTooLargeMessage() }, { status: 413 });
+  }
   try {
     const form = await request.formData();
-    const intakeId = String(form.get("intakeId") ?? "");
-    if (!intakeId) return NextResponse.json({ error: "intakeId required" }, { status: 400 });
     const sourceRaw = String(form.get("source") ?? "upload");
     const source: DealFileSource = isDealFileSource(sourceRaw) ? sourceRaw : "upload";
+    let intakeId = String(form.get("intakeId") ?? "");
+    if (!intakeId) {
+      const draft = await createIntake({
+        currentStep: 3,
+        sources: [source],
+        goal: "value_add",
+      });
+      intakeId = draft.id;
+    }
     const files = form.getAll("file").filter((row): row is File => row instanceof File);
     if (!files.length) return NextResponse.json({ error: "Choose at least one file." }, { status: 400 });
+    const oversized = files.find((file) => file.size > INTAKE_MAX_BYTES);
+    if (oversized) {
+      return NextResponse.json({ error: fileTooLargeMessage() }, { status: 413 });
+    }
 
     const stored = [];
     for (const file of files) {
