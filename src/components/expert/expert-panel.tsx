@@ -1,10 +1,9 @@
 "use client";
 
 import { ExpertMarkdown } from "@/components/expert/expert-markdown";
-import { expertBannerCopy } from "@/lib/expert/ai-enabled";
+import { expertBannerLine, expertBannerState, lastCompletedExpert } from "@/lib/expert/banner";
 import { formatContextChip } from "@/lib/expert/period";
 import type {
-  ExpertBannerKind,
   ExpertChip,
   ExpertClientContext,
   ExpertMessage,
@@ -16,7 +15,7 @@ export function ExpertPanel({
   ctx,
   messages,
   pending,
-  aiEnabled,
+  keyPresent,
   error,
   completenessScore,
   onClose,
@@ -25,9 +24,6 @@ export function ExpertPanel({
   onSend,
   onAction,
   onCopy,
-  banner,
-  degraded,
-  liveReady,
   composer,
   setComposer,
   panelRef,
@@ -35,7 +31,7 @@ export function ExpertPanel({
   ctx: ExpertClientContext;
   messages: ExpertMessage[];
   pending: boolean;
-  aiEnabled: boolean;
+  keyPresent: boolean;
   error: string | null;
   completenessScore: number | null;
   onClose: () => void;
@@ -44,9 +40,6 @@ export function ExpertPanel({
   onSend: (text: string) => void;
   onAction: (action: ExpertSuggestedAction) => void;
   onCopy: () => void;
-  banner: ExpertBannerKind;
-  degraded?: boolean;
-  liveReady?: boolean;
   composer: string;
   setComposer: (value: string) => void;
   panelRef: RefObject<HTMLDivElement | null>;
@@ -76,19 +69,9 @@ export function ExpertPanel({
     }
   }
 
-  const shownBanner: ExpertBannerKind = aiEnabled ? banner : "offline";
-  const display: "offline" | "degraded" | "connecting" | "unconfirmed" | "grok" | "live" = !aiEnabled
-    ? "offline"
-    : degraded
-      ? "degraded"
-      : liveReady
-        ? shownBanner === "offline"
-          ? "grok"
-          : shownBanner
-        : pending
-          ? "connecting"
-          : "unconfirmed";
-  const lastExpert = [...messages].reverse().find((m) => m.role === "expert");
+  const lastExpert = lastCompletedExpert(messages);
+  const banner = expertBannerState({ keyPresent, pending, lastExpert });
+  const display = banner.display;
   const lastChips: ExpertChip[] = lastExpert?.chips ?? [];
   const lastActions: ExpertSuggestedAction[] = lastExpert?.actions ?? [];
   const [confirmAction, setConfirmAction] = useState<ExpertSuggestedAction | null>(null);
@@ -177,15 +160,7 @@ export function ExpertPanel({
             : "border-b border-emerald-700 bg-emerald-50 px-3 py-1.5 text-[11px] text-emerald-900"
         }
       >
-        {display === "offline"
-          ? `${expertBannerCopy("offline")}. Coaching still uses live completeness and anomaly tools.`
-          : display === "degraded"
-            ? `${expertBannerCopy(shownBanner, { degraded: true })}. Coaching still uses live completeness and anomaly tools.`
-            : display === "connecting"
-              ? `${expertBannerCopy(shownBanner, { connecting: true })}. If this fails, the offline coach stays as last resort.`
-              : display === "unconfirmed"
-                ? "Grok key is set. Last reply was not live — send a message to retry."
-                : `${expertBannerCopy(shownBanner)}. Streaming live replies; tools stay read-only until you confirm a write.`}
+        {expertBannerLine(display, banner.fallbackReason)}
       </div>
 
       {error ? (
@@ -224,7 +199,7 @@ export function ExpertPanel({
         ))}
         {pending ? (
           <p className="text-[12px] italic text-ink-500" aria-live="polite">
-            {shownBanner === "grok" && !degraded
+            {display === "grok"
               ? "Grok is reviewing the live books…"
               : "Expert is reviewing the live books…"}
           </p>

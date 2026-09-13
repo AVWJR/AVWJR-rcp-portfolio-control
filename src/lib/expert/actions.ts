@@ -62,17 +62,54 @@ export function sanitizeSuggestedActions(raw: unknown): ExpertSuggestedAction[] 
   return out;
 }
 
+export function chromeAlias(label: string, href?: string): string {
+  const n = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const path = (href ?? "").split("?")[0] || "";
+  if (path === "/deals/new" || (/\badd\b/.test(n) && /\bdeal\b/.test(n))) return "add_deal";
+  if (path === "/deals" || (/\bdeals?\b/.test(n) && /\b(open|list)\b/.test(n))) return "deals_list";
+  if (path) return `path:${path}`;
+  return n;
+}
+
 export function mergeSuggestedActions(
   preferred: ExpertSuggestedAction[],
   fallback: ExpertSuggestedAction[],
 ): ExpertSuggestedAction[] {
   const merged: ExpertSuggestedAction[] = [];
   for (const action of [...preferred, ...fallback]) {
-    if (merged.some((row) => row.id === action.id || row.label === action.label)) continue;
+    const alias = chromeAlias(action.label, action.href);
+    if (merged.some((row) => row.id === action.id || row.label === action.label || chromeAlias(row.label, row.href) === alias)) {
+      continue;
+    }
     merged.push(action);
     if (merged.length >= MAX_CHROME) break;
   }
   return merged;
+}
+
+/** Prefer navigate actions; drop chips that repeat the same destination or label. Max 3 unique. */
+export function composeExpertChrome(
+  actions: ExpertSuggestedAction[],
+  chips: ExpertChip[],
+): { actions: ExpertSuggestedAction[]; chips: ExpertChip[] } {
+  const seen = new Set<string>();
+  const nextActions: ExpertSuggestedAction[] = [];
+  for (const action of actions) {
+    const key = chromeAlias(action.label, action.href);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    nextActions.push(action);
+    if (nextActions.length >= MAX_CHROME) return { actions: nextActions, chips: [] };
+  }
+  const nextChips: ExpertChip[] = [];
+  for (const chip of chips) {
+    const key = chromeAlias(chip.label);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    nextChips.push(chip);
+    if (nextActions.length + nextChips.length >= MAX_CHROME) break;
+  }
+  return { actions: nextActions, chips: nextChips };
 }
 
 const ADD_DEAL_CHIP: ExpertChip = {

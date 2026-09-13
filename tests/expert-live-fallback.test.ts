@@ -68,12 +68,15 @@ describe("expert live Gateway fallback is visible", () => {
       context: { pathname: "/", entityCode: "RCP-OPCO", periodLabel: "2026-08" },
     });
     expect(result.aiEnabled).toBe(true);
-    expect(result.banner).toBe("grok");
+    expect(result.keyPresent).toBe(true);
+    expect(result.banner).toBe("offline");
     expect(result.mode).toBe("offline");
+    expect(result.message.mode).toBe("offline");
     expect(result.modelId).toBe("spacexai/grok-4.6");
     expect(result.fallbackReason).toMatch(/Live Grok \(spacexai\/grok-4\.6\) failed/);
     expect(result.fallbackReason).toMatch(/offline coach/i);
     expect(result.message.sources?.join(" ")).toMatch(/offline coach/i);
+    expect(result.message.fallbackReason).toMatch(/Live Grok/);
   });
 
   it("marks the opener as last-resort offline when live open fails", async () => {
@@ -82,12 +85,17 @@ describe("expert live Gateway fallback is visible", () => {
       context: { pathname: "/", entityCode: "RCP-OPCO", periodLabel: "2026-08" },
     });
     expect(result.mode).toBe("offline");
+    expect(result.banner).toBe("offline");
     expect(result.fallbackReason).toMatch(/Live Grok/);
     expect(result.message.sources?.join(" ")).toMatch(/last resort|offline coach/i);
   });
 
   it("streams an error event before the offline last-resort reply", async () => {
-    const events: { type: string; message?: string; response?: { fallbackReason?: string; mode?: string } }[] = [];
+    const events: {
+      type: string;
+      message?: string;
+      response?: { fallbackReason?: string; mode?: string; banner?: string };
+    }[] = [];
     for await (const event of streamExpertChat({
       messages: [{ role: "user", content: "What is missing?" }],
       context: { pathname: "/", entityCode: "RCP-OPCO", periodLabel: "2026-08" },
@@ -98,6 +106,7 @@ describe("expert live Gateway fallback is visible", () => {
     expect(events.some((event) => event.type === "error" && event.message?.includes("Live Grok"))).toBe(true);
     const done = events.find((event) => event.type === "done");
     expect(done?.response?.mode).toBe("offline");
+    expect(done?.response?.banner).toBe("offline");
     expect(done?.response?.fallbackReason).toMatch(/Live Grok/);
   });
 });

@@ -1,11 +1,13 @@
-import { mergeSuggestedActions, rankChips, rankSuggestedActions, sanitizeSuggestedActions } from "./actions";
+import { composeExpertChrome, mergeSuggestedActions, rankChips, rankSuggestedActions, sanitizeSuggestedActions } from "./actions";
 import {
   expertAiEnabled,
+  enrichGatewayError,
   gatewayModelCandidates,
   isUnknownGatewayModelError,
   liveFallbackReason,
   publicErrorMessage,
   resolveExpertProvider,
+  resolveGatewayModel,
   type ExpertProviderResolution,
 } from "./ai-enabled";
 import { DEFAULT_ENTITY, DEFAULT_PERIOD, describePage } from "./nav";
@@ -108,6 +110,10 @@ function historyMessages(history: { role: string; content: string }[]): { role: 
     }));
 }
 
+function newExpertId(): string {
+  return `exp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function wrapMessage(
   text: string,
   ctx: ExpertClientContext,
@@ -116,13 +122,17 @@ function wrapMessage(
   proposed: ExpertSuggestedAction[] = [],
   userText = "",
 ): ExpertMessage {
-  const fallback = answerOffline("", ctx, bundle);
+  const chrome = composeExpertChrome(
+    mergeSuggestedActions(proposed, rankSuggestedActions(ctx, bundle, userText)),
+    rankChips(ctx, bundle, userText),
+  );
   return {
-    ...fallback,
+    id: newExpertId(),
+    role: "expert",
     content: text,
-    chips: rankChips(ctx, bundle, userText),
-    actions: mergeSuggestedActions(proposed, rankSuggestedActions(ctx, bundle, userText)),
+    ...chrome,
     sources,
+    mode: "ai",
     createdAt: new Date().toISOString(),
   };
 }
@@ -133,13 +143,19 @@ function responseEnvelope(
   message: ExpertMessage,
   fallbackReason?: string,
 ): ExpertChatResponse {
+  const keyPresent = resolved.provider !== "none";
   return {
     mode,
-    aiEnabled: resolved.provider !== "none",
+    aiEnabled: keyPresent,
+    keyPresent,
     provider: resolved.provider,
     modelId: resolved.modelId,
-    banner: resolved.banner,
-    message,
+    banner: mode === "ai" ? "grok" : "offline",
+    message: {
+      ...message,
+      mode,
+      ...(fallbackReason ? { fallbackReason } : {}),
+    },
     ...(fallbackReason ? { fallbackReason } : {}),
   };
 }
@@ -165,9 +181,10 @@ async function answerWithGateway(
   bundle: OfflineBundle,
   history: { role: string; content: string }[],
   modelId: string,
+  apiKey: string | null,
   onDelta?: (text: string) => void,
 ): Promise<ExpertMessage | null> {
-  const { streamText, generateText, tool, stepCountIs, gateway } = await import("ai");
+  const { streamText, generateText, tool, stepCountIs } = await import("ai");
   const { z } = await import("zod");
   const {
     getAnomalies,
@@ -245,8 +262,9 @@ async function answerWithGateway(
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
     try {
+      const model = await resolveGatewayModel(candidate, apiKey);
       const result = streamText({
-        model: typeof gateway === "function" ? gateway(candidate) : candidate,
+        model: model as never,
         system: systemForTurn(ctx, bundle),
         messages: [
           ...historyMessages(history),
@@ -265,7 +283,7 @@ async function answerWithGateway(
       let text = (await result.text)?.trim();
       if (!text) {
         const plain = await generateText({
-          model: typeof gateway === "function" ? gateway(candidate) : candidate,
+          model: (await resolveGatewayModel(candidate, apiKey)) as never,
           system: systemForTurn(ctx, bundle),
           messages: [
             ...historyMessages(history),
@@ -277,9 +295,26 @@ async function answerWithGateway(
       if (!text) throw new Error("No output generated. Check the stream for errors.");
       return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok"], proposed, userText);
     } catch (error) {
-      lastError = error;
+      lastError = enrichGatewayError(error);
+      try {
+        const plain = await generateText({
+          model: (await resolveGatewayModel(candidate, apiKey)) as never,
+          system: systemForTurn(ctx, bundle),
+          messages: [
+            ...historyMessages(history),
+            { role: "user" as const, content: userText || openCoachPrompt() },
+          ],
+        });
+        const text = plain.text?.trim() ?? "";
+        if (text) {
+          console.warn("[expert] gateway tools failed; plain generateText succeeded", candidate, publicErrorMessage(error));
+          return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok"], proposed, userText);
+        }
+      } catch (plainError) {
+        lastError = enrichGatewayError(plainError);
+      }
       const next = candidates[i + 1];
-      if (!next || !isUnknownGatewayModelError(error)) throw error;
+      if (!next || !isUnknownGatewayModelError(error)) throw lastError;
       console.warn("[expert] gateway model retry", candidate, "→", next, publicErrorMessage(error));
     }
   }
@@ -333,7 +368,7 @@ async function answerWithModel(
     const message =
       resolved.provider === "xai"
         ? await answerWithXai(userText, ctx, bundle, history, resolved, onDelta)
-        : await answerWithGateway(userText, ctx, bundle, history, resolved.modelId, onDelta);
+        : await answerWithGateway(userText, ctx, bundle, history, resolved.modelId, resolved.apiKey, onDelta);
     if (message) return { message, error: null };
     return {
       message: null,
@@ -409,16 +444,17 @@ export async function* streamExpertChat(req: ExpertChatRequest): AsyncGenerator<
   const bundle = await loadBundle(ctx);
   const userText = lastUserText(req);
   const resolved = resolveExpertProvider();
-  const aiEnabled = resolved.provider !== "none";
+  const keyPresent = resolved.provider !== "none";
 
   let fallbackReason: string | undefined;
-  if (aiEnabled && (userText || req.intent === "open")) {
+  if (keyPresent && (userText || req.intent === "open")) {
     yield {
       type: "start",
-      aiEnabled,
+      aiEnabled: keyPresent,
+      keyPresent,
       provider: resolved.provider,
       modelId: resolved.modelId,
-      banner: resolved.banner,
+      banner: "offline",
       mode: "ai",
     };
     for await (const event of iterWithDeltaQueue(async (onDelta) => {
@@ -441,10 +477,11 @@ export async function* streamExpertChat(req: ExpertChatRequest): AsyncGenerator<
   );
   yield {
     type: "start",
-    aiEnabled,
+    aiEnabled: keyPresent,
+    keyPresent,
     provider: resolved.provider,
     modelId: resolved.modelId,
-    banner: resolved.banner,
+    banner: "offline",
     mode: "offline",
   };
   yield { type: "delta", text: message.content };
