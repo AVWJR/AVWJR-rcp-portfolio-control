@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, IBM_Plex_Sans } from "next/font/google";
+import { Suspense } from "react";
 import { RCP_NAME, RCP_PRODUCT } from "@rcp/rcp-brand";
+import { ExpertRoot } from "@/components/expert/expert-root";
 import "./globals.css";
 
 const display = Cormorant_Garamond({
@@ -25,7 +27,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-US">
-      <body className={`${display.variable} ${sans.variable} font-sans antialiased`}>{children}</body>
+      <body className={`${display.variable} ${sans.variable} font-sans antialiased`}>
+        {children}
+        <Suspense fallback={null}>
+          <ExpertRoot />
+        </Suspense>
+      </body>
     </html>
   );
 }
