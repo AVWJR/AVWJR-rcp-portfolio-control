@@ -1,6 +1,9 @@
 import { mergeSuggestedActions, rankChips, rankSuggestedActions, sanitizeSuggestedActions } from "./actions";
 import {
   expertAiEnabled,
+  gatewayModelCandidates,
+  isUnknownGatewayModelError,
+  liveFallbackReason,
   publicErrorMessage,
   resolveExpertProvider,
   type ExpertProviderResolution,
@@ -128,6 +131,7 @@ function responseEnvelope(
   mode: "offline" | "ai",
   resolved: ExpertProviderResolution,
   message: ExpertMessage,
+  fallbackReason?: string,
 ): ExpertChatResponse {
   return {
     mode,
@@ -136,6 +140,7 @@ function responseEnvelope(
     modelId: resolved.modelId,
     banner: resolved.banner,
     message,
+    ...(fallbackReason ? { fallbackReason } : {}),
   };
 }
 
@@ -155,7 +160,7 @@ async function answerWithGateway(
   modelId: string,
   onDelta?: (text: string) => void,
 ): Promise<ExpertMessage | null> {
-  const { streamText, tool, stepCountIs } = await import("ai");
+  const { streamText, tool, stepCountIs, gateway } = await import("ai");
   const { z } = await import("zod");
   const {
     getAnomalies,
@@ -227,26 +232,41 @@ async function answerWithGateway(
     }),
   };
 
-  const result = streamText({
-    model: modelId,
-    system: systemForTurn(ctx, bundle),
-    messages: [
-      ...historyMessages(history),
-      { role: "user" as const, content: userText || openCoachPrompt() },
-    ],
-    tools,
-    stopWhen: stepCountIs(6),
-  });
+  const candidates = gatewayModelCandidates(modelId);
+  let lastError: unknown;
 
-  if (onDelta) {
-    for await (const delta of result.textStream) {
-      if (delta) onDelta(delta);
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    try {
+      const result = streamText({
+        model: typeof gateway === "function" ? gateway(candidate) : candidate,
+        system: systemForTurn(ctx, bundle),
+        messages: [
+          ...historyMessages(history),
+          { role: "user" as const, content: userText || openCoachPrompt() },
+        ],
+        tools,
+        stopWhen: stepCountIs(6),
+      });
+
+      if (onDelta) {
+        for await (const delta of result.textStream) {
+          if (delta) onDelta(delta);
+        }
+      }
+
+      const text = (await result.text)?.trim();
+      if (!text) return null;
+      return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok"], proposed, userText);
+    } catch (error) {
+      lastError = error;
+      const next = candidates[i + 1];
+      if (!next || !isUnknownGatewayModelError(error)) throw error;
+      console.warn("[expert] gateway model retry", candidate, "→", next, publicErrorMessage(error));
     }
   }
 
-  const text = (await result.text)?.trim();
-  if (!text) return null;
-  return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok"], proposed, userText);
+  throw lastError instanceof Error ? lastError : new Error("Live Grok failed");
 }
 
 async function answerWithXai(
@@ -280,6 +300,8 @@ async function answerWithXai(
   return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok (xAI)"], [], userText);
 }
 
+type ModelAttempt = { message: ExpertMessage | null; error: string | null };
+
 async function answerWithModel(
   userText: string,
   ctx: ExpertClientContext,
@@ -287,18 +309,22 @@ async function answerWithModel(
   history: { role: string; content: string }[],
   resolved: ExpertProviderResolution,
   onDelta?: (text: string) => void,
-): Promise<ExpertMessage | null> {
-  if (resolved.provider === "none") return null;
+): Promise<ModelAttempt> {
+  if (resolved.provider === "none") return { message: null, error: null };
   try {
-    if (resolved.provider === "xai") {
-      return await answerWithXai(userText, ctx, bundle, history, resolved, onDelta);
-    }
-    return await answerWithGateway(userText, ctx, bundle, history, resolved.modelId, onDelta);
+    const message =
+      resolved.provider === "xai"
+        ? await answerWithXai(userText, ctx, bundle, history, resolved, onDelta)
+        : await answerWithGateway(userText, ctx, bundle, history, resolved.modelId, onDelta);
+    if (message) return { message, error: null };
+    return {
+      message: null,
+      error: liveFallbackReason(new Error("Live Grok returned no text"), resolved.modelId),
+    };
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("[expert] model fallback", publicErrorMessage(error));
-    }
-    return null;
+    const reason = liveFallbackReason(error, resolved.modelId);
+    console.warn("[expert] model fallback", reason);
+    return { message: null, error: reason };
   }
 }
 
@@ -309,7 +335,9 @@ export async function runExpertChat(req: ExpertChatRequest): Promise<ExpertChatR
   const resolved = resolveExpertProvider();
   if (resolved.provider !== "none" && (userText || req.intent === "open")) {
     const ai = await answerWithModel(userText, ctx, bundle, req.messages ?? [], resolved);
-    if (ai) return responseEnvelope("ai", resolved, ai);
+    if (ai.message) return responseEnvelope("ai", resolved, ai.message);
+    const message = userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle);
+    return responseEnvelope("offline", resolved, message, ai.error ?? undefined);
   }
   const message = userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle);
   return responseEnvelope("offline", resolved, message);
@@ -362,6 +390,7 @@ export async function* streamExpertChat(req: ExpertChatRequest): AsyncGenerator<
   const resolved = resolveExpertProvider();
   const aiEnabled = resolved.provider !== "none";
 
+  let fallbackReason: string | undefined;
   if (aiEnabled && (userText || req.intent === "open")) {
     yield {
       type: "start",
@@ -371,15 +400,18 @@ export async function* streamExpertChat(req: ExpertChatRequest): AsyncGenerator<
       banner: resolved.banner,
       mode: "ai",
     };
-    for await (const event of iterWithDeltaQueue((onDelta) =>
-      answerWithModel(userText, ctx, bundle, req.messages ?? [], resolved, onDelta),
-    )) {
+    for await (const event of iterWithDeltaQueue(async (onDelta) => {
+      const attempt = await answerWithModel(userText, ctx, bundle, req.messages ?? [], resolved, onDelta);
+      fallbackReason = attempt.error ?? undefined;
+      return attempt.message;
+    })) {
       if (event.kind === "delta") yield { type: "delta", text: event.text };
       else if (event.message) {
         yield { type: "done", response: responseEnvelope("ai", resolved, event.message) };
         return;
       }
     }
+    if (fallbackReason) yield { type: "error", message: fallbackReason };
   }
 
   const message = userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle);
@@ -392,7 +424,7 @@ export async function* streamExpertChat(req: ExpertChatRequest): AsyncGenerator<
     mode: "offline",
   };
   yield { type: "delta", text: message.content };
-  yield { type: "done", response: responseEnvelope("offline", resolved, message) };
+  yield { type: "done", response: responseEnvelope("offline", resolved, message, fallbackReason) };
 }
 
 export { expertAiEnabled };

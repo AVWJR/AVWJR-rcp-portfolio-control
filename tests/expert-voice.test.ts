@@ -130,6 +130,7 @@ describe("expert coach voice", () => {
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/clarifying question/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/1–3/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/spacexai\/grok-4\.6/);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/xai\/grok-4\.6/);
   });
 
   it("opens with a short greeting, not a watchlist essay", () => {
