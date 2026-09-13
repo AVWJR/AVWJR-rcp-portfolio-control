@@ -2,6 +2,7 @@ import { ReportShell, type ReportSearch } from "@/components/report-frame";
 import { formatUsd } from "@rcp/ledger";
 import { formatRatioBps } from "@rcp/properties";
 import Link from "next/link";
+import { liveSpeWhere } from "@/lib/archive";
 import { prisma } from "@/lib/prisma";
 import { summarizeRentRoll } from "@rcp/properties";
 import { unitToSnapshot } from "@/lib/rent-roll";
@@ -24,7 +25,7 @@ export default async function PropertiesPage({
 
 async function PropertyIndex({ period }: { period: string }) {
   const spes = await prisma.entity.findMany({
-    where: { type: "SPE" },
+    where: liveSpeWhere(),
     include: { units: true },
     orderBy: { code: "asc" },
   });

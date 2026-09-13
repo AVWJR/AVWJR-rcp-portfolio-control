@@ -4,7 +4,9 @@ import { loadPostedLines } from "./queries";
 
 export async function reviewTreeIntercompany(through: Date): Promise<IntercompanyReview> {
   const entities = await prisma.entity.findMany({
-    where: { type: { in: ["OPCO", "SPE"] } },
+    where: {
+      OR: [{ type: "OPCO" }, { type: "SPE", lifecycleStatus: "LIVE" }],
+    },
     orderBy: { code: "asc" },
   });
   const packed = [];

@@ -2,7 +2,9 @@
 
 Principal path to onboard a **new property SPE** under OpCo. New deals are never a second HoldCo.
 
-Route: [`/deals/new`](/deals/new) · list: [`/deals`](/deals)
+Route: [`/deals/new`](/deals/new) · live list: [`/deals`](/deals) (live SPEs only)
+
+Archived SPEs are **not** listed here. Study and restore them on gold nav **Archive** ([`/archive`](/archive)). See [RCP_DEAL_ARCHIVE.md](./RCP_DEAL_ARCHIVE.md).
 
 ## Modes
 
@@ -28,7 +30,8 @@ Drafts persist in `DealIntake` / `DealIntakeFile` so refresh does not lose work.
 
 ## APIs
 
-- `GET|POST /api/deals` — list SPEs / create SPE (unique code, parent OpCo must exist)  
+- `GET|POST /api/deals` — list **live** SPEs / create SPE (unique code, parent OpCo must exist)  
+- `POST /api/deals/{code}/archive` — Principal soft-archive (`confirmCode` = SPE code)  
 - `GET|POST /api/deals/intake` — create or update a draft (`?id=` / `{ id }`)  
 - `POST /api/deals/intake/files` — **one file per request** (client). Missing `intakeId` creates an **Untitled deal** draft. Small files: multipart. Large files: JSON `{ blobUrl, filename, mimeType, byteSize }` after client Blob upload.  
 - `POST /api/deals/intake/blob` — `@vercel/blob` `handleUpload` token endpoint (`BLOB_READ_WRITE_TOKEN`)  

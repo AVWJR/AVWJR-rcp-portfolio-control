@@ -1,7 +1,8 @@
 import { PeriodBanner } from "@/components/period-banner";
 import { Shell } from "@/components/shell";
+import { isArchivedSpe } from "@/lib/archive";
 import { listPeriodLabels } from "@/lib/deals/periods";
-import { listEntities } from "@/lib/queries";
+import { getEntityByCode, listEntities } from "@/lib/queries";
 import { buildAllStatements } from "@/lib/reports-server";
 import type { ReactNode } from "react";
 
@@ -12,20 +13,28 @@ export type ReportSearch = {
 };
 
 export async function loadReportContext(searchParams: ReportSearch) {
-  const entities = await listEntities();
-  if (entities.length === 0) {
+  const liveEntities = await listEntities();
+  if (liveEntities.length === 0) {
     throw new Error("NO_SEED");
   }
-  const entityCode = searchParams.entity ?? entities.find((e) => e.type === "OPCO")?.code ?? entities[0]?.code;
-  const entity = entities.find((e) => e.code === entityCode) ?? entities[0];
+  const entityCode = searchParams.entity ?? liveEntities.find((e) => e.type === "OPCO")?.code ?? liveEntities[0]?.code;
+  let entity = liveEntities.find((e) => e.code === entityCode) ?? null;
+  if (!entity && searchParams.entity) {
+    entity = await getEntityByCode(searchParams.entity);
+  }
+  if (!entity) {
+    entity = liveEntities[0] ?? null;
+  }
+  if (!entity) {
+    throw new Error("No entities seeded. Run npm run db:reset");
+  }
+  const entities = liveEntities.some((row) => row.code === entity.code)
+    ? liveEntities
+    : [entity, ...liveEntities];
   const [yearStr, monthStr] = (searchParams.period ?? "2026-08").split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
   const consolidated = searchParams.view === "consolidated" || searchParams.view === "combined";
-
-  if (!entity) {
-    throw new Error("No entities seeded. Run npm run db:reset");
-  }
 
   const [statements, periodLabels] = await Promise.all([
     buildAllStatements({
@@ -45,6 +54,7 @@ export async function loadReportContext(searchParams: ReportSearch) {
     periodLabels,
     consolidated: statements.consolidated,
     canConsolidate: statements.canConsolidate,
+    archived: isArchivedSpe(entity),
     statements,
   };
 }
@@ -110,5 +120,6 @@ export async function ReportShell({
 export function reportSubtitle(ctx: Awaited<ReturnType<typeof loadReportContext>>) {
   const units = ctx.entity.unitCount ? ` · ${ctx.entity.unitCount} units` : "";
   const view = ctx.consolidated ? " · Combined roll-up" : " · Standalone";
-  return `${ctx.entity.name}${units}${view} · ${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
+  const archived = ctx.archived ? " · Archived" : "";
+  return `${ctx.entity.name}${units}${view}${archived} · ${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
 }

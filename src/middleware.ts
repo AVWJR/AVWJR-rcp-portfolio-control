@@ -57,15 +57,18 @@ export function middleware(request: NextRequest) {
 
   if (isViewerBlockedPath(pathname)) {
     const dest = request.nextUrl.clone();
-    dest.pathname = "/deals";
-    dest.searchParams.set("denied", "add_deal");
+    dest.pathname = pathname.startsWith("/archive") ? "/" : "/deals";
+    dest.searchParams.set("denied", pathname.startsWith("/archive") ? "archive" : "add_deal");
     if (pathname.startsWith("/admin")) dest.pathname = "/";
     return NextResponse.redirect(dest);
   }
 
   if (pathname.startsWith("/api/") && viewerForbiddenApi(pathname, request.method)) {
     return NextResponse.json(
-      { error: "Partner view is read-only. Add Deal, seed, and uploads are disabled on this link." },
+      {
+        error:
+          "Partner view is read-only. Add Deal, archive/restore, seed, and uploads are disabled on this link.",
+      },
       { status: 403 },
     );
   }

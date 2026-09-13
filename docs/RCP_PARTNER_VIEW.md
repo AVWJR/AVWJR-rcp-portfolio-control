@@ -11,13 +11,15 @@ Unset both locally so the laptop demo stays Principal.
 ## What viewers can do
 
 - Open dashboards, narratives, report packs, properties, debt, tax (GET)
-- Ask Expert (read-only tools)
+- Ask Expert (read-only tools) — coach will not send them to archive/restore
 
 ## What viewers cannot do
 
 - `/deals/new` (redirects to Deals)
+- `/archive` (redirects home)
 - `/admin/seed`
 - POST/PATCH/DELETE on intake, vault, Blob client-upload handles, seed, and other mutate APIs (403)
+- Archive / restore APIs (`POST /api/deals/{code}/archive`, `GET|POST /api/archive…`) — **403**
 
 ## How the Principal shares a link
 

@@ -81,6 +81,8 @@ export type EntitySummary = {
   parentCode: string | null;
   unitCount: number | null;
   strategy: string | null;
+  lifecycleStatus?: string;
+  archivedAt?: string | null;
   children: { code: string; name: string; type: string; unitCount: number | null }[];
 };
 

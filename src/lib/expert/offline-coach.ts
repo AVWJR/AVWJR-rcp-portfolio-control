@@ -281,6 +281,23 @@ RCP mailbox address is **not decided yet**. Until \`RCP_INGEST_MAILBOX\` and a c
 When the SPE exists, ask me for month-end checklist or “What’s missing for this SPE?”`;
 }
 
+function archiveDealFlow(ctx: ExpertClientContext): string {
+  const deals = link("/deals", ctx, "Deals");
+  const vault = link("/vault", ctx, "Vault");
+  const archive = link("/archive", ctx, "Deal Archive");
+  return `**Archive a deal — soft-archive only, then study it on Archive**
+
+Deals stays **live SPEs only**. There is no Archive tab under Deals.
+
+1. Trigger from where the live SPE lives: gold nav **Deals** → ${deals} → row action **Archive deal…**, or open that SPE in ${vault} → **Archive this deal…**.
+2. Read the impact: the SPE **leaves the OpCo combined roll-up** and the live Deals list. Books and vault are **preserved for study**. This is not a hard wipe.
+3. Type the SPE code (for example \`SPE-WBG\`) to confirm.
+4. Find it later on gold nav **Archive** → ${archive} (\`/archive\`). Not under Deals.
+5. **Restore** is Principal-only, two-step, and only from ${archive}. Partners get 403 on archive/restore.
+
+I will not send you to a Deals Archive tab. Gold nav **Archive** is its own item.`;
+}
+
 function rentRollImportCopy(ctx: ExpertClientContext): string {
   const dest = ctx.entityCode.startsWith("SPE-")
     ? link(`/properties/${ctx.entityCode}`, ctx, "this SPE’s rent roll")
@@ -399,6 +416,8 @@ export function answerOffline(
     content = tour(ctx);
   } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
     content = addDealFlow(ctx);
+  } else if (/archiv|restore (a )?(deal|spe)|soft.?archiv|where.*(archived|old deal)/.test(q)) {
+    content = archiveDealFlow(ctx);
   } else if (/import rent roll|rent-?roll csv|xlsx|map columns|workbook/.test(q)) {
     content = rentRollImportCopy(ctx);
   } else if (/check ?list|month-end|month end|close books|soft close|hard lock/.test(q)) {
