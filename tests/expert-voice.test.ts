@@ -182,7 +182,9 @@ describe("expert coach voice", () => {
     const ctx = readExpertContext("/dashboard/SPE-HCR", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
     const reply = answerOffline("I need to delete a deal. How?", ctx, flagHeavyBundle);
     expect(reply.content).toMatch(/does not delete SPEs yet/i);
+    expect(reply.content).toMatch(/not available on main yet|not available yet/i);
     expect(reply.content).toMatch(/Deals/);
+    expect(reply.content).not.toMatch(/\]\(\/archive|href=.*archive/i);
     expect(reply.content).not.toMatch(/number on this page/i);
     expect(reply.content).not.toMatch(/something missing/i);
     expect(reply.content).not.toMatch(/covenant watch/i);

@@ -377,13 +377,13 @@ function deleteDealCopy(ctx: ExpertClientContext): string {
   const list = link("/deals", ctx, "Deals");
   const add = link("/deals/new", ctx, "Add Deal");
   const vault = link("/vault", ctx, "Vault");
-  return `**This demo does not delete SPEs yet.** There is no Delete, archive, or hide on a deal or property SPE.
+  return `**This demo does not delete SPEs yet.** Soft-archive / Deal Archive is **not available on main yet** — do not look for an Archive button.
 
-What you *can* do:
-- Open ${list} (gold nav **Deals**) to see SPEs and unfinished Add Deal drafts. Created SPEs stay in the books.
+Nearest real path today:
+- Leave the SPE as-is. Open ${list} (gold nav **Deals**) to see SPEs and unfinished drafts. Created SPEs stay in the books.
 - On an Add Deal draft you can remove an uploaded **file** (red remove on that row). That does not delete the SPE or the draft.
 - ${vault} can delete a **document**. That is not deleting the deal.
-- Leave the SPE as-is. Seeded demo SPEs (\`SPE-WBG\`, \`SPE-CVC\`, \`SPE-HCR\`) are meant to stay.
+- Seeded demo SPEs (\`SPE-WBG\`, \`SPE-CVC\`, \`SPE-HCR\`) are meant to stay.
 
 If you meant to **onboard** a different property, open ${add}. I will not invent a delete or archive screen.`;
 }
@@ -420,7 +420,7 @@ function featureHowTo(q: string, ctx: ExpertClientContext): string {
   }
   return `I can walk every real screen in this app. Gold nav: Overview, Dashboard, Deals, Properties, Debt, CapEx, Close, Tax, Vault, Narratives, Scheduler.
 
-There is no hidden delete or archive. Name the screen or the job (add deal, vault a file, export a pack, close the period) and I will give the click path.`;
+There is no delete or archive on main yet. Name the screen or the job (add deal, vault a file, export a pack, close the period) and I will give the click path.`;
 }
 
 function navHelp(text: string, ctx: ExpertClientContext): string {
