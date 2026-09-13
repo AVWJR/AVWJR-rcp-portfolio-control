@@ -538,28 +538,37 @@ export function AddDealWizard({
               ).map(([id, title, copy]) => {
                 const on = form.sources.includes(id);
                 const configured = provider(id)?.configured ?? id === "upload";
-                const disabled = id === "rcp_mailbox" && !configured;
                 return (
-                  <button
+                  <div
                     key={id}
-                    type="button"
-                    disabled={disabled && id === "rcp_mailbox"}
-                    onClick={() =>
-                      setForm((f) => ({
-                        ...f,
-                        sources: on ? f.sources.filter((s) => s !== id) : [...f.sources, id],
-                      }))
-                    }
-                    className={`border px-4 py-3 text-left ${on ? "border-gold-500 bg-cream-50" : "border-cream-300"} ${
-                      disabled ? "opacity-70" : ""
-                    }`}
+                    className={`border px-4 py-3 text-left ${on ? "border-gold-500 bg-cream-50" : "border-cream-300"}`}
                   >
-                    <p className="font-display text-lg text-navy-900">{title}</p>
-                    <p className="mt-1 text-xs text-ink-600">{copy}</p>
-                    <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-gold-700">
-                      {configured ? "Connected" : id === "upload" ? "Ready" : "Not connected"}
-                    </p>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          sources: on ? f.sources.filter((s) => s !== id) : [...f.sources, id],
+                        }))
+                      }
+                      className="w-full text-left"
+                    >
+                      <p className="font-display text-lg text-navy-900">{title}</p>
+                      <p className="mt-1 text-xs text-ink-600">{copy}</p>
+                      <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-gold-700">
+                        {configured ? "Connected" : id === "upload" ? "Ready" : "Not connected"}
+                      </p>
+                    </button>
+                    {id === "rcp_mailbox" ? (
+                      <button
+                        type="button"
+                        onClick={() => void scanMailbox()}
+                        className="mt-3 border border-navy-900 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-navy-900"
+                      >
+                        Scan RCP inbox
+                      </button>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
