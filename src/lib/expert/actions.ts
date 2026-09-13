@@ -159,7 +159,7 @@ export function rankSuggestedActions(
   const q = userText.trim().toLowerCase();
 
   if (/noi/.test(q) && !/dscr|debt|missing/.test(q)) {
-    return [
+    const noiActions: ExpertSuggestedAction[] = [
       {
         id: "act_os",
         kind: "navigate",
@@ -177,7 +177,8 @@ export function rankSuggestedActions(
           ctx,
         ),
       },
-    ].slice(0, MAX_CHROME);
+    ];
+    return noiActions;
   }
 
   if (/harrington|what.?s missing|missing for|completeness/.test(q)) {
