@@ -1,5 +1,4 @@
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
-import { currentAccessRole } from "@/lib/access-server";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 
@@ -17,7 +16,6 @@ export default async function DealsPage({
 }
 
 async function DealIndex({ period, subtitle }: { period: string; subtitle: string }) {
-  const role = await currentAccessRole();
   const [spes, drafts] = await Promise.all([
     prisma.entity.findMany({
       where: { type: "SPE" },
@@ -42,19 +40,15 @@ async function DealIndex({ period, subtitle }: { period: string; subtitle: strin
             or a second OpCo.
           </p>
         </div>
-        {role === "principal" ? (
-          <Link
-            href={`/deals/new?period=${period}`}
-            className="bg-gold-500 px-5 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-950"
-          >
-            Add Deal
-          </Link>
-        ) : (
-          <p className="text-sm text-ink-600">Partner view — Add Deal is off.</p>
-        )}
+        <Link
+          href={`/deals/new?period=${period}`}
+          className="bg-gold-500 px-5 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-950"
+        >
+          Add Deal
+        </Link>
       </div>
 
-      {drafts.length && role === "principal" ? (
+      {drafts.length ? (
         <div>
           <h2 className="font-display text-2xl text-navy-900">Saved drafts</h2>
           <ul className="mt-3 grid gap-3 md:grid-cols-2">
