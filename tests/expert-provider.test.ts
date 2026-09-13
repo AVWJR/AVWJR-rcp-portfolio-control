@@ -24,7 +24,7 @@ const emptyBundle: OfflineBundle = {
   kpis: { ok: false, error: "skip" },
 };
 
-function bareEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+function bareEnv(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {
   return {
     AI_GATEWAY_API_KEY: "",
     VERCEL_OIDC_TOKEN: "",

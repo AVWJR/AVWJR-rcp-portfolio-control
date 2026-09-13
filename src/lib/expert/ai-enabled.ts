@@ -41,7 +41,9 @@ export function toDirectXaiModelId(modelId: string | undefined): string {
   return raw;
 }
 
-export function resolveExpertProvider(env: NodeJS.ProcessEnv = process.env): ExpertProviderResolution {
+type EnvMap = Record<string, string | undefined>;
+
+export function resolveExpertProvider(env: EnvMap = process.env): ExpertProviderResolution {
   const explicit = env.EXPERT_MODEL?.trim() || "";
   const gatewayKey = firstTrimmed(env.AI_GATEWAY_API_KEY, env.VERCEL_OIDC_TOKEN);
   const xaiKey = firstTrimmed(env.XAI_API_KEY, env.GROK_API_KEY);
@@ -94,11 +96,11 @@ export function resolveExpertProvider(env: NodeJS.ProcessEnv = process.env): Exp
   };
 }
 
-export function expertAiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+export function expertAiEnabled(env: EnvMap = process.env): boolean {
   return resolveExpertProvider(env).provider !== "none";
 }
 
-export function expertModelId(env: NodeJS.ProcessEnv = process.env): string {
+export function expertModelId(env: EnvMap = process.env): string {
   return resolveExpertProvider(env).modelId;
 }
 

@@ -100,7 +100,7 @@ export function rankSuggestedActions(ctx: ExpertClientContext, bundle: OfflineBu
   }
 
   if ((page === "/" || page.startsWith("/deals")) && !viewer) {
-    return [
+    const dealActions: ExpertSuggestedAction[] = [
       {
         id: "act_add_deal",
         kind: "navigate",
@@ -122,7 +122,8 @@ export function rankSuggestedActions(ctx: ExpertClientContext, bundle: OfflineBu
         prompt: "How do I import a rent roll for this SPE? Include the confirm-replace step if units already exist.",
       },
       ...actions,
-    ].slice(0, 4);
+    ];
+    return dealActions.slice(0, 4);
   }
 
   if (page.startsWith("/narratives")) {
