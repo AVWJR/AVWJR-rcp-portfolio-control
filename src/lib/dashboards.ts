@@ -42,6 +42,7 @@ import { buildOperatingPackage } from "./operating";
 import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
+import { loadBrokerT12Overlay, type BrokerT12OverlaySummary } from "./t12-overlay";
 
 export type LiveRatio = {
   id: RatioId;
@@ -65,6 +66,7 @@ export type PropertyDashboard = {
   tiles: LiveRatio[];
   t12: TrailingNoi;
   loans: PortfolioLoanRow[];
+  brokerOverlay: BrokerT12OverlaySummary | null;
 };
 
 export type CovenantWatch = {
@@ -220,6 +222,7 @@ export async function buildPropertyDashboard(opts: {
   const ltvGate = ratioAvailability("ltl");
   const delq = ratioAvailability("delinquency");
   const ctx = qs(entity.code, period);
+  const brokerOverlay = await loadBrokerT12Overlay(entity.id);
 
   const tiles: LiveRatio[] = [
     live({
@@ -482,6 +485,7 @@ export async function buildPropertyDashboard(opts: {
     tiles,
     t12,
     loans,
+    brokerOverlay,
   };
 }
 

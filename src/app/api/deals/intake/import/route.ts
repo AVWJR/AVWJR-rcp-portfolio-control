@@ -1,5 +1,6 @@
 import { applyCreateEntity, applyStructuredData } from "@/lib/deals/apply";
 import { autoIngestIntake } from "@/lib/deals/auto-ingest";
+import { reapplyRentRollForEntity } from "@/lib/deals/reapply";
 import { getIntake, publicIntake } from "@/lib/deals/intake";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { NextResponse } from "next/server";
@@ -13,12 +14,18 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
       intakeId?: string;
-      action?: "create_entity" | "apply" | "auto_ingest";
+      action?: "create_entity" | "apply" | "auto_ingest" | "reapply";
       confirmReplace?: boolean;
       importRentRoll?: boolean;
       importBudget?: boolean;
       saveLoan?: boolean;
+      entityCode?: string;
     };
+    if (body.action === "reapply") {
+      if (!body.entityCode) return NextResponse.json({ error: "entityCode required" }, { status: 400 });
+      const report = await reapplyRentRollForEntity(body.entityCode);
+      return NextResponse.json(report);
+    }
     if (!body.intakeId) return NextResponse.json({ error: "intakeId required" }, { status: 400 });
     if (body.action === "auto_ingest") {
       const report = await autoIngestIntake(body.intakeId);

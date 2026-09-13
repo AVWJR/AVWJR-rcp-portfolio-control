@@ -1,5 +1,7 @@
+import { BrokerOverlayStrip } from "@/components/broker-overlay-strip";
 import { DashboardTiles } from "@/components/dashboard-tiles";
 import { NoiConcentration } from "@/components/noi-concentration";
+import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { buildDashboardForEntity, type OpCoDashboard, type PropertyDashboard } from "@/lib/dashboards";
 import { formatUsd } from "@rcp/ledger";
@@ -82,6 +84,8 @@ function PropertyView({ ctxLabel, dash }: { ctxLabel: string; dash: PropertyDash
           </Link>
         </div>
       </div>
+      {dash.unitCount === 0 ? <ReapplyRentRollButton entityCode={dash.entityCode} /> : null}
+      <BrokerOverlayStrip overlay={dash.brokerOverlay} />
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} />
     </div>
   );

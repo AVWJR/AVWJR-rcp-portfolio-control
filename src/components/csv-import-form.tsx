@@ -57,7 +57,12 @@ export function CsvImportForm({
     <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3 border border-cream-300 bg-white px-4 py-3">
       <div>
         <label className="block text-[11px] uppercase tracking-[0.14em] text-ink-500">{label}</label>
-        <input type="file" name="file" accept=".csv,text/csv" className="mt-1 text-sm" />
+        <input
+          type="file"
+          name="file"
+          accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          className="mt-1 text-sm"
+        />
       </div>
       <label className="flex items-center gap-2 text-xs text-ink-700">
         <input

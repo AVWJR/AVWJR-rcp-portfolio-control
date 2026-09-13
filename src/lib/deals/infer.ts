@@ -77,8 +77,10 @@ export function inferFileRole(filename: string, bytes?: Buffer): DealFileClass {
   const fromName = classifyFromFilename(filename);
   if (bytes && (isSpreadsheetFilename(filename) || filename.toLowerCase().endsWith(".csv"))) {
     const sniffed = sniffWorkbookRole(bytes, filename);
+    if (fromName === "rent_roll_csv" || fromName === "t12_pl" || fromName === "om_cim" || fromName === "budget_csv") {
+      return fromName;
+    }
     if (sniffed === "rent_roll_csv") return sniffed;
-    if (fromName === "t12_pl" || fromName === "om_cim") return fromName;
     if (sniffed) return sniffed;
   }
   return fromName;

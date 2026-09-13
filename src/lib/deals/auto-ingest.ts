@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { applyCreateEntity, applyStructuredData } from "./apply";
-import { suggestCodeForName } from "./create-spe";
+import { findReusableSpe, suggestCodeForName } from "./create-spe";
 import { getIntake, publicIntake, updateIntake } from "./intake";
 import { inferDealIdentity, suggestDealSpeCode } from "./infer";
 import { isUntitledDealName, workingTitle } from "./upload-client";
@@ -34,16 +34,23 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
   }
 
   const existing = await prisma.entity.findMany({ select: { code: true } });
+  const reusable = intake.entityId ? null : await findReusableSpe(speName);
   const speCode =
-    intake.speCode && !isUntitledDealName(intake.speCode)
+    reusable?.code ??
+    (intake.speCode && !isUntitledDealName(intake.speCode)
       ? intake.speCode
-      : suggestDealSpeCode(speName, existing.map((row) => row.code));
+      : suggestDealSpeCode(speName, existing.map((row) => row.code)));
 
-  const uniqueCode = existing.some((row) => row.code === speCode) ? await suggestCodeForName(speName) : speCode;
+  const uniqueCode = reusable?.code
+    ? reusable.code
+    : existing.some((row) => row.code === speCode)
+      ? await suggestCodeForName(speName)
+      : speCode;
 
   await updateIntake(intake.id, {
     speName: workingTitle(speName),
     speCode: uniqueCode,
+    entityId: reusable?.id ?? intake.entityId,
     // Filename as-of (OM/RR vintage) is not the OpCo close month. Keep the wizard period (default 2026-08).
     targetPeriod: intake.targetPeriod,
     currentStep: 5,
@@ -55,11 +62,8 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
     throw new Error("The SPE was not created. Check the name and code, then retry.");
   }
 
-  const t12Files = created.files.filter((file) => file.classification === "t12_pl");
-  for (const file of t12Files) {
-    gaps.push(
-      `${file.filename} is a T12 / P&L workbook — retained in the vault. Full GL mapping is a follow-on (do not invent accounts).`,
-    );
+  if (reusable) {
+    gaps.push(`Reused existing ${reusable.code} (${reusable.name}) instead of minting another SPE-HRP*.`);
   }
 
   const applied = await applyStructuredData({
@@ -67,6 +71,7 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
     confirmReplace: true,
     importRentRoll: true,
     importBudget: created.files.some((file) => file.classification === "budget_csv"),
+    importT12: true,
     saveLoan: false,
     lenient: true,
   });
@@ -74,9 +79,24 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
   for (const row of applied.results) {
     if (row.skipped) gaps.push(row.skipped);
   }
+  const hasRrFile = created.files.some((file) => file.classification === "rent_roll_csv");
   const rr = applied.results.find((row) => row.kind === "rent_roll");
+  if (hasRrFile && !(rr?.imported && rr.imported > 0)) {
+    const detail = rr?.skipped ?? "imported 0 units";
+    const message = /could not map columns/i.test(detail)
+      ? `${uniqueCode}: ${detail}`
+      : `${uniqueCode}: could not map rent-roll columns. ${detail}`;
+    await updateIntake(intake.id, { status: "FAILED", lastError: message.slice(0, 500) });
+    throw new Error(message);
+  }
   if (rr?.imported) {
     gaps.push(`Open Properties / Dashboard for ${uniqueCode} — occupancy now uses ${rr.imported} rent-roll units.`);
+  }
+  const overlay = applied.results.find((row) => row.kind === "t12_overlay" && row.imported);
+  if (overlay?.imported) {
+    gaps.push(
+      `Broker T12 overlay wrote ${overlay.imported} monthly budget line(s) for ${uniqueCode} and labeled broker_t12_overlay journals on the demo period. Cash-book codes (4022-000 etc.) are mapped to RCP CoA — not audited books.`,
+    );
   }
 
   const latest = applied.intake ?? (await getIntake(intake.id));
