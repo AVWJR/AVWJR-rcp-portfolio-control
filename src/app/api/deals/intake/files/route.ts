@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     const stored = [];
     for (const file of files) {
       const bytes = Buffer.from(await file.arrayBuffer());
-      const classification = String(form.get("classification") ?? "") || guessClassification(file.name);
+      const classification = String(form.get("classification") ?? "") || guessClassification(file.name, bytes);
       if (source === "email_attachment" && /\.eml$/i.test(file.name)) {
         const attachments = extractEmlAttachments(bytes);
         stored.push(

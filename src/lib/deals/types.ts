@@ -13,6 +13,7 @@ export type DealGoal = (typeof DEAL_GOALS)[number];
 export const DEAL_FILE_CLASSES = [
   "rent_roll_csv",
   "budget_csv",
+  "t12_pl",
   "loan_doc",
   "lease",
   "om_cim",
@@ -24,6 +25,7 @@ export type DealFileClass = (typeof DEAL_FILE_CLASSES)[number];
 export const DEAL_FILE_CLASS_LABELS: Record<DealFileClass, string> = {
   rent_roll_csv: "Rent-roll CSV / XLSX",
   budget_csv: "Budget CSV / XLSX",
+  t12_pl: "T12 / P&L workbook",
   loan_doc: "Loan document",
   lease: "Lease",
   om_cim: "OM / CIM",

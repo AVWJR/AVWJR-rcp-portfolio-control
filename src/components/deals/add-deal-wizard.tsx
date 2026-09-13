@@ -103,7 +103,7 @@ export function AddDealWizard({
   periodLabels: string[];
 }) {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(3);
   const [intake, setIntake] = useState<Intake | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [busy, setBusy] = useState(false);
@@ -118,6 +118,13 @@ export function AddDealWizard({
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [needsConfirm, setNeedsConfirm] = useState(false);
   const [completeness, setCompleteness] = useState<Completeness | null>(null);
+  const [ingestReport, setIngestReport] = useState<{
+    inferred: { speName: string | null; speCode: string | null; address: string | null };
+    created: { entityCode: string | null; entityName: string | null };
+    results: { kind: string; imported?: number; skipped?: string }[];
+    gaps: string[];
+  } | null>(null);
+  const ingestLockRef = useRef(false);
   const [form, setForm] = useState({
     goal: "value_add" as DealGoal,
     targetPeriod: "2026-08",
@@ -341,7 +348,52 @@ export function AddDealWizard({
       }
     }
     if (stored) {
-      setMessage(`${stored} file(s) stored one at a time. Classify them on the next step — you can name the SPE after upload.`);
+      setMessage(`${stored} file(s) stored one at a time. Inferring the deal name and ingesting…`);
+      await autoIngest(latest.id);
+    }
+  }
+
+  async function autoIngest(intakeId: string) {
+    if (ingestLockRef.current) return;
+    ingestLockRef.current = true;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/deals/intake/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intakeId, action: "auto_ingest" }),
+      });
+      if (!res.ok) {
+        setError(await readApiError(res, "Could not auto-ingest the deal."));
+        return;
+      }
+      const json = (await res.json()) as {
+        inferred: { speName: string | null; speCode: string | null; address: string | null };
+        created: { entityCode: string | null; entityName: string | null };
+        results: { kind: string; imported?: number; skipped?: string }[];
+        gaps: string[];
+        intake?: Intake;
+      };
+      setIngestReport({
+        inferred: json.inferred,
+        created: json.created,
+        results: json.results,
+        gaps: json.gaps,
+      });
+      if (json.intake) hydrate(json.intake);
+      const imported = json.results.filter((row) => row.imported != null).map((row) => `${row.kind}: ${row.imported}`);
+      setMessage(
+        `Created ${json.created.entityName ?? "the SPE"} (${json.created.entityCode ?? "code pending"}). ${
+          imported.length ? `Imported ${imported.join(", ")}.` : "Structured import skipped where columns did not match."
+        }`,
+      );
+      setStep(8);
+      await loadCompleteness(json.created.entityCode, form.targetPeriod);
+    } catch (err) {
+      setError(formatUploadFailure({ networkMessage: err instanceof Error ? err.message : "Failed to fetch" }));
+    } finally {
+      ingestLockRef.current = false;
+      setBusy(false);
     }
   }
 
@@ -503,9 +555,9 @@ export function AddDealWizard({
         <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">Add Deal · new property SPE</p>
         <h1 className="font-display text-4xl text-navy-900">Onboard a deal under OpCo</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-700">
-          New deals are <strong>SPE</strong> entities under {form.parentOpCoCode}. Upload files first if you
-          want — naming the SPE can wait. Dropbox, email, and the RCP mailbox appear even when they are not
-          connected yet — they will not crash this page. Drafts save as you go.
+          New deals are <strong>SPE</strong> entities under {form.parentOpCoCode}. <strong>Drop files
+          only</strong> — we infer the name and SPE code, classify, create the SPE when we can, and vault the
+          rest. Dropbox, email, and the RCP mailbox stay visible even when they are not connected.
         </p>
       </div>
 
@@ -939,7 +991,9 @@ export function AddDealWizard({
 
         {step === 8 ? (
           <section className="space-y-4">
-            <h2 className="font-display text-2xl text-navy-900">Deal is on the books</h2>
+            <h2 className="font-display text-2xl text-navy-900">
+              {ingestReport?.created.entityCode ? "Here’s what we created" : "Deal is on the books"}
+            </h2>
             <p className="text-sm text-ink-700">
               {intake?.entityCode ? (
                 <>
@@ -947,9 +1001,39 @@ export function AddDealWizard({
                   switcher. Open the screens below, or ask Expert to walk you through month-end.
                 </>
               ) : (
-                "Create the SPE on step 5 to unlock deep links."
+                "Create the SPE on step 5 to unlock deep links, or drop files on Source files for upload-only ingest."
               )}
             </p>
+            {ingestReport ? (
+              <div className="space-y-3 border border-gold-300 bg-cream-50 px-4 py-3 text-sm text-ink-700">
+                <p>
+                  Inferred <strong>{ingestReport.inferred.speName ?? "name pending"}</strong>
+                  {ingestReport.inferred.speCode ? ` · ${ingestReport.inferred.speCode}` : ""}.
+                  {ingestReport.inferred.address
+                    ? ` Address: ${ingestReport.inferred.address}.`
+                    : " No street address in the filenames — left blank."}
+                </p>
+                <ul className="list-disc space-y-1 pl-5">
+                  {ingestReport.results.map((row) => (
+                    <li key={row.kind}>
+                      {row.kind}
+                      {row.imported != null ? ` — imported ${row.imported}` : ""}
+                      {row.skipped ? ` — ${row.skipped}` : ""}
+                    </li>
+                  ))}
+                </ul>
+                {ingestReport.gaps.length ? (
+                  <div>
+                    <p className="font-medium text-navy-900">Still needs a human / Expert</p>
+                    <ul className="mt-1 list-disc pl-5">
+                      {ingestReport.gaps.map((gap) => (
+                        <li key={gap}>{gap}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {intake?.entityCode ? (
               <div className="grid gap-3 md:grid-cols-2">
                 {[

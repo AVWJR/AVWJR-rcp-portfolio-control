@@ -1,5 +1,6 @@
 import { POST } from "@/app/api/deals/intake/files/route";
 import { applyStructuredData } from "@/lib/deals/apply";
+import { autoIngestIntake } from "@/lib/deals/auto-ingest";
 import { createSpeDeal } from "@/lib/deals/create-spe";
 import { createIntake, getIntake, updateIntake } from "@/lib/deals/intake";
 import { readIntakeFileBytes, removeIntakeFile, storeIntakeFile } from "@/lib/deals/files";
@@ -375,5 +376,46 @@ describe("Add Deal intake upload", () => {
     expect(res.status).toBe(413);
     const json = (await res.json()) as { error: string };
     expect(json.error).toBe(fileTooLargeMessage());
+  });
+
+  it("auto-ingests Harrington-named files without a typed SPE name", async () => {
+    const intake = await createIntake({ sources: ["upload"], goal: "value_add" });
+    intakeIds.push(intake.id);
+    expect(intake.speName).toBe(UNTITLED_DEAL_NAME);
+
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "Life_at_Harrington_Park_OM_Offering.pdf",
+      mimeType: "application/pdf",
+      bytes: MINI_PDF,
+    });
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "RR_-_Harrington_-_12.31.19_-_Resi.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: readFileSync(resolve("data/samples/rent-roll.xlsx")),
+    });
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "T12_NOI_-_Life_at_Harrington_-_11.2019.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: readFileSync(resolve("data/samples/budget.xlsx")),
+    });
+
+    const report = await autoIngestIntake(intake.id);
+    if (report.created.entityId) entityIds.push(report.created.entityId);
+    expect(report.inferred.speName).toMatch(/Harrington Park/i);
+    expect(report.created.entityCode).toMatch(/^SPE-/);
+    expect(report.created.entityName).toMatch(/Harrington Park/i);
+    expect(report.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 1)).toBe(true);
+    expect(report.gaps.some((gap) => /T12|P&L/i.test(gap))).toBe(true);
+
+    const latest = await getIntake(intake.id);
+    expect(latest?.entityId).toBeTruthy();
+    const vaulted = await prisma.vaultDocument.count({ where: { entityId: latest!.entityId! } });
+    expect(vaulted).toBeGreaterThanOrEqual(1);
   });
 });
