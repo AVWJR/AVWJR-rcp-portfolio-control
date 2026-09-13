@@ -2,11 +2,11 @@
 
 import type { ExpertBannerKind, ExpertModelProvider } from "./types";
 
-/** Current Grok language model on Vercel AI Gateway (SpaceXAI / xAI). */
-export const DEFAULT_GROK_GATEWAY_MODEL = "spacexai/grok-4.6";
+/** Default Grok text model via Vercel AI Gateway (`provider/model`, not openai/gpt-*). */
+export const DEFAULT_GROK_GATEWAY_MODEL = "xai/grok-4.5";
 
 /** Direct xAI Chat Completions id when only XAI_API_KEY / GROK_API_KEY is set. */
-export const DEFAULT_GROK_DIRECT_MODEL = "grok-4";
+export const DEFAULT_GROK_DIRECT_MODEL = "grok-4.5";
 
 export const XAI_API_BASE = "https://api.x.ai/v1";
 
@@ -25,19 +25,13 @@ function firstTrimmed(...values: Array<string | undefined>): string | null {
   return null;
 }
 
-export function isGrokModelId(modelId: string): boolean {
-  return /grok|xai|spacexai/i.test(modelId);
-}
-
 export function toDirectXaiModelId(modelId: string | undefined): string {
   const raw = modelId?.trim();
   if (!raw) return DEFAULT_GROK_DIRECT_MODEL;
-  if (raw.startsWith("spacexai/")) {
-    const slug = raw.slice("spacexai/".length);
-    if (slug.startsWith("grok-4")) return DEFAULT_GROK_DIRECT_MODEL;
+  if (raw.startsWith("spacexai/") || raw.startsWith("xai/")) {
+    const slug = raw.replace(/^(spacexai|xai)\//, "");
     return slug || DEFAULT_GROK_DIRECT_MODEL;
   }
-  if (raw.startsWith("xai/")) return raw.slice("xai/".length) || DEFAULT_GROK_DIRECT_MODEL;
   return raw;
 }
 
@@ -51,20 +45,18 @@ export function resolveExpertProvider(env: EnvMap = process.env): ExpertProvider
   const anthropicKey = firstTrimmed(env.ANTHROPIC_API_KEY);
 
   if (gatewayKey) {
-    const modelId = explicit || DEFAULT_GROK_GATEWAY_MODEL;
     return {
       provider: "gateway",
-      modelId,
-      banner: isGrokModelId(modelId) ? "grok" : "live",
+      modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
+      banner: "grok",
       apiKey: gatewayKey,
     };
   }
 
   if (xaiKey) {
-    const modelId = toDirectXaiModelId(explicit || DEFAULT_GROK_DIRECT_MODEL);
     return {
       provider: "xai",
-      modelId,
+      modelId: toDirectXaiModelId(explicit || DEFAULT_GROK_DIRECT_MODEL),
       banner: "grok",
       apiKey: xaiKey,
     };
@@ -73,8 +65,8 @@ export function resolveExpertProvider(env: EnvMap = process.env): ExpertProvider
   if (openaiKey) {
     return {
       provider: "openai",
-      modelId: explicit || "openai/gpt-5.4",
-      banner: isGrokModelId(explicit) ? "grok" : "live",
+      modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
+      banner: "grok",
       apiKey: openaiKey,
     };
   }
@@ -82,8 +74,8 @@ export function resolveExpertProvider(env: EnvMap = process.env): ExpertProvider
   if (anthropicKey) {
     return {
       provider: "anthropic",
-      modelId: explicit || "anthropic/claude-sonnet-4.6",
-      banner: "live",
+      modelId: explicit || DEFAULT_GROK_GATEWAY_MODEL,
+      banner: "grok",
       apiKey: anthropicKey,
     };
   }
@@ -105,9 +97,8 @@ export function expertModelId(env: EnvMap = process.env): string {
 }
 
 export function expertBannerCopy(banner: ExpertBannerKind): string {
-  if (banner === "grok") return "Grok connected";
-  if (banner === "live") return "Live model connected";
-  return "Offline coach — add key";
+  if (banner === "offline") return "Offline coach — add key";
+  return "Grok connected";
 }
 
 export function publicErrorMessage(err: unknown): string {
