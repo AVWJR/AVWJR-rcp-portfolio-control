@@ -1,7 +1,7 @@
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { VaultUploadForm } from "@/components/vault-forms";
 import { listVaultDocuments } from "@/lib/vault";
-import { VAULT_KIND_LABELS } from "@rcp/documents";
+import { VAULT_KIND_LABELS } from "@rcp/documents/vault";
 
 export default async function VaultPage({
   searchParams,

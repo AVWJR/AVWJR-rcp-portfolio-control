@@ -1,8 +1,17 @@
 "use client";
 
-import { VAULT_KIND_LABELS, VAULT_KINDS } from "@rcp/documents";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+
+const VAULT_KINDS = ["lease", "loan", "k1", "draw", "insurance", "other"] as const;
+const VAULT_KIND_LABELS: Record<(typeof VAULT_KINDS)[number], string> = {
+  lease: "Lease",
+  loan: "Loan",
+  k1: "K-1 / capital packet",
+  draw: "Draw / funding",
+  insurance: "Insurance",
+  other: "Other",
+};
 
 export function VaultUploadForm({
   entity,

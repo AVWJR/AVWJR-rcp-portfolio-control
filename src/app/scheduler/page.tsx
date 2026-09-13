@@ -1,7 +1,7 @@
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { SchedulerRunButton } from "@/components/vault-forms";
 import { listReportJobs } from "@/lib/scheduler";
-import { PHASE_F_SCHEDULER_TODO } from "@rcp/documents";
+import { PHASE_F_SCHEDULER_TODO } from "@rcp/documents/scheduler";
 
 export default async function SchedulerPage({
   searchParams,

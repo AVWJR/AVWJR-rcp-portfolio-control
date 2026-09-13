@@ -24,6 +24,8 @@
       "@rcp/reporting": ["./packages/reporting/src/index.ts"],
       "@rcp/tax-bridge": ["./packages/tax-bridge/src/index.ts"],
       "@rcp/documents": ["./packages/documents/src/index.ts"],
+      "@rcp/documents/vault": ["./packages/documents/src/vault.ts"],
+      "@rcp/documents/scheduler": ["./packages/documents/src/scheduler.ts"],
       "@rcp/rcp-brand": ["./packages/rcp-brand/src/index.ts"]
     }
   },
