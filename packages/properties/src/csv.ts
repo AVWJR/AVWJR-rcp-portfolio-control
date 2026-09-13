@@ -1,6 +1,6 @@
 import { dollars } from "@rcp/ledger";
 import { type UnitSnapshot } from "./types";
-import { couldNotMapColumnsMessage, parseMappedRentRollRows, resolveRentRollHeader } from "./rent-roll-map";
+import { couldNotMapColumnsMessage, findRentRollHeader, parseMappedRentRollRows } from "./rent-roll-map";
 
 export const RENT_ROLL_CSV_HEADERS = [
   "unit_id",
@@ -83,17 +83,22 @@ function headerIndex(headers: string[], name: string, line = 1): number {
   return idx;
 }
 
-/** Dollars in CSV (1285 or 1285.00 or $1,285.00) → integer cents. */
+/** Dollars in CSV (1285, $1,285.00, (1,250.00), 1250.000) → integer cents. */
 export function parseUsdToCents(raw: string, line: number, field: string): bigint {
-  const cleaned = raw.replace(/[$,\s]/g, "");
-  if (cleaned === "" || cleaned === "-") return 0n;
-  const match = cleaned.match(/^(-)?(\d+)(?:\.(\d{1,2}))?$/);
+  let text = raw.replace(/[$,\s]/g, "").replace(/[—–−]/g, "-");
+  if (text === "" || text === "-" || /^n\/?a$/i.test(text)) return 0n;
+  let sign = 1n;
+  if (/^\(.*\)$/.test(text)) {
+    sign = -1n;
+    text = text.slice(1, -1).replace(/[$,\s]/g, "");
+  }
+  const match = text.match(/^(-)?(\d+)(?:\.(\d+))?$/);
   if (!match) {
     throw new CsvParseError(line, `${field} is not a USD amount: "${raw}"`);
   }
-  const sign = match[1] === "-" ? -1n : 1n;
+  if (match[1] === "-") sign = -sign;
   const whole = BigInt(match[2]);
-  const frac = (match[3] ?? "00").padEnd(2, "0");
+  const frac = (match[3] ?? "00").padEnd(2, "0").slice(0, 2);
   return sign * (whole * 100n + BigInt(frac));
 }
 
@@ -107,14 +112,14 @@ export function parseRentRollCsv(text: string, opts: { lenient?: boolean } = {})
     throw new CsvParseError(0, "file is empty");
   }
   const table = lines.map(splitCsvLine);
-  const resolved = resolveRentRollHeader(table);
-  if (!resolved) {
+  const found = findRentRollHeader(table);
+  if (!found) {
     throw new CsvParseError(1, couldNotMapColumnsMessage((table[0] ?? []).filter(Boolean), ["unit"]));
   }
-  const headers = resolved.headers;
+  const headers = found.headers;
   const canonical = headers.map((h) => h.toLowerCase());
   const isCanonical = canonical.includes("unit_id") && canonical.includes("market_rent");
-  return parseMappedRentRollRows(headers, table.slice(resolved.dataStart), {
+  return parseMappedRentRollRows(headers, table.slice(found.index + 1), {
     lenient: opts.lenient ?? !isCanonical,
   });
 }

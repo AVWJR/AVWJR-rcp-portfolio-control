@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { bytesToImportCsv } from "@/lib/deals/workbook";
 import { exportRentRollCsv, importRentRollCsv, loadUnits } from "@/lib/rent-roll";
 import { serialize } from "@/lib/serialize";
 import { summarizeRentRoll } from "@rcp/properties";
@@ -50,8 +51,10 @@ export async function POST(request: Request) {
     const form = await request.formData();
     code = String(form.get("entity") ?? "");
     const file = form.get("file");
-    if (file instanceof File) csv = await file.text();
-    else csv = String(form.get("csv") ?? "");
+    if (file instanceof File) {
+      const bytes = Buffer.from(await file.arrayBuffer());
+      csv = bytesToImportCsv(file.name, file.type, bytes);
+    } else csv = String(form.get("csv") ?? "");
     confirmReplace = String(form.get("confirmReplace") ?? "") === "true";
   } else {
     const body = (await request.json()) as { entity?: string; csv?: string; confirmReplace?: boolean };
@@ -66,6 +69,7 @@ export async function POST(request: Request) {
 
   try {
     const units = await importRentRollCsv({ entityId: entity.id, csv, confirmReplace });
+    await prisma.entity.update({ where: { id: entity.id }, data: { unitCount: units.length } });
     return NextResponse.json({ imported: units.length, entity: entity.code });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Import failed";

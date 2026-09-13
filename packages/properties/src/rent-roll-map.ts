@@ -16,53 +16,53 @@ export const RENT_ROLL_CANONICAL_FIELDS = [
 ] as const;
 
 export type RentRollField = (typeof RENT_ROLL_CANONICAL_FIELDS)[number];
-export type RentRollExtraField = "beds_baths" | "bldg";
-export type RentRollColumnMap = Partial<Record<RentRollField | RentRollExtraField, number>>;
+export type RentRollColumnMap = Partial<Record<RentRollField | "beds_baths" | "building" | "resident", number>>;
 
-const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
+const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "resident", string[]> = {
   unit: [
     "unitid",
     "unit_id",
     "unit id",
-    "unit designation",
     "unit number",
     "unit nbr",
     "unit no",
     "unit code",
-    "apt number",
+    "unit #",
+    "resi unit",
     "bldg unit",
     "building unit",
-    "bldg un",
-    "unit #",
-    "unit",
+    "apt number",
     "apt no",
     "apt #",
     "apartment",
+    "unit",
     "apt",
-    "space",
-    "uhid",
   ],
+  building: ["building number", "building no", "bldg number", "bldg nbr", "bldg no", "building", "bldg"],
+  resident: ["resident name", "tenant name", "resident", "tenant"],
   floorplan: [
     "floorplan",
     "floor plan",
     "unit type",
     "unit design",
     "floorplan name",
+    "floorplan code",
     "plan name",
     "planid",
     "plan id",
+    "flrpln",
     "plan",
     "fp",
     "type",
   ],
-  beds: ["bedrooms", "bedroom", "beds", "bed", "bdrms", "bdrm", "brs", "br", "bd"],
-  baths: ["bathrooms", "bathroom", "baths", "bath", "bas", "ba"],
-  beds_baths: ["bd ba", "beds baths", "bed bath", "br ba", "bds bas", "brs bas", "bed/bath", "bd/ba"],
-  bldg: ["building", "bldg", "bld", "bldg no", "building number"],
+  beds: ["bedrooms", "bedroom", "beds", "bed", "bdrms", "bdrm", "br", "bd"],
+  baths: ["bathrooms", "bathroom", "baths", "bath", "ba"],
+  beds_baths: ["bd ba", "beds baths", "bed bath", "br ba", "bds bas", "bed/bath", "bd/ba"],
   sqft: ["square footage", "square feet", "unit sf", "net sf", "netsf", "sq ft", "sqft", "sf", "nra", "nsa"],
   status: [
     "occupancy status",
     "status occupancy",
+    "unit occupancy",
     "unit status",
     "occstatus",
     "occ status",
@@ -77,9 +77,10 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
     "asking rent",
     "street rent",
     "proforma rent",
-    "mkt rent",
-    "mktrent",
+    "monthly market",
     "scheduled market",
+    "mktrent",
+    "mkt rent",
     "market",
     "asking",
     "mkt",
@@ -89,21 +90,31 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
     "inplacerent",
     "in place rent",
     "rent contractual",
+    "resident rent",
     "leased rent",
     "lease rent",
     "current rent",
     "actual rent",
     "charged rent",
+    "charge amt",
     "in-place rent",
+    "rent amount",
+    "code1",
+    "code 1",
+    "charges",
     "in place",
     "actual",
+    "chg",
   ],
   lease_start: [
     "lease_start",
+    "leasesign",
+    "lease sign",
     "lease start",
     "lease from",
     "lease begin",
     "start date",
+    "moveindate",
     "move in date",
     "move-in",
     "move in",
@@ -111,6 +122,8 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
   ],
   lease_end: [
     "lease_end",
+    "leaseexp",
+    "lease exp",
     "lease end",
     "lease expiration",
     "lease expire",
@@ -120,7 +133,7 @@ const FIELD_ALIASES: Record<RentRollField | RentRollExtraField, string[]> = {
     "expiration",
     "le date",
   ],
-  concession: ["concessions", "concession", "free rent", "conc"],
+  concession: ["recconc", "rec conc", "concessions", "concession", "free rent", "conc"],
 };
 
 export function normalizeHeader(value: string): string {
@@ -146,7 +159,7 @@ export function mapRentRollHeaders(headers: string[]): {
   const map: RentRollColumnMap = {};
   const used = new Set<number>();
 
-  const assign = (field: RentRollField | RentRollExtraField) => {
+  const assign = (field: RentRollField | "beds_baths" | "building" | "resident") => {
     const aliases = FIELD_ALIASES[field];
     let best = -1;
     let bestLen = -1;
@@ -166,7 +179,7 @@ export function mapRentRollHeaders(headers: string[]): {
     }
   };
 
-  (Object.keys(FIELD_ALIASES) as Array<RentRollField | RentRollExtraField>)
+  (Object.keys(FIELD_ALIASES) as Array<RentRollField | "beds_baths" | "building" | "resident">)
     .sort((a, b) => FIELD_ALIASES[b][0]!.length - FIELD_ALIASES[a][0]!.length)
     .forEach(assign);
 
@@ -178,7 +191,6 @@ export function mapRentRollHeaders(headers: string[]): {
   return { map, missing, detected: headers.filter((h) => h.trim()) };
 }
 
-/** redIQ machine row (R9): UnitID / OccStatus / MktRent / InPlaceRent beats human R8. */
 export function rediqMachineHeaderBonus(headers: string[]): number {
   const compact = headers.map((h) => normalizeHeader(h).replace(/\s+/g, ""));
   let bonus = 0;
@@ -205,17 +217,59 @@ export function scoreRentRollHeaderRow(headers: string[]): number {
   return score + rediqMachineHeaderBonus(headers);
 }
 
-export function mergeHeaderRows(top: string[], bottom: string[]): string[] {
-  const len = Math.max(top.length, bottom.length);
-  const out: string[] = [];
-  for (let i = 0; i < len; i += 1) {
-    const a = (top[i] ?? "").trim();
-    const b = (bottom[i] ?? "").trim();
-    if (!a) out.push(b);
-    else if (!b || normalizeHeader(a) === normalizeHeader(b)) out.push(a);
-    else out.push(`${a} ${b}`);
+function mergeHeaderCells(top: string, bot: string): string {
+  const a = (top ?? "").trim();
+  const b = (bot ?? "").trim();
+  if (!b) return a;
+  if (!a) return b;
+  if (normalizeHeader(a) === normalizeHeader(b)) return b;
+  const botScore = scoreRentRollHeaderRow([b]);
+  const topScore = scoreRentRollHeaderRow([a]);
+  if (botScore > topScore) return b;
+  if (topScore > botScore) return a;
+  return `${a} ${b}`;
+}
+
+export function mergeHeaderRows(top: string[], bot: string[]): string[] {
+  const len = Math.max(top.length, bot.length);
+  return Array.from({ length: len }, (_, i) => mergeHeaderCells(top[i] ?? "", bot[i] ?? ""));
+}
+
+export function findRentRollHeader(
+  rows: string[][],
+  maxScan = 40,
+): { index: number; headers: string[]; score: number } | null {
+  type Found = { index: number; headers: string[]; score: number };
+  const limit = Math.min(rows.length, maxScan);
+  let best: Found | null = null;
+  for (let i = 0; i < limit; i += 1) {
+    const headers = rows[i] ?? [];
+    const score = scoreRentRollHeaderRow(headers);
+    if (score >= 8 && (!best || score > best.score)) best = { index: i, headers, score };
   }
-  return out;
+  if (best && rediqMachineHeaderBonus(best.headers) >= 12) return best;
+  for (let i = 0; i < limit; i += 1) {
+    const next = rows[i + 1];
+    if (!next) continue;
+    const headers = mergeHeaderRows(rows[i] ?? [], next);
+    const score = scoreRentRollHeaderRow(headers);
+    if (score >= 8 && (!best || score > best.score)) best = { index: i + 1, headers, score };
+  }
+  if (best) return best;
+  const inferred = inferUnitColumnFromRows(rows);
+  if (inferred != null) {
+    const probe = rows.find((row) => scoreRentRollHeaderRow(row) > 0) ?? rows[0] ?? [];
+    const headers = [...probe];
+    headers[inferred] = "Unit";
+    const index = rows.indexOf(probe);
+    const rescored = scoreRentRollHeaderRow(headers);
+    if (rescored >= 8) return { index: Math.max(0, index), headers, score: rescored };
+  }
+  return null;
+}
+
+export function findRentRollHeaderRow(rows: string[][], maxScan = 40): number {
+  return findRentRollHeader(rows, maxScan)?.index ?? -1;
 }
 
 export type ResolvedRentRollHeader = {
@@ -226,30 +280,38 @@ export type ResolvedRentRollHeader = {
 };
 
 export function resolveRentRollHeader(rows: string[][], maxScan = 80): ResolvedRentRollHeader | null {
-  let best: ResolvedRentRollHeader | null = null;
-  const limit = Math.min(rows.length, maxScan);
-  for (let i = 0; i < limit; i += 1) {
-    const single = rows[i] ?? [];
-    const singleScore = scoreRentRollHeaderRow(single);
-    if (!best || singleScore > best.score) {
-      best = { index: i, headers: single, dataStart: i + 1, score: singleScore };
-    }
-    // Do not merge a redIQ machine row with the human row above it — "Unit No. UnitID"
-    // fails to map as unit, which is how a 175-unit Rent Roll becomes 0 units.
-    if (rediqMachineHeaderBonus(single) >= 12) continue;
-    const next = rows[i + 1];
-    if (!next) continue;
-    const merged = mergeHeaderRows(single, next);
-    const mergedScore = scoreRentRollHeaderRow(merged);
-    if (mergedScore > singleScore && (!best || mergedScore > best.score)) {
-      best = { index: i, headers: merged, dataStart: i + 2, score: mergedScore };
-    }
-  }
-  return best && best.score >= 8 ? best : null;
+  const found = findRentRollHeader(rows, maxScan);
+  if (!found) return null;
+  return { index: found.index, headers: found.headers, dataStart: found.index + 1, score: found.score };
 }
 
-export function findRentRollHeaderRow(rows: string[][], maxScan = 80): number {
-  return resolveRentRollHeader(rows, maxScan)?.index ?? -1;
+export function looksLikeUnitCode(value: string): boolean {
+  const v = value.trim();
+  if (!v || looksLikeSummary(v, [v]) || looksLikeHeaderRepeat(v)) return false;
+  if (/^[4-7]\d{3}$/.test(v)) return false;
+  return /^(?:[A-Za-z]{1,3}[-/]?)?\d{1,5}[A-Za-z]{0,2}$/.test(v) || /^\d{1,3}-\d{2,4}$/.test(v);
+}
+
+function inferUnitColumnFromRows(rows: string[][]): number | null {
+  const body = rows.slice(0, 80);
+  const width = body.reduce((max, row) => Math.max(max, row.length), 0);
+  let bestCol = -1;
+  let bestHits = 0;
+  for (let col = 0; col < width; col += 1) {
+    let hits = 0;
+    let nonempty = 0;
+    for (const row of body) {
+      const cell = (row[col] ?? "").trim();
+      if (!cell) continue;
+      nonempty += 1;
+      if (looksLikeUnitCode(cell)) hits += 1;
+    }
+    if (nonempty >= 3 && hits / nonempty >= 0.5 && hits > bestHits) {
+      bestHits = hits;
+      bestCol = col;
+    }
+  }
+  return bestCol >= 0 ? bestCol : null;
 }
 
 export function couldNotMapColumnsMessage(detected: string[], missing: string[] = ["unit"]): string {
@@ -262,9 +324,7 @@ export function parseRentRollStatus(raw: string): UnitStatus | null {
   if (!value) return null;
   const compact = value.replace(/[^a-z]/g, "");
   if (isUnitStatus(raw.trim().toUpperCase())) return raw.trim().toUpperCase() as UnitStatus;
-  if (/^(occupied|current|occ|leased|notice|ntv|onnotice|pending|resident|y|yes|true|1|x)$/.test(compact)) {
-    return "OCCUPIED";
-  }
+  if (/^(occupied|current|occ|leased|notice|ntv|onnotice|pending|resident|y|yes|true|1)$/.test(compact)) return "OCCUPIED";
   if (/^(vacant|vac|empty|ready|available|unoccupied|unrented|n|no|false|0)$/.test(compact)) return "VACANT";
   if (/^(down|offline|model|admin|employee|makeready|nrv|unrentable)$/.test(compact)) return "DOWN";
   return null;
@@ -311,7 +371,7 @@ function cell(cols: string[], index: number | undefined): string {
 
 function looksLikeSummary(unitCode: string, cols: string[]): boolean {
   const hay = `${unitCode} ${cols.join(" ")}`.toLowerCase();
-  return /^(total|average|avg|subtotal|grand total)/.test(unitCode.toLowerCase()) || /\b(total|average)\b/.test(hay) && !/\d/.test(unitCode);
+  return /^(total|average|avg|subtotal|grand total)/.test(unitCode.toLowerCase()) || (/\b(total|average)\b/.test(hay) && !/\d/.test(unitCode));
 }
 
 function looksLikeHeaderRepeat(unitCode: string): boolean {
@@ -319,6 +379,17 @@ function looksLikeHeaderRepeat(unitCode: string): boolean {
   return /^(unit|unitid|unitno|unitnbr|unitnumber|propname|planid|bldg|building|status|occstatus|renstatus|resident|market|mktrent|inplacerent|charges|netsf|type)$/.test(
     compact,
   );
+}
+
+function parseNonNegNumber(raw: string, field: string, line: number, integer: boolean, lenient: boolean): number {
+  const cleaned = raw.replace(/[,$\s]/g, "").replace(/[—–]/g, "");
+  if (!cleaned) return 0;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) {
+    if (lenient) return 0;
+    throw new CsvParseError(line, `${field} must be a non-negative ${integer ? "integer" : "number"}`);
+  }
+  return integer ? Math.round(n) : n;
 }
 
 export function parseMappedRentRollRows(
@@ -331,70 +402,80 @@ export function parseMappedRentRollRows(
     throw new CsvParseError(1, couldNotMapColumnsMessage(detected, missing.length ? missing : ["unit"]));
   }
 
-  const seen = new Set<string>();
+  const byCode = new Map<string, UnitSnapshot>();
   const units: UnitSnapshot[] = [];
   rows.forEach((cols, i) => {
     const line = i + 2;
-    const rawUnit = cell(cols, map.unit);
-    const bldg = cell(cols, map.bldg);
-    const unitCode = bldg && rawUnit && !rawUnit.startsWith(`${bldg}-`) && !rawUnit.startsWith(`${bldg}/`)
-      ? `${bldg}-${rawUnit}`
-      : rawUnit;
-    if (!unitCode || looksLikeSummary(unitCode, cols) || looksLikeHeaderRepeat(unitCode)) return;
+    try {
+      const rawUnit = cell(cols, map.unit);
+      const bldg = cell(cols, map.building);
+      const unitCode = bldg && rawUnit && !rawUnit.startsWith(`${bldg}-`) && !rawUnit.includes("/") ? `${bldg}-${rawUnit}` : rawUnit;
+      if (!unitCode || looksLikeSummary(unitCode, cols) || looksLikeHeaderRepeat(unitCode)) return;
 
-    if (seen.has(unitCode)) {
-      throw new CsvParseError(line, `duplicate unit_id ${unitCode}`);
-    }
-    seen.add(unitCode);
+      const combo = map.beds_baths != null ? parseBedsBaths(cell(cols, map.beds_baths)) : null;
+      const bedsN = combo ? Math.trunc(combo.beds) : parseNonNegNumber(cell(cols, map.beds), "beds", line, true, opts.lenient ?? false);
+      const bathsN = combo ? combo.baths : parseNonNegNumber(cell(cols, map.baths), "baths", line, false, opts.lenient ?? false);
+      const sqftN = parseNonNegNumber(cell(cols, map.sqft), "sqft", line, true, opts.lenient ?? false);
 
-    const combo = map.beds_baths != null ? parseBedsBaths(cell(cols, map.beds_baths)) : null;
-    const bedsN = combo ? Math.trunc(combo.beds) : Number(cell(cols, map.beds) || "0");
-    const bathsN = combo ? combo.baths : Number(cell(cols, map.baths) || "0");
-    const sqftN = Number(cell(cols, map.sqft) || "0");
-    if (!Number.isInteger(bedsN) || bedsN < 0) {
-      throw new CsvParseError(line, "beds must be a non-negative integer");
-    }
-    if (!Number.isFinite(bathsN) || bathsN < 0) {
-      throw new CsvParseError(line, "baths must be a non-negative number");
-    }
-    if (!Number.isInteger(sqftN) || sqftN < 0) {
-      throw new CsvParseError(line, "sqft must be a non-negative integer");
-    }
+      const marketRent = parseUsdToCents(cell(cols, map.market_rent) || "0", line, "market_rent");
+      let inPlaceRent = parseUsdToCents(cell(cols, map.in_place_rent) || "0", line, "in_place_rent");
+      const concessionCents = parseUsdToCents(cell(cols, map.concession) || "0", line, "concession");
 
-    const marketRent = parseUsdToCents(cell(cols, map.market_rent) || "0", line, "market_rent");
-    let inPlaceRent = parseUsdToCents(cell(cols, map.in_place_rent) || "0", line, "in_place_rent");
-    const concessionCents = parseUsdToCents(cell(cols, map.concession) || "0", line, "concession");
-
-    const statusRaw = cell(cols, map.status);
-    let statusValue = parseRentRollStatus(statusRaw);
-    if (!statusValue) {
-      if (opts.lenient || !statusRaw) {
-        statusValue = inPlaceRent > 0n ? "OCCUPIED" : "VACANT";
-      } else {
-        throw new CsvParseError(line, `status must be OCCUPIED, VACANT, or DOWN`);
+      const statusRaw = cell(cols, map.status);
+      const resident = cell(cols, map.resident);
+      let statusValue = parseRentRollStatus(statusRaw);
+      if (!statusValue && resident) {
+        statusValue = /^(vacant|vac|empty|n\/a|-)$/i.test(resident) ? "VACANT" : "OCCUPIED";
       }
-    }
-    if (statusValue !== "OCCUPIED" && inPlaceRent !== 0n) {
-      if (opts.lenient) {
-        inPlaceRent = 0n;
-      } else {
-        throw new CsvParseError(line, "in_place_rent must be 0 unless status is OCCUPIED");
+      if (!statusValue) {
+        if (opts.lenient || !statusRaw) {
+          statusValue = inPlaceRent > 0n ? "OCCUPIED" : "VACANT";
+        } else {
+          throw new CsvParseError(line, `status must be OCCUPIED, VACANT, or DOWN`);
+        }
       }
-    }
+      if (statusValue !== "OCCUPIED" && inPlaceRent !== 0n) {
+        if (opts.lenient) {
+          inPlaceRent = 0n;
+        } else {
+          throw new CsvParseError(line, "in_place_rent must be 0 unless status is OCCUPIED");
+        }
+      }
 
-    units.push({
-      unitCode,
-      floorplan: cell(cols, map.floorplan),
-      beds: bedsN,
-      bathsTenths: bathsToTenths(bathsN),
-      sqft: sqftN,
-      status: statusValue,
-      marketRent,
-      inPlaceRent,
-      leaseStart: parseBrokerDate(cell(cols, map.lease_start), line, "lease_start", opts.lenient ?? true),
-      leaseEnd: parseBrokerDate(cell(cols, map.lease_end), line, "lease_end", opts.lenient ?? true),
-      concessionCents,
-    });
+      const existing = byCode.get(unitCode);
+      if (existing) {
+        if (!opts.lenient) {
+          throw new CsvParseError(line, `duplicate unit_id ${unitCode}`);
+        }
+        if (statusValue === "OCCUPIED") {
+          existing.inPlaceRent += inPlaceRent;
+          existing.concessionCents += concessionCents;
+          if (existing.marketRent === 0n && marketRent > 0n) existing.marketRent = marketRent;
+          if (!existing.leaseStart) existing.leaseStart = parseBrokerDate(cell(cols, map.lease_start), line, "lease_start", true);
+          if (!existing.leaseEnd) existing.leaseEnd = parseBrokerDate(cell(cols, map.lease_end), line, "lease_end", true);
+        }
+        return;
+      }
+
+      const snapshot: UnitSnapshot = {
+        unitCode,
+        floorplan: cell(cols, map.floorplan),
+        beds: bedsN,
+        bathsTenths: bathsToTenths(bathsN),
+        sqft: sqftN,
+        status: statusValue,
+        marketRent,
+        inPlaceRent,
+        leaseStart: parseBrokerDate(cell(cols, map.lease_start), line, "lease_start", opts.lenient ?? true),
+        leaseEnd: parseBrokerDate(cell(cols, map.lease_end), line, "lease_end", opts.lenient ?? true),
+        concessionCents,
+      };
+      byCode.set(unitCode, snapshot);
+      units.push(snapshot);
+    } catch (error) {
+      if (opts.lenient) return;
+      throw error;
+    }
   });
 
   if (!units.length) {

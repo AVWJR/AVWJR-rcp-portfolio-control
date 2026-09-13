@@ -22,6 +22,7 @@ import {
   workingTitle,
   type UploadRow,
 } from "@/lib/deals/upload-client";
+import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1099,6 +1100,7 @@ export function AddDealWizard({
                 ) : null}
               </div>
             ) : null}
+            {intake?.entityCode ? <ReapplyRentRollButton entityCode={intake.entityCode} /> : null}
             {intake?.entityCode ? (
               <div className="grid gap-3 md:grid-cols-2">
                 {[

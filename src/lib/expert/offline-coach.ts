@@ -313,10 +313,10 @@ Do this in the product — click paths only. Drop the broker **XLSX** on Add Dea
 
 1. Gold nav **Deals** → ${list}, or Overview → **Add Deal**. Open ${start}.
 2. Drop the OM / rent-roll / T12 files on **Upload files**. Naming the SPE is optional — filenames infer Life at Harrington Park → \`SPE-HRP\`. Files upload **one at a time** (max **32 MB each**). A 5.5 MB OM is valid. On Vercel, files over ~3.5 MB go through **Vercel Blob** so they do not hit HTTP 413. If you see “OM is 5.5 MB — add BLOB_READ_WRITE_TOKEN…”, connect Blob: Vercel → **Storage** → create **Blob** → confirm env **BLOB_READ_WRITE_TOKEN** → redeploy. Or upload the Excel files first and add the OM after Blob is connected.
-3. **XLSX rent rolls are first-class.** Broker workbooks (\`RR_-_Harrington_-_…xlsx\`) auto-map two-row headers, Bldg/Unit, Occupied Y/N, Unit / Floorplan / Beds / Baths / Sqft / Status / Market Rent / Lease Rent / lease dates. Auto-ingest creates the SPE, writes **Unit** rows, and vaults the rest. The done screen must say **Rent roll — N units written** or **Rent roll — 0 units** with detected headers — never silent 0 units.
-4. If columns cannot be mapped you will see **could not map columns: … Detected headers: …** — not a silent vault-only success. Ask me with that header list. Do not invent units. GL $0 is expected until T12/P&L is mapped; occupancy still comes from the rent roll.
+3. **XLSX rent rolls are first-class.** Broker workbooks (\`RR_-_Harrington_-_…xlsx\`) auto-map redIQ **Rent Roll** R9 (\`UnitID\`, \`OccStatus\`, \`MktRent\`, \`InPlaceRent\`) and Yardi/MRI Resi headers. Auto-ingest creates or reuses the SPE and writes **Unit** rows. The done screen must say **Rent roll — N units written** or fail with detected headers — never silent 0 units.
+4. If columns cannot be mapped you will see **could not map columns: … Detected headers: …** — not a silent vault-only success. Ask me with that header list. Do not invent units. Existing SPE-HRP* with 0 units: **Re-apply rent roll** on Properties / Dashboard.
 5. After ingest, open ${props} and ${link("/dashboard", ctx, "Dashboard")} for the new \`SPE-xxx\` (header period **2026-08**). Occupancy / loss-to-lease come from the rent roll, not GL 4020.
-6. T12 / P&L workbooks stay in ${vault}. Full GL mapping is a follow-on — do not invent accounts. Loan basics stay on Apply if you have them. If units already exist, **confirm replace**. Do not invent LTV.
+6. T12 / P&L workbooks map to a **broker T12 overlay** (monthly budget + dashboard strip). Those dollars are **not** posted to the GL. The file also stays in ${vault}. Loan basics stay on Apply if you have them. If units already exist, **confirm replace**. Do not invent LTV.
 
 RCP mailbox address is **not decided yet**. Until \`RCP_INGEST_MAILBOX\` and a connector exist, **Scan RCP inbox** is an honest no-op.
 
@@ -333,7 +333,7 @@ function rentRollImportCopy(ctx: ExpertClientContext): string {
   return `**Import a rent roll — XLSX is the primary path**
 
 1. **New SPE:** Add Deal → drop the broker workbook (CSV or **XLSX/XLS**). Upload-first auto-ingest classifies \`RR_\` / “rent roll” files, creates the SPE, and writes Unit rows. Then open ${dash} and ${dest}.
-2. **Existing SPE:** apply from Add Deal on that draft, or use the import on ${dest}. Keep the workbook as XLSX when it already maps.
+2. **Existing SPE:** **Re-apply rent roll** on ${dest} / Dashboard, or apply from Add Deal on that draft. Keep the workbook as XLSX when it already maps.
 3. Canonical columns still work: \`unit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent,lease_start,lease_end,concession\`. Broker aliases are mapped automatically (Unit, Unit Type, SF, Occupied/Vacant/Notice, Market Rent, Lease/In-place Rent, lease dates, concession). Title rows above the header are skipped.
 4. If mapping fails you get **could not map columns: … Detected headers: …**. The file stays in the vault — I will not invent units.
 5. Confirm replace if units already exist. Occupancy is not derived from GL 4020. Password-protected workbooks must be re-saved without a password.

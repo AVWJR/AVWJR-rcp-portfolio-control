@@ -1,8 +1,11 @@
 import { utils, read, type WorkBook, type WorkSheet } from "xlsx";
 import {
   couldNotMapColumnsMessage,
+  findRentRollHeader,
   looksLikeRentRollHeaders,
-  resolveRentRollHeader,
+  parseT12WorkbookRows,
+  scoreRentRollHeaderRow,
+  type T12WorkbookParse,
 } from "@rcp/properties";
 
 export const SPREADSHEET_EXTENSIONS = [".xlsx", ".xls"] as const;
@@ -99,57 +102,27 @@ function sheetNameScore(name: string): number {
   if (lower === "rent roll" || lower === "rentroll") return 24;
   if (lower === "source data" || lower === "sourcedata") return 4;
   if (/^(floor plan|floorplan|about|sheet\d+|cover)$/.test(lower)) return -12;
-  if (/cover|instr|toc|summary|index|check|t12|t-12|p&l|pnl|profit|about/.test(lower)) return -8;
-  if (/mix/.test(lower) && !/rent|roll/.test(lower)) return -6;
-  if (/rent|roll|resi/.test(lower)) return 8;
-  if (/\bunit/.test(lower) && !/mix/.test(lower)) return 4;
+  if (/cover|instr|toc|summary|index|check|about/.test(lower)) return -8;
+  if (/rent|roll|unit|resi/.test(lower)) return 6;
   if (/budget/.test(lower)) return 2;
   return 0;
 }
 
-function countLikelyUnitRows(headers: string[], body: string[][]): number {
-  const unitIdx = headers.findIndex((h) => {
-    const n = h.toLowerCase().replace(/[_/\\-]+/g, " ").trim();
-    return /^(unitid|unit id|unit|unit number|unit nbr|unit no|unit code|apt|apt no|bldg unit|space)\b/.test(n) && !/type|mix|design|count/.test(n);
-  });
-  if (unitIdx < 0) return 0;
-  return body.filter((row) => {
-    const value = String(row[unitIdx] ?? "").trim();
-    return value.length > 0 && /\d/.test(value) && !/^(total|average|avg|subtotal)/i.test(value);
-  }).length;
-}
-
-export function selectRentRollSheet(workbook: WorkBook): {
-  name: string;
-  rows: string[][];
-  headerRow: number;
-  headers: string[];
-  dataStart: number;
-  score: number;
-} | null {
-  let best: {
-    name: string;
-    rows: string[][];
-    headerRow: number;
-    headers: string[];
-    dataStart: number;
-    score: number;
-  } | null = null;
+export function selectRentRollSheet(workbook: WorkBook): { name: string; rows: string[][]; headerRow: number; headers: string[]; score: number } | null {
+  let best: { name: string; rows: string[][]; headerRow: number; headers: string[]; score: number } | null = null;
   for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name];
     if (!sheet) continue;
     const rows = sheetRows(sheet);
-    const resolved = resolveRentRollHeader(rows);
-    const headerScore = resolved?.score ?? 0;
-    const unitRows = resolved ? countLikelyUnitRows(resolved.headers, rows.slice(resolved.dataStart)) : 0;
-    const score = sheetNameScore(name) + headerScore + Math.min(unitRows, 20);
+    const found = findRentRollHeader(rows);
+    const headerScore = found?.score ?? 0;
+    const score = sheetNameScore(name) + headerScore;
     if (!best || score > best.score) {
       best = {
         name,
         rows,
-        headerRow: resolved?.index ?? -1,
-        headers: resolved?.headers ?? [],
-        dataStart: resolved?.dataStart ?? 0,
+        headerRow: found?.index ?? -1,
+        headers: found?.headers ?? [],
         score,
       };
     }
@@ -171,8 +144,8 @@ export function workbookToCsv(bytes: Buffer, filename: string): string {
   const workbook = read(bytes, { type: "buffer", cellDates: true, raw: false });
   const selected = selectRentRollSheet(workbook);
   if (selected) {
-    const headers = selected.headers.length ? selected.headers : selected.rows[selected.headerRow] ?? [];
-    const body = selected.rows.slice(selected.dataStart);
+    const headers = selected.headers.length ? selected.headers : (selected.rows[selected.headerRow] ?? []);
+    const body = selected.rows.slice(selected.headerRow + 1);
     const csv = rowsToCsv(headers, body);
     if (!csv.trim()) {
       throw new Error(
@@ -212,4 +185,44 @@ export function bytesToImportCsv(filename: string, mimeType: string, bytes: Buff
     return workbookToCsv(bytes, filename);
   }
   return bytes.toString("utf8");
+}
+
+function t12SheetNameScore(name: string): number {
+  const lower = name.trim().toLowerCase();
+  if (lower === "ext") return 16;
+  if (lower === "report1") return 14;
+  if (/cover|instr|toc|index|check/.test(lower)) return -6;
+  if (/t12|t-12|ttm|trailing|p&l|pnl|noi|operat/.test(lower)) return 8;
+  if (/budget/.test(lower)) return 2;
+  return 0;
+}
+
+export function parseT12WorkbookBytes(bytes: Buffer, filename: string): T12WorkbookParse {
+  assertReadableWorkbook(bytes, filename);
+  const workbook = read(bytes, { type: "buffer", cellDates: true, raw: false });
+  let best: { name: string; rows: string[][]; score: number } | null = null;
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) continue;
+    const rows = sheetRows(sheet);
+    const headerLine = rows.find((row) => row.some((cell) => /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|t12|total/i.test(cell))) ?? [];
+    const score = t12SheetNameScore(name) + (headerLooksLikeT12(headerLine) ? 6 : 0);
+    if (!best || score > best.score) best = { name, rows, score };
+  }
+  if (!best) {
+    throw new Error(`${filename} has no worksheets. ${couldNotMapColumnsMessage([])}.`);
+  }
+  try {
+    return parseT12WorkbookRows(best.rows, best.name);
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : String(error);
+    throw new Error(`${filename} sheet "${best.name}": ${raw}`);
+  }
+}
+
+function headerLooksLikeT12(cells: string[]): boolean {
+  const hits = cells.filter((cell) =>
+    /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|t12|trailing/i.test(cell),
+  ).length;
+  return hits >= 2;
 }

@@ -1,6 +1,7 @@
 import { CsvImportForm } from "@/components/csv-import-form";
 import { KpiStrip } from "@/components/kpi-strip";
 import { OperatingStatementTable } from "@/components/operating-statement-table";
+import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import { RentRollTable } from "@/components/rent-roll-table";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { prisma } from "@/lib/prisma";
@@ -66,11 +67,14 @@ export default async function PropertyDetailPage({
             />
             <div>
               <h2 className="mb-3 font-display text-2xl text-navy-900">Rent roll / unit master</h2>
+              <div className="mb-3">
+                <ReapplyRentRollButton entityCode={code} />
+              </div>
               <CsvImportForm
                 action="/api/rent-roll"
                 entity={code}
-                label="Replace rent-roll CSV"
-                acceptHint="unit_id, floorplan, beds, baths, sqft, status, market_rent, in_place_rent, lease_start, lease_end, concession"
+                label="Replace rent-roll CSV / XLSX"
+                acceptHint="Broker headers (Unit, Unit Type, Beds, Market Rent, Lease Rent / Charges, Status) or the RCP template"
               />
               <div className="mt-4">
                 <RentRollTable units={ctx.statements.units} />

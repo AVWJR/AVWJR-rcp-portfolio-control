@@ -1,6 +1,6 @@
 import { utils, write } from "xlsx";
 
-/** Broker-style Harrington Park rent roll: title rows + Resi sheet + decoy cover. */
+/** Simple #13-era fixture (title rows + Resi RR). Still valid. */
 export function harringtonRentRollWorkbook(): Buffer {
   const cover = utils.aoa_to_sheet([
     ["Life at Harrington Park"],
@@ -36,6 +36,51 @@ export function harringtonRentRollWorkbook(): Buffer {
   return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
 }
 
+/**
+ * Production-shaped Yardi/MRI Resi rent roll (~the layout that made #13's
+ * 5-row fixture pass while SPE-HRP3 stayed at 0 units):
+ * cover + summary decoys, sheet named only "Resi", two-row headers,
+ * Bldg + Unit, Bd/Ba, Charges (not Lease Rent), comma SF, charge-detail
+ * duplicate rows, and a mid-file header reprint.
+ */
+export function harringtonYardiResiWorkbook(): Buffer {
+  const cover = utils.aoa_to_sheet([
+    ["Yardi Voyager"],
+    ["Life at Harrington Park — Residential Rent Roll"],
+    ["As of December 31, 2019"],
+    ["Do not import this tab"],
+  ]);
+  const summary = utils.aoa_to_sheet([
+    ["Unit Mix Summary"],
+    ["Floorplan", "Count", "Avg SF", "Avg Market"],
+    ["A1", "2", "750", "1250"],
+    ["B2", "2", "1,075", "1450"],
+    ["Total", "5", "", ""],
+  ]);
+  const resi = utils.aoa_to_sheet([
+    ["Life at Harrington Park"],
+    ["Residential Rent Roll with Lease Charges"],
+    ["As of: 12/31/2019"],
+    [],
+    ["Unit Information", "", "", "", "Lease Information", "", "", "Rent Information", "", ""],
+    ["Bldg", "Unit", "Unit Type", "Bd/Ba", "SQFT", "Resident", "Status", "Lease From", "Lease To", "Market", "Charges"],
+    ["1", "101", "A1", "1/1", "750", "Smith, A", "Occupied", "1/1/2019", "12/31/2019", "1,250.000", "1,200.00"],
+    ["1", "101", "A1", "1/1", "750", "Smith, A", "Occupied", "1/1/2019", "12/31/2019", "", "25.00"],
+    ["1", "102", "A1", "1/1", "750", "Vacant", "Vacant", "", "", "1,250.00", "0"],
+    ["1", "201", "B2", "2/2", "1,050", "Lee, B", "Current", "6/1/2019", "5/31/2020", "$1,450.00", "$1,425.00"],
+    ["1", "201", "B2", "2/2", "1,050", "Lee, B", "Current", "6/1/2019", "5/31/2020", "", "40.00"],
+    ["Bldg", "Unit", "Unit Type", "Bd/Ba", "SQFT", "Resident", "Status", "Lease From", "Lease To", "Market", "Charges"],
+    ["1", "202", "B2", "2/2.5", "1,100", "Patel, C", "Notice", "3/15/2019", "3/14/2020", "1450", "1400"],
+    ["1", "301", "C3", "3/2", "1,200", "Model", "Down", "", "", "0", "0"],
+    ["", "Total", "", "", "", "", "", "", "", "6,400", "4,090"],
+  ]);
+  const wb = utils.book_new();
+  utils.book_append_sheet(wb, cover, "Cover");
+  utils.book_append_sheet(wb, summary, "Summary");
+  utils.book_append_sheet(wb, resi, "Resi");
+  return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
+}
+
 export function unmappableWorkbook(): Buffer {
   const ws = utils.aoa_to_sheet([
     ["Life at Harrington Park"],
@@ -48,70 +93,49 @@ export function unmappableWorkbook(): Buffer {
   return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
 }
 
-/**
- * Closer to the live broker packet: T12 + Unit Mix decoy tabs, 20 title rows,
- * two-line headers, Bldg/Unit + Occupied Y/N. Filename stays RR_-_…Resi.xlsx.
- */
-export function harringtonBrokerPacketWorkbook(): Buffer {
-  const cover = utils.aoa_to_sheet([
-    ["Life at Harrington Park"],
-    ["Offering memorandum"],
-    ["Confidential"],
-  ]);
-  const mix = utils.aoa_to_sheet([
-    ["Unit Mix"],
-    ["Unit Type", "Count", "SF", "Market Rent", "Occupied"],
-    ["A1", "36", "750", "1185", "32"],
-    ["B2", "58", "1050", "1375", "50"],
-    ["C3", "61", "1200", "1550", "55"],
-  ]);
+export function harringtonT12Workbook(): Buffer {
+  const cover = utils.aoa_to_sheet([["Life at Harrington Park"], ["T12 exhibits"], ["Skip"]]);
   const t12 = utils.aoa_to_sheet([
-    ["T12 NOI", "Trailing twelve months"],
-    ["Account", "Nov 2018", "Dec 2018", "Total"],
-    ["GPR", "100", "110", "210"],
-    ["NOI", "40", "42", "82"],
+    ["Life at Harrington Park"],
+    ["T12 NOI — Dec 2018 to Nov 2019"],
+    [],
+    [
+      "Account Description",
+      "Dec 2018",
+      "Jan 2019",
+      "Feb 2019",
+      "Mar 2019",
+      "Apr 2019",
+      "May 2019",
+      "Jun 2019",
+      "Jul 2019",
+      "Aug 2019",
+      "Sep 2019",
+      "Oct 2019",
+      "Nov 2019",
+      "T12 Total",
+    ],
+    ["Income", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["Gross Potential Rent", ...Array.from({ length: 12 }, () => "180000"), "2160000"],
+    ["Vacancy Loss", ...Array.from({ length: 12 }, () => "(9000)"), "108000"],
+    ["Concessions", ...Array.from({ length: 12 }, () => "3000"), "36000"],
+    ["Other Income", ...Array.from({ length: 12 }, () => "8000"), "96000"],
+    ["Effective Gross Income", ...Array.from({ length: 12 }, () => "176000"), "2112000"],
+    ["Operating Expenses", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["Payroll", ...Array.from({ length: 12 }, () => "22000"), "264000"],
+    ["Repairs & Maintenance", ...Array.from({ length: 12 }, () => "12000"), "144000"],
+    ["Utilities", ...Array.from({ length: 12 }, () => "14000"), "168000"],
+    ["Contract Services", ...Array.from({ length: 12 }, () => "6000"), "72000"],
+    ["Marketing", ...Array.from({ length: 12 }, () => "2500"), "30000"],
+    ["Administrative", ...Array.from({ length: 12 }, () => "4000"), "48000"],
+    ["Insurance", ...Array.from({ length: 12 }, () => "7000"), "84000"],
+    ["Real Estate Taxes", ...Array.from({ length: 12 }, () => "18000"), "216000"],
+    ["Management Fee", ...Array.from({ length: 12 }, () => "8000"), "96000"],
+    ["NOI", ...Array.from({ length: 12 }, () => "82500"), "990000"],
   ]);
-  const title = Array.from({ length: 18 }, (_, i) =>
-    i === 0
-      ? ["Life at Harrington Park"]
-      : i === 1
-        ? ["RR - Harrington - 12.31.19 - Resi", "As of 12/31/2019"]
-        : i === 2
-          ? ["Prepared for offering diligence"]
-          : [],
-  );
-  const headerTop = ["Bldg /", "Unit", "", "", "Market", "Lease", "Lease", "Lease", ""];
-  const headerBot = ["Unit", "Type", "Bd/Ba", "SF", "Rent", "Rent", "Start", "End", "Occupied"];
-  const units: (string | number)[][] = [];
-  const stacks: { type: string; beds: string; baths: string; sf: string; market: number; count: number }[] = [
-    { type: "A1", beds: "1", baths: "1", sf: "750", market: 1185, count: 6 },
-    { type: "B2", beds: "2", baths: "2", sf: "1050", market: 1375, count: 6 },
-    { type: "C3", beds: "3", baths: "2", sf: "1200", market: 1550, count: 6 },
-  ];
-  let n = 0;
-  for (const stack of stacks) {
-    for (let i = 0; i < stack.count; i += 1) {
-      n += 1;
-      const occupied = n % 5 !== 0;
-      units.push([
-        String(100 + n),
-        stack.type,
-        `${stack.beds}/${stack.baths}`,
-        stack.sf,
-        String(stack.market),
-        occupied ? String(stack.market - 25) : "0",
-        occupied ? "1/1/2019" : "",
-        occupied ? "12/31/2019" : "",
-        occupied ? "Y" : "N",
-      ]);
-    }
-  }
-  const resi = utils.aoa_to_sheet([...title, headerTop, headerBot, ...units]);
   const wb = utils.book_new();
   utils.book_append_sheet(wb, cover, "Cover");
-  utils.book_append_sheet(wb, mix, "Unit Mix");
   utils.book_append_sheet(wb, t12, "T12 NOI");
-  utils.book_append_sheet(wb, resi, "Resi");
   return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
 }
 
@@ -240,8 +264,9 @@ function rediqDataRow(unit: HarringtonRediqUnit): (string | number)[] {
 }
 
 /**
- * Production-shaped redIQ export (aligned with PR #15): title rows 1–7, human R8,
- * machine R9 (UnitID / OccStatus / MktRent / InPlaceRent), data from R10, ~175 units.
+ * Production-shaped redIQ export: title rows 1–7, human R8, machine R9 (UnitID /
+ * OccStatus / MktRent / InPlaceRent), data from R10. ~175 units. Prefer sheet
+ * `Rent Roll`; `Source Data` is the documented alternate.
  */
 export function harringtonRediqRentRollWorkbook(): Buffer {
   const units = buildHarringtonRediqUnits();
@@ -316,5 +341,89 @@ export function harringtonRediqRentRollWorkbook(): Buffer {
   utils.book_append_sheet(wb, sourceData, "Source Data");
   utils.book_append_sheet(wb, sheet2, "Sheet2");
   utils.book_append_sheet(wb, about, "About");
+  return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
+}
+
+const T12_MONTHS = [
+  "Dec-18",
+  "Jan-19",
+  "Feb-19",
+  "Mar-19",
+  "Apr-19",
+  "May-19",
+  "Jun-19",
+  "Jul-19",
+  "Aug-19",
+  "Sep-19",
+  "Oct-19",
+  "Nov-19",
+] as const;
+
+const T12_LINES: { label: string; monthly: number }[] = [
+  { label: "4022-000 Unit Rent", monthly: 180000 },
+  { label: "4030-000 Vacancy Loss", monthly: 9000 },
+  { label: "4035-000 Concessions", monthly: 3000 },
+  { label: "4120-000 Laundry Income", monthly: 3500 },
+  { label: "4130-000 Parking Income", monthly: 4500 },
+  { label: "5120-000 Payroll", monthly: 22000 },
+  { label: "5220-000 Repairs & Maintenance", monthly: 12000 },
+  { label: "5320-000 Utilities", monthly: 14000 },
+  { label: "5420-000 Contract Services", monthly: 6000 },
+  { label: "5520-000 Marketing", monthly: 2500 },
+  { label: "5620-000 Administrative", monthly: 4000 },
+  { label: "5720-000 Insurance", monthly: 7000 },
+  { label: "5820-000 Real Estate Taxes", monthly: 18000 },
+  { label: "5920-000 Management Fee", monthly: 8000 },
+];
+
+function yardiMonthlyRow(label: string, monthly: number, paren = false): (string | number)[] {
+  const cell = paren ? `(${monthly})` : monthly;
+  return [label, ...Array.from({ length: 12 }, () => cell), monthly * 12];
+}
+
+/** Yardi-style T12 (sheet `ext`) — Dec 2018–Nov 2019, cash-book codes + Total. */
+export function harringtonYardiT12ExtWorkbook(): Buffer {
+  const cover = utils.aoa_to_sheet([["The Life at Harrington Park"], ["Skip"]]);
+  const ext = utils.aoa_to_sheet([
+    ["The Life at Harrington Park"],
+    ["Income Statement"],
+    ["Period Dec 2018–Nov 2019"],
+    [],
+    ["Account", ...T12_MONTHS, "Total"],
+    ["4000-000 Income", ...Array.from({ length: 13 }, () => "")],
+    yardiMonthlyRow("4022-000 Unit Rent", 180000),
+    yardiMonthlyRow("4030-000 Vacancy Loss", 9000, true),
+    yardiMonthlyRow("4035-000 Concessions", 3000),
+    ["4100-000 Other Income", ...Array.from({ length: 13 }, () => "")],
+    yardiMonthlyRow("4120-000 Laundry Income", 3500),
+    yardiMonthlyRow("4130-000 Parking Income", 4500),
+    ["5000-000 Operating Expenses", ...Array.from({ length: 13 }, () => "")],
+    ...T12_LINES.filter((row) => row.label.startsWith("5")).map((row) => yardiMonthlyRow(row.label, row.monthly)),
+    ["Net Operating Income", ...Array.from({ length: 12 }, () => 82500), 990000],
+  ]);
+  const wb = utils.book_new();
+  utils.book_append_sheet(wb, cover, "Cover");
+  utils.book_append_sheet(wb, ext, "ext");
+  return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
+}
+
+/** Yardi-style P&L (sheet `Report1`) — same period, Excel-ish month dates. */
+export function harringtonYardiPlReport1Workbook(): Buffer {
+  const months = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(2018, 11 + i, 1)));
+  const report = utils.aoa_to_sheet([
+    ["The Life at Harrington Park"],
+    ["Profit and Loss"],
+    ["Period Dec 2018 to Nov 2019"],
+    [],
+    ["Account", ...months, "Total"],
+    yardiMonthlyRow("4022-000 Unit Rent", 180000),
+    yardiMonthlyRow("4030-000 Vacancy Loss", 9000, true),
+    yardiMonthlyRow("4035-000 Concessions", 3000),
+    yardiMonthlyRow("4120-000 Laundry Income", 3500),
+    yardiMonthlyRow("4130-000 Parking Income", 4500),
+    ...T12_LINES.filter((row) => row.label.startsWith("5")).map((row) => yardiMonthlyRow(row.label, row.monthly)),
+  ]);
+  const wb = utils.book_new();
+  utils.book_append_sheet(wb, report, "Report1");
   return Buffer.from(write(wb, { type: "buffer", bookType: "xlsx" }));
 }
