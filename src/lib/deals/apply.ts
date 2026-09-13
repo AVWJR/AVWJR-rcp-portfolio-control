@@ -9,6 +9,16 @@ import { getIntake, updateIntake } from "./intake";
 import type { DealGoal } from "./types";
 import { bytesToImportCsv } from "./workbook";
 
+function coachStructuredImportError(filename: string, error: unknown): never {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (/missing required column|unit_id|account_code|no rows we can read|file is empty/i.test(raw)) {
+    throw new Error(
+      `${filename} is stored, but columns do not match the importer (${raw}). Ask Expert to map columns (rent-roll: unit_id, floorplan, beds, baths, sqft, status, market_rent, in_place_rent, lease_start, lease_end; budget: account_code, amount) or save the first sheet as CSV. Do not invent rows.`,
+    );
+  }
+  throw error instanceof Error ? error : new Error(raw);
+}
+
 export async function applyCreateEntity(intakeId: string) {
   const intake = await getIntake(intakeId);
   if (!intake) throw new Error("Intake draft not found.");
@@ -61,11 +71,17 @@ export async function applyStructuredData(opts: {
       if (csvFile) {
         const loaded = await readIntakeFileBytes(csvFile.id);
         if (loaded) {
-          const units = await importRentRollCsv({
-            entityId: intake.entityId,
-            csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
-            confirmReplace: opts.confirmReplace,
-          });
+          let units;
+          try {
+            units = await importRentRollCsv({
+              entityId: intake.entityId,
+              csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
+              confirmReplace: opts.confirmReplace,
+            });
+          } catch (error) {
+            if (error instanceof ReplaceRequiresConfirmError) throw error;
+            coachStructuredImportError(loaded.file.filename, error);
+          }
           await prisma.dealIntakeFile.update({
             where: { id: csvFile.id },
             data: { status: "imported", lastError: null },
@@ -82,14 +98,20 @@ export async function applyStructuredData(opts: {
       if (csvFile) {
         const loaded = await readIntakeFileBytes(csvFile.id);
         if (loaded) {
-          const rows = await importBudgetCsv({
-            entityId: intake.entityId,
-            year: period.year,
-            month: period.month,
-            csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
-            source: "intake",
-            confirmReplace: opts.confirmReplace,
-          });
+          let rows;
+          try {
+            rows = await importBudgetCsv({
+              entityId: intake.entityId,
+              year: period.year,
+              month: period.month,
+              csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
+              source: "intake",
+              confirmReplace: opts.confirmReplace,
+            });
+          } catch (error) {
+            if (error instanceof ReplaceRequiresConfirmError) throw error;
+            coachStructuredImportError(loaded.file.filename, error);
+          }
           await prisma.dealIntakeFile.update({
             where: { id: csvFile.id },
             data: { status: "imported", lastError: null },

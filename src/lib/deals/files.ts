@@ -4,7 +4,7 @@ import { storeVaultDocument, VAULT_MAX_BYTES } from "@/lib/vault";
 import { safeVaultFilename, type VaultKind } from "@rcp/documents";
 import { getIntake } from "./intake";
 import { INTAKE_MAX_BYTES, isDealFileClass, type DealFileClass, type DealFileSource } from "./types";
-import { isAllowedIntakeFilename, isSpreadsheetFilename } from "./workbook";
+import { assertReadableWorkbook, isAllowedIntakeFilename, isSpreadsheetFilename, SPREADSHEET_MIME_TYPES } from "./workbook";
 
 export function classificationToVaultKind(classification: string): VaultKind {
   switch (classification) {
@@ -64,6 +64,9 @@ export async function storeIntakeFile(opts: {
   if (!intake) throw new Error("Intake draft not found. Save the draft, then upload again.");
 
   const filename = safeVaultFilename(opts.filename);
+  if (isSpreadsheetFilename(filename) || (SPREADSHEET_MIME_TYPES as readonly string[]).includes(opts.mimeType)) {
+    assertReadableWorkbook(opts.bytes, filename);
+  }
   const classification =
     opts.classification && isDealFileClass(opts.classification) ? opts.classification : guessClassification(filename);
 

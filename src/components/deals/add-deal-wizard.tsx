@@ -709,8 +709,10 @@ export function AddDealWizard({
           <section className="space-y-4">
             <h2 className="font-display text-2xl text-navy-900">Classify files</h2>
             <p className="text-sm text-ink-600">
-              Map each file so it lands in the vault with the right kind. CSV types can run the existing
-              rent-roll and budget importers after the SPE exists.
+              Map each file so it lands in the vault with the right kind. Tag an XLSX as rent-roll,
+              budget, or other (OM / loan supporting). Rent-roll and budget workbooks use the first
+              matching sheet (RentRoll / Budget / first sheet) after the SPE exists. If columns do not
+              match, the file stays stored — ask Expert to map them. Do not leave a workbook unclassified.
             </p>
             {!intake?.files.length ? (
               <p className="text-sm text-ink-600">No files yet. Go back and upload, or continue if you will add files later.</p>
@@ -780,8 +782,8 @@ export function AddDealWizard({
           <section className="space-y-4">
             <h2 className="font-display text-2xl text-navy-900">Apply structured data</h2>
             <p className="text-sm text-ink-600">
-              Optional. Rent-roll and budget CSVs use the existing importers. If rows already exist, you must
-              confirm a full replace.
+              Optional. Rent-roll and budget CSV / XLSX files use the existing importers (xlsx first
+              sheet or a RentRoll / Budget tab). If rows already exist, you must confirm a full replace.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               <label className="block text-sm text-ink-700">
@@ -837,8 +839,9 @@ export function AddDealWizard({
               Apply rent roll, budget, and loan
             </button>
             <p className="text-xs text-ink-500">
-              Sample CSVs: <code>data/samples/rent-roll.csv</code> and <code>data/samples/budget.csv</code>. LTV is
-              not invented from book cost.
+              Samples: <code>data/samples/rent-roll.csv</code>, <code>data/samples/rent-roll.xlsx</code>,{" "}
+              <code>data/samples/budget.csv</code>. Max {INTAKE_MAX_BYTES_LABEL} per file. LTV is not
+              invented from book cost.
             </p>
           </section>
         ) : null}

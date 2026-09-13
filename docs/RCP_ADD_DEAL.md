@@ -45,4 +45,4 @@ Intake routes are rate-limited (40 / minute / IP). Tokens never go to the client
 - Dropbox / Gmail / Microsoft OAuth product polish  
 - Optional Vercel Blob store (`BLOB_READ_WRITE_TOKEN`) if Neon `StoredBlob` is too large for OM packets  
 
-Sample files: [`data/samples/rent-roll.csv`](../data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](../data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](../data/samples/budget.csv).
+Sample files: [`data/samples/rent-roll.csv`](../data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](../data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](../data/samples/budget.csv), [`data/samples/budget.xlsx`](../data/samples/budget.xlsx).

@@ -42,7 +42,7 @@ export const DEAL_WIZARD_STEPS = [
   { id: 3, key: "sources", title: "Source files", hint: "Upload, Dropbox, email, or RCP mailbox" },
   { id: 4, key: "classify", title: "Classify files", hint: "Map each file to a type" },
   { id: 5, key: "create", title: "Create entity", hint: "Create the SPE and clone the CoA" },
-  { id: 6, key: "apply", title: "Apply data", hint: "Import CSVs and capture loan basics" },
+  { id: 6, key: "apply", title: "Apply data", hint: "Import CSV / XLSX and capture loan basics" },
   { id: 7, key: "completeness", title: "Completeness", hint: "Score and missing next steps" },
   { id: 8, key: "done", title: "Done", hint: "Open the new deal screens" },
 ] as const;

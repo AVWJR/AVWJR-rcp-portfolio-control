@@ -52,7 +52,7 @@ Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deal
 
 Drafts persist (`DealIntake`). Rent-roll / budget replace still requires confirm. File cap **10 MB** (Vercel Functions can accept larger bodies; this demo matches the vault limit — split large OMs or upload later on `/vault`). Uploads write through a durable file store: **local `data/vault/` on a laptop**, **Neon `StoredBlob` on Vercel** (default), or **Vercel Blob** when `BLOB_READ_WRITE_TOKEN` is set. The previous local-only write was the live-demo failure mode. Tokens are server-only. The public Vercel demo has **no partner auth** yet; Add Deal mutates the demo database (acceptable for the Principal demo).
 
-Sample files: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](./data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](./data/samples/budget.csv). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
+Sample files: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](./data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](./data/samples/budget.csv), [`data/samples/budget.xlsx`](./data/samples/budget.xlsx). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
 
 APIs: `POST /api/deals` · `POST /api/deals/intake` · `POST /api/deals/intake/files` · `POST /api/deals/intake/import` · `POST /api/deals/intake/from-dropbox` · `POST /api/deals/intake/from-email` · `POST /api/deals/intake/scan-mailbox`
 

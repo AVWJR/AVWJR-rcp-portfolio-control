@@ -3,7 +3,7 @@ import { applyStructuredData } from "@/lib/deals/apply";
 import { createSpeDeal } from "@/lib/deals/create-spe";
 import { createIntake, updateIntake } from "@/lib/deals/intake";
 import { readIntakeFileBytes, removeIntakeFile, storeIntakeFile } from "@/lib/deals/files";
-import { workbookToCsv } from "@/lib/deals/workbook";
+import { assertReadableWorkbook, workbookToCsv } from "@/lib/deals/workbook";
 import { describeFileStore, getStoredFile, putStoredFile, resolveFileStoreBackend } from "@/lib/file-store";
 import { prisma } from "@/lib/prisma";
 import { afterAll, describe, expect, it } from "vitest";
@@ -189,6 +189,7 @@ describe("Add Deal intake upload", () => {
   it("parses the sample rent-roll xlsx and imports it on apply", async () => {
     const xlsx = readFileSync(resolve("data/samples/rent-roll.xlsx"));
     expect(workbookToCsv(xlsx, "rent-roll.xlsx")).toMatch(/unit_id/);
+    expect(workbookToCsv(readFileSync(resolve("data/samples/budget.xlsx")), "budget.xlsx")).toMatch(/account_code/);
 
     const suffix = Date.now().toString(36).toUpperCase().slice(-3);
     const { entity } = await createSpeDeal({
@@ -228,5 +229,61 @@ describe("Add Deal intake upload", () => {
     expect(applied.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 1)).toBe(true);
     const units = await prisma.unit.count({ where: { entityId: entity.id } });
     expect(units).toBeGreaterThanOrEqual(1);
+  });
+
+  it("POST /api/deals/intake/files accepts the sample rent-roll xlsx", async () => {
+    const xlsx = readFileSync(resolve("data/samples/rent-roll.xlsx"));
+    const intake = await createIntake({
+      goal: "stabilize",
+      targetPeriod: "2026-08",
+      speName: "Http Xlsx LLC",
+      speCode: `SPE-Y${Date.now().toString(36).toUpperCase().slice(-4)}`.slice(0, 12),
+      sources: ["upload"],
+    });
+    intakeIds.push(intake.id);
+
+    const body = new FormData();
+    body.set("intakeId", intake.id);
+    body.set("source", "upload");
+    body.append(
+      "file",
+      new File([new Uint8Array(xlsx)], "willow-rent-roll.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+
+    const res = await POST(new Request("http://localhost/api/deals/intake/files", { method: "POST", body }));
+    expect(res.ok).toBe(true);
+    const json = (await res.json()) as {
+      stored: { filename: string; classification: string }[];
+    };
+    expect(json.stored).toHaveLength(1);
+    expect(json.stored[0]?.filename).toBe("willow-rent-roll.xlsx");
+    expect(json.stored[0]?.classification).toBe("rent_roll_csv");
+  });
+
+  it("rejects corrupt and password-protected workbooks with a visible error", async () => {
+    expect(() => assertReadableWorkbook(Buffer.from("not-an-excel-file"), "broken.xlsx")).toThrow(/not a readable Excel workbook/i);
+    expect(() =>
+      assertReadableWorkbook(Buffer.from("PK\u0003\u0004EncryptedPackage"), "secret.xlsx"),
+    ).toThrow(/password-protected/i);
+
+    const intake = await createIntake({
+      goal: "stabilize",
+      targetPeriod: "2026-08",
+      speName: "Bad Workbook LLC",
+      speCode: `SPE-Z${Date.now().toString(36).toUpperCase().slice(-4)}`.slice(0, 12),
+      sources: ["upload"],
+    });
+    intakeIds.push(intake.id);
+    await expect(
+      storeIntakeFile({
+        intakeId: intake.id,
+        source: "upload",
+        filename: "corrupt.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        bytes: Buffer.from("PK this is not a workbook"),
+      }),
+    ).rejects.toThrow(/not a readable Excel workbook|password-protected/i);
   });
 });
