@@ -1,7 +1,7 @@
 import { importBudgetCsv, replaceBudget } from "@/lib/budgets";
 import { ReplaceRequiresConfirmError } from "@/lib/import-guard";
 import { prisma } from "@/lib/prisma";
-import { inferAsOfDate } from "./infer";
+import { classifyFromFilename, inferAsOfDate } from "./infer";
 import { importRentRollCsv } from "@/lib/rent-roll";
 import { parsePeriodLabel } from "@/lib/expert/period";
 import { createSpeDeal } from "./create-spe";
@@ -75,7 +75,9 @@ export async function applyStructuredData(opts: {
 
   try {
     if (opts.importRentRoll !== false) {
-      const csvFile = intake.files.find((f) => f.classification === "rent_roll_csv");
+      const csvFile =
+        intake.files.find((f) => f.classification === "rent_roll_csv") ??
+        intake.files.find((f) => classifyFromFilename(f.filename) === "rent_roll_csv");
       if (csvFile) {
         const loaded = await readIntakeFileBytes(csvFile.id);
         if (!loaded) {

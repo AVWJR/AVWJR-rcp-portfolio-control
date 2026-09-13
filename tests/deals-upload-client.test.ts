@@ -1,11 +1,14 @@
-import { INTAKE_MAX_BYTES, INTAKE_MAX_BYTES_LABEL } from "@/lib/deals/types";
+import { INTAKE_MAX_BYTES, INTAKE_MAX_BYTES_LABEL, TYPICAL_OM_BYTES, VERCEL_MULTIPART_SAFE_BYTES } from "@/lib/deals/types";
 import {
+  blobTokenRequiredMessage,
   fileTooLargeMessage,
+  formatFileMb,
   formatUploadFailure,
   initialUploadRows,
   isUntitledDealName,
   parseApiErrorText,
   requestExceedsIntakeLimit,
+  shouldUseClientBlobUpload,
   suggestIdentityFromFilenames,
   workingTitle,
 } from "@/lib/deals/upload-client";
@@ -34,7 +37,11 @@ describe("Add Deal upload client helpers", () => {
       "HTTP 500: Intake draft not found.",
     );
     expect(formatUploadFailure({ networkMessage: "Failed to fetch" })).toMatch(/HTTP request failed \(Failed to fetch\)/);
-    expect(parseApiErrorText(413, "<html>Request Entity Too Large</html>")).toMatch(/HTTP 413: File too large/);
+    expect(parseApiErrorText(413, "<html>Request Entity Too Large</html>")).toBe(
+      blobTokenRequiredMessage({ filename: "Life_at_Harrington_Park_OM.pdf", byteSize: TYPICAL_OM_BYTES }),
+    );
+    expect(parseApiErrorText(413, "<html>Request Entity Too Large</html>")).toMatch(/BLOB_READ_WRITE_TOKEN/);
+    expect(parseApiErrorText(413, "<html>Request Entity Too Large</html>")).not.toMatch(/^HTTP 413/);
     expect(parseApiErrorText(404, JSON.stringify({ error: "Intake draft not found." }))).toBe(
       "HTTP 404: Intake draft not found.",
     );
@@ -77,5 +84,26 @@ describe("Add Deal upload client helpers", () => {
     expect(rows.every((row) => row.progress === "queued")).toBe(true);
     expect(om + xlsx * 3).toBeLessThan(10 * 1024 * 1024);
     expect(requestExceedsIntakeLimit(om)).toBe(false);
+  });
+
+  it("routes files over ~3.5 MB to client Blob upload on Vercel or when Blob is configured", () => {
+    const om = 5_605 * 1024;
+    expect(formatFileMb(om)).toBe("5.5");
+    expect(om).toBeGreaterThan(VERCEL_MULTIPART_SAFE_BYTES);
+    expect(shouldUseClientBlobUpload(180 * 1024, { onVercel: true })).toBe(false);
+    expect(shouldUseClientBlobUpload(om, { onVercel: false, blobConfigured: false })).toBe(false);
+    expect(shouldUseClientBlobUpload(om, { onVercel: true })).toBe(true);
+    expect(shouldUseClientBlobUpload(om, { blobConfigured: true })).toBe(true);
+    expect(shouldUseClientBlobUpload(INTAKE_MAX_BYTES + 1, { onVercel: true })).toBe(false);
+    expect(blobTokenRequiredMessage({ filename: "Life_at_Harrington_Park_OM.pdf", byteSize: om })).toBe(
+      "OM is 5.5 MB — add BLOB_READ_WRITE_TOKEN in Vercel (Storage → Blob) or upload Excel first and add OM after Blob is connected",
+    );
+    expect(
+      parseApiErrorText(413, "<html>Request Entity Too Large</html>", "Upload failed", {
+        filename: "Life_at_Harrington_Park_OM.pdf",
+        byteSize: om,
+        blobConfigured: false,
+      }),
+    ).toMatch(/OM is 5\.5 MB — add BLOB_READ_WRITE_TOKEN/);
   });
 });

@@ -15,13 +15,37 @@ export class FileStoreError extends Error {
 
 const FS_PREFIX = "fs:";
 const DB_PREFIX = "db:";
-const BLOB_PREFIX = "blob:";
+export const BLOB_PREFIX = "blob:";
+
+export function isOnVercel(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VERCEL === "1" || env.VERCEL === "true";
+}
+
+export function isBlobTokenConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.BLOB_READ_WRITE_TOKEN?.trim());
+}
+
+export function blobStoragePath(url: string): string {
+  return url.startsWith(BLOB_PREFIX) ? url : `${BLOB_PREFIX}${url}`;
+}
+
+export function isTrustedBlobUrl(url: string): boolean {
+  try {
+    const raw = url.startsWith(BLOB_PREFIX) ? url.slice(BLOB_PREFIX.length) : url;
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    return host === "blob.vercel-storage.com" || host.endsWith(".blob.vercel-storage.com");
+  } catch {
+    return false;
+  }
+}
 
 export function resolveFileStoreBackend(env: NodeJS.ProcessEnv = process.env): FileStoreBackend {
   const forced = env.RCP_FILE_STORE?.trim().toLowerCase();
   if (forced === "blob" || forced === "db" || forced === "fs") return forced;
-  if (env.BLOB_READ_WRITE_TOKEN) return "blob";
-  if (env.VERCEL === "1" || env.VERCEL === "true") return "db";
+  if (isBlobTokenConfigured(env)) return "blob";
+  if (isOnVercel(env)) return "db";
   return "fs";
 }
 

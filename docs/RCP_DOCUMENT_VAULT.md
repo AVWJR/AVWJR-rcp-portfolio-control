@@ -22,7 +22,7 @@ Kinds: **lease**, **loan**, **k1**, **draw**, **insurance**, **rent_roll**, **bu
 - `GET /api/vault/{id}` — download
 - `DELETE /api/vault/{id}`
 
-Upload limit: **32 MB** (same as Add Deal intake). Filenames are sanitized. Paths cannot escape `data/vault`. Set `BLOB_READ_WRITE_TOKEN` for large OM PDFs; Neon `StoredBlob` is the default durable fallback on Vercel.
+Upload limit: **32 MB** (same as Add Deal intake). Filenames are sanitized. Paths cannot escape `data/vault`. On Vercel, Add Deal files over ~3.5 MB **must** use client upload to Vercel Blob (`BLOB_READ_WRITE_TOKEN`) — the function request body is ~4.5 MB and returns HTTP 413 before the handler. Neon `StoredBlob` remains the durable fallback for small multipart files when Blob is not connected.
 
 ## Seed
 

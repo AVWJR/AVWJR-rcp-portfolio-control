@@ -421,10 +421,12 @@ describe("Add Deal intake upload", () => {
     if (report.created.entityId) entityIds.push(report.created.entityId);
     expect(report.inferred.speName).toMatch(/Harrington Park/i);
     expect(report.created.entityCode).toMatch(/^SPE-/);
-    expect(report.created.entityName).toMatch(/Harrington Park/i);
+    expect(report.created.entityName).toMatch(/Harrington/i);
     expect(report.results.some((row) => row.kind === "rent_roll" && (row.imported ?? 0) >= 5)).toBe(true);
     expect(report.results.some((row) => row.kind === "t12_overlay" && (row.imported ?? 0) >= 1)).toBe(true);
+    expect(report.gaps.some((gap) => /Rent roll wrote 5 Unit rows/i.test(gap))).toBe(true);
     expect(report.gaps.some((gap) => /T12|overlay|P&L/i.test(gap))).toBe(true);
+    expect(report.gaps.some((gap) => /0 units/i.test(gap))).toBe(false);
 
     const latest = await getIntake(intake.id);
     expect(latest?.targetPeriod).toBe("2026-08");

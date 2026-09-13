@@ -3,9 +3,11 @@ import {
   dealNameToStem,
   inferAsOfDate,
   inferDealIdentity,
+  inferFileRole,
   suggestDealSpeCode,
 } from "@/lib/deals/infer";
 import { suggestIdentityFromFilenames } from "@/lib/deals/upload-client";
+import { harringtonRediqRentRollWorkbook } from "./fixtures/harrington-rent-roll";
 import { describe, expect, it } from "vitest";
 
 const HARRINGTON = [
@@ -21,6 +23,9 @@ describe("Add Deal filename inference", () => {
     expect(classifyFromFilename(HARRINGTON[1]!)).toBe("t12_pl");
     expect(classifyFromFilename(HARRINGTON[2]!)).toBe("rent_roll_csv");
     expect(classifyFromFilename(HARRINGTON[3]!)).toBe("t12_pl");
+    expect(inferFileRole("RR_-_Harrington_-_12.31.19_-_Resi.xlsx", harringtonRediqRentRollWorkbook())).toBe(
+      "rent_roll_csv",
+    );
   });
 
   it("infers Life at Harrington Park and an SPE-HRP style code", () => {

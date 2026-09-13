@@ -1,5 +1,6 @@
 "use client";
 
+import { uploadFileToVercelBlob } from "@/lib/deals/blob-client-upload";
 import {
   DEAL_FILE_CLASS_LABELS,
   DEAL_FILE_CLASSES,
@@ -11,10 +12,12 @@ import {
   type DealGoal,
 } from "@/lib/deals/types";
 import {
+  blobTokenRequiredMessage,
   formatUploadFailure,
   initialUploadRows,
   isUntitledDealName,
   parseApiErrorText,
+  shouldUseClientBlobUpload,
   suggestIdentityFromFilenames,
   workingTitle,
   type UploadRow,
@@ -107,6 +110,10 @@ export function AddDealWizard({
   const [step, setStep] = useState(3);
   const [intake, setIntake] = useState<Intake | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [uploadPolicy, setUploadPolicy] = useState({
+    blobConfigured: false,
+    onVercel: false,
+  });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +185,13 @@ export function AddDealWizard({
   useEffect(() => {
     void fetch("/api/deals/providers")
       .then((r) => r.json())
-      .then((json: { providers?: ProviderStatus[] }) => setProviders(json.providers ?? []));
+      .then((json: { providers?: ProviderStatus[]; blobConfigured?: boolean; onVercel?: boolean }) => {
+        setProviders(json.providers ?? []);
+        setUploadPolicy({
+          blobConfigured: Boolean(json.blobConfigured),
+          onVercel: Boolean(json.onVercel),
+        });
+      });
   }, []);
 
   useEffect(() => {
@@ -321,14 +334,42 @@ export function AddDealWizard({
       const key = `${i}:${file.name}`;
       if (file.size <= 0 || file.size > INTAKE_MAX_BYTES) continue;
       setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "uploading" } : row)));
-      const body = new FormData();
-      body.set("intakeId", latest.id);
-      body.set("source", source);
-      body.append("file", file);
+      const viaBlob = shouldUseClientBlobUpload(file.size, uploadPolicy);
       try {
-        const res = await fetch("/api/deals/intake/files", { method: "POST", body });
+        let res: Response;
+        if (viaBlob) {
+          if (!uploadPolicy.blobConfigured) {
+            const message = blobTokenRequiredMessage({ filename: file.name, byteSize: file.size });
+            setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "error", error: message } : row)));
+            setError(message);
+            continue;
+          }
+          const blob = await uploadFileToVercelBlob(file, { intakeId: latest.id, source });
+          res = await fetch("/api/deals/intake/files", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              intakeId: latest.id,
+              source,
+              filename: file.name,
+              mimeType: file.type || "application/octet-stream",
+              byteSize: file.size,
+              blobUrl: blob.url,
+            }),
+          });
+        } else {
+          const body = new FormData();
+          body.set("intakeId", latest.id);
+          body.set("source", source);
+          body.append("file", file);
+          res = await fetch("/api/deals/intake/files", { method: "POST", body });
+        }
         if (!res.ok) {
-          const message = await readApiError(res, "Upload failed");
+          const message = parseApiErrorText(res.status, await res.text(), "Upload failed", {
+            filename: file.name,
+            byteSize: file.size,
+            blobConfigured: uploadPolicy.blobConfigured,
+          });
           setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "error", error: message } : row)));
           setError(message);
           continue;
@@ -343,6 +384,9 @@ export function AddDealWizard({
       } catch (err) {
         const message = formatUploadFailure({
           networkMessage: err instanceof Error ? err.message : "Failed to fetch",
+          filename: file.name,
+          byteSize: file.size,
+          blobConfigured: uploadPolicy.blobConfigured,
         });
         setUploads((prev) => prev.map((row) => (row.key === key ? { ...row, progress: "error", error: message } : row)));
         setError(message);
@@ -695,9 +739,11 @@ export function AddDealWizard({
             <p className="text-sm text-ink-600">
               Upload before naming the deal if you want. A draft titled <strong>Untitled deal</strong> is
               created automatically. Files are sent <strong>one at a time</strong> (CSV, XLSX/XLS, PDF — max{" "}
-              {INTAKE_MAX_BYTES_LABEL} <strong>each</strong>, never summed). A 5.5 MB OM plus three small
-              workbooks is under the cap. Prefer Vercel Blob (<code>BLOB_READ_WRITE_TOKEN</code>) for large
-              OM PDFs so they are not stored in Neon.
+              {INTAKE_MAX_BYTES_LABEL} <strong>each</strong>, never summed). A 5.5 MB OM is a valid product file.
+              Files over ~3.5 MB upload through <strong>Vercel Blob</strong> so they never hit the ~4.5 MB
+              serverless body limit (HTTP 413). If Blob is not connected you will see: “OM is 5.5 MB — add{" "}
+              <code>BLOB_READ_WRITE_TOKEN</code> in Vercel (Storage → Blob) or upload Excel first and add OM
+              after Blob is connected.”
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               {(
@@ -748,7 +794,7 @@ export function AddDealWizard({
             {form.sources.includes("upload") ? (
               <FileDropzone
                 onFiles={(files) => void uploadFiles(files, "upload")}
-                hint={`Drop rent-roll XLSX/CSV, budget workbook, loan PDFs, OM. Max ${INTAKE_MAX_BYTES_LABEL} per file (not combined).`}
+                hint={`Drop rent-roll XLSX/CSV, budget workbook, loan PDFs, OM. Max ${INTAKE_MAX_BYTES_LABEL} per file (not combined). Files over ~3.5 MB use Vercel Blob, not the serverless request body.`}
               />
             ) : null}
 
@@ -1015,6 +1061,24 @@ export function AddDealWizard({
                     ? ` Address: ${ingestReport.inferred.address}.`
                     : " No street address in the filenames — left blank."}
                 </p>
+                {(() => {
+                  const rr = ingestReport.results.find((row) => row.kind === "rent_roll");
+                  if (rr?.imported) {
+                    return (
+                      <p>
+                        <strong>Rent roll — {rr.imported} units written.</strong> Occupancy uses the rent
+                        roll. GL $0 is expected until T12/P&L is mapped.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p>
+                      <strong>Rent roll — 0 units.</strong>{" "}
+                      {rr?.skipped ?? "No rent-roll file was classified."} Occupancy stays empty until the
+                      broker RR maps.
+                    </p>
+                  );
+                })()}
                 <ul className="list-disc space-y-1 pl-5">
                   {ingestReport.results.map((row) => (
                     <li key={row.kind}>
@@ -1086,7 +1150,7 @@ export function AddDealWizard({
         </div>
       </div>
       <p className="text-[11px] uppercase tracking-[0.14em] text-ink-500">
-        File cap {INTAKE_MAX_BYTES / (1024 * 1024)} MB · tokens stay on the server · public demo mutates the demo DB
+        File cap {INTAKE_MAX_BYTES / (1024 * 1024)} MB · OM over ~3.5 MB needs BLOB_READ_WRITE_TOKEN · tokens stay on the server
       </p>
     </div>
   );

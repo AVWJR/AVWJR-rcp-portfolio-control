@@ -272,6 +272,19 @@ export function findRentRollHeaderRow(rows: string[][], maxScan = 40): number {
   return findRentRollHeader(rows, maxScan)?.index ?? -1;
 }
 
+export type ResolvedRentRollHeader = {
+  index: number;
+  headers: string[];
+  dataStart: number;
+  score: number;
+};
+
+export function resolveRentRollHeader(rows: string[][], maxScan = 80): ResolvedRentRollHeader | null {
+  const found = findRentRollHeader(rows, maxScan);
+  if (!found) return null;
+  return { index: found.index, headers: found.headers, dataStart: found.index + 1, score: found.score };
+}
+
 export function looksLikeUnitCode(value: string): boolean {
   const v = value.trim();
   if (!v || looksLikeSummary(v, [v]) || looksLikeHeaderRepeat(v)) return false;
