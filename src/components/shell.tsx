@@ -16,6 +16,7 @@ const NAV = [
   { href: "/close", label: "Close" },
   { href: "/tax", label: "Tax" },
   { href: "/vault", label: "Vault" },
+  { href: "/archive", label: "Archive" },
   { href: "/scheduler", label: "Scheduler" },
   { href: "/vendors", label: "1099" },
   { href: "/reports/trial-balance", label: "Trial Balance" },
@@ -93,6 +94,8 @@ export function Shell({
                       ? pathname.startsWith("/tax")
                     : item.href === "/deals"
                       ? pathname.startsWith("/deals")
+                    : item.href === "/archive"
+                      ? pathname.startsWith("/archive")
                     : pathname === item.href;
               return (
                 <Link

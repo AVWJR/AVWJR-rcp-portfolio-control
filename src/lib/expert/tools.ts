@@ -1,3 +1,4 @@
+import { isLiveSpe } from "@/lib/archive";
 import { getIntake, publicIntake } from "@/lib/deals/intake";
 import { buildDashboardForEntity, type LiveRatio } from "@/lib/dashboards";
 import { loadPortfolioDebt } from "@/lib/debt-view";
@@ -41,7 +42,10 @@ export async function getEntitySummary(entityCode: string): Promise<EntitySummar
     parentCode: entity.parent?.code ?? null,
     unitCount: entity.unitCount,
     strategy: entity.strategy,
+    lifecycleStatus: entity.lifecycleStatus,
+    archivedAt: entity.archivedAt?.toISOString() ?? null,
     children: entity.children
+      .filter((child) => child.type !== "SPE" || isLiveSpe(child))
       .slice()
       .sort((a, b) => a.code.localeCompare(b.code))
       .map((child) => ({
@@ -298,7 +302,7 @@ export async function getDataCompleteness(
   });
 
   if (opco) {
-    const spes = entity.children.filter((c) => c.type === "SPE");
+    const spes = entity.children.filter((c) => isLiveSpe(c));
     for (const speChild of spes) {
       const [speUnits, speBudget, speLoan] = await Promise.all([
         prisma.unit.count({ where: { entityId: speChild.id } }),

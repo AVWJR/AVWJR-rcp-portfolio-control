@@ -92,10 +92,27 @@ const IMPORT_RR_CHIP: ExpertChip = {
   prompt: "How do I import a rent roll for this SPE? Include the confirm-replace step if units already exist.",
 };
 
+const ARCHIVE_CHIP: ExpertChip = {
+  id: "archive_deal",
+  label: "Archive this deal",
+  prompt:
+    "How do I archive a live SPE? Cover the Deals row action and Vault trigger, the two-step confirm, and that archived deals are on gold nav Archive — not under Deals.",
+};
+
+const FIND_ARCHIVED_CHIP: ExpertChip = {
+  id: "find_archive",
+  label: "Where are archived deals?",
+  prompt:
+    "Where do I find archived deals? Do not put them under Deals. Point me to gold nav Archive and how Principal restore works.",
+};
+
 function queryChips(q: string): ExpertChip[] | null {
   if (!q) return null;
   if (/add (a )?new deal|new deal|add deal|onboard/.test(q)) {
     return [ADD_DEAL_CHIP, IMPORT_RR_CHIP];
+  }
+  if (/archiv|restore (a )?(deal|spe)/.test(q)) {
+    return [ARCHIVE_CHIP, FIND_ARCHIVED_CHIP];
   }
   if (/harrington|what.?s missing|missing for|completeness|gaps? for/.test(q)) {
     return [
@@ -275,6 +292,35 @@ export function rankSuggestedActions(
     });
   }
 
+  if (!viewer && (page === "/deals" || page.startsWith("/vault")) && ctx.entityCode.startsWith("SPE-")) {
+    actions.push({
+      id: "act_archive",
+      kind: "intent",
+      label: "Archive this deal",
+      intent: "archive_deal",
+      prompt: ARCHIVE_CHIP.prompt,
+    });
+  }
+
+  if (page.startsWith("/archive") && !viewer) {
+    const archiveActions: ExpertSuggestedAction[] = [
+      {
+        id: "act_restore",
+        kind: "intent",
+        label: "Restore an archived deal",
+        intent: "restore_deal",
+        prompt: FIND_ARCHIVED_CHIP.prompt,
+      },
+      {
+        id: "act_deals",
+        kind: "navigate",
+        label: "Back to live Deals",
+        href: dest("/deals", ctx),
+      },
+    ];
+    return archiveActions.slice(0, MAX_CHROME);
+  }
+
   if (!viewer && (page.startsWith("/properties") || page.startsWith("/dashboard"))) {
     actions.push({
       id: "act_reapply",
@@ -331,8 +377,11 @@ export function rankChips(ctx: ExpertClientContext, bundle: OfflineBundle, userT
     });
   }
   const page = ctx.pathname;
-  if (page === "/" || page.startsWith("/deals")) {
+  if (page === "/" || (page.startsWith("/deals") && !page.startsWith("/deals/new"))) {
     return [ADD_DEAL_CHIP, MISSING_CHIP, IMPORT_RR_CHIP];
+  }
+  if (page.startsWith("/archive")) {
+    return [FIND_ARCHIVED_CHIP, ARCHIVE_CHIP];
   }
 
   const extras: ExpertChip[] = [];
@@ -388,9 +437,10 @@ export function rankChips(ctx: ExpertClientContext, bundle: OfflineBundle, userT
 
 export function pageProcessLead(ctx: ExpertClientContext): string {
   if (ctx.pathname.startsWith("/deals")) return "When you are ready, open **Add Deal** and drop the OM or rent-roll workbook.";
+  if (ctx.pathname.startsWith("/archive")) return "Study an archived SPE here, or **Restore** with the two-step confirm. This is not under Deals.";
   if (ctx.pathname.startsWith("/close")) return "Continue period close on **Close** — stay in order.";
   if (ctx.pathname.startsWith("/narratives")) return "Pick the audience, then export the matching pack.";
-  if (ctx.pathname.startsWith("/vault")) return "File the OM or rent roll for this SPE in **Vault**.";
+  if (ctx.pathname.startsWith("/vault")) return "File the OM or rent roll for this SPE in **Vault**. Archive a live SPE from **Archive this deal…**.";
   if (ctx.pathname.startsWith("/tax")) return "Export the CPA worksheet from **Tax** when you need it.";
   if (ctx.pathname.startsWith("/debt")) return "Open the loan file on **Debt** if you want the covenant math.";
   if (ctx.pathname.startsWith("/dashboard")) return "Click a tile for the formula, or ask me about a number on this card.";

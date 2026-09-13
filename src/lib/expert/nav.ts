@@ -102,8 +102,8 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     test: /^\/deals$/,
     title: "Deals",
     hints: [
-      "SPE list plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
-      "Click Add Deal or resume a draft. The entity switcher updates after you create the SPE.",
+      "Live SPEs only, plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
+      "Archive a live deal from the row action “Archive deal…”. Archived SPEs are not a Deals tab — study them on gold nav Archive.",
     ],
   },
   {
@@ -145,7 +145,18 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
   {
     test: /^\/vault$/,
     title: "Document vault",
-    hints: ["Metadata + files by entity (leases, loans, K-1s, draws, insurance). Not a bank or PMS feed."],
+    hints: [
+      "Metadata + files by entity (leases, loans, K-1s, draws, insurance). Not a bank or PMS feed.",
+      "On a live SPE, Principal can Archive this deal… (two-step). Find archived deals on gold nav Archive — not under Deals.",
+    ],
+  },
+  {
+    test: /^\/archive$/,
+    title: "Deal Archive",
+    hints: [
+      "Separate study list for soft-archived SPEs. Books and vault stay intact. Not nested under Deals.",
+      "Principal Restore is a two-step confirm from this page only. Partners get 403.",
+    ],
   },
   {
     test: /^\/scheduler$/,
@@ -187,6 +198,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "tax", href: "/tax", label: "Tax bridge", hint: "CPA worksheet — does not file" },
   { id: "k1", href: "/tax/k1", label: "K-1 export", hint: "Partner capital — not a filed K-1" },
   { id: "vault", href: "/vault", label: "Vault", hint: "Entity documents" },
+  { id: "archive", href: "/archive", label: "Archive", hint: "Soft-archived SPEs for study — not under Deals" },
   { id: "scheduler", href: "/scheduler", label: "Scheduler", hint: "Pack jobs" },
   { id: "vendors", href: "/vendors", label: "1099", hint: "Vendor overlay" },
 ];

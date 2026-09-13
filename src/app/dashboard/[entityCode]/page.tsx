@@ -1,3 +1,4 @@
+import { ArchivedSpeBanner } from "@/components/archived-spe-banner";
 import { BrokerOverlayStrip } from "@/components/broker-overlay-strip";
 import { DashboardTiles } from "@/components/dashboard-tiles";
 import { NoiConcentration } from "@/components/noi-concentration";
@@ -43,20 +44,29 @@ export default async function EntityDashboardPage({
         return dash.kind === "opco" ? (
           <OpCoView ctxLabel={reportSubtitle(ctx)} dash={dash} />
         ) : (
-          <PropertyView ctxLabel={reportSubtitle(ctx)} dash={dash} />
+          <PropertyView ctxLabel={reportSubtitle(ctx)} dash={dash} archived={ctx.archived} />
         );
       }}
     </ReportShell>
   );
 }
 
-function PropertyView({ ctxLabel, dash }: { ctxLabel: string; dash: PropertyDashboard }) {
+function PropertyView({
+  ctxLabel,
+  dash,
+  archived,
+}: {
+  ctxLabel: string;
+  dash: PropertyDashboard;
+  archived: boolean;
+}) {
   const q = `entity=${dash.entityCode}&period=${dash.period}`;
   return (
     <div className="space-y-8">
       <div>
         <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{ctxLabel}</p>
         <h1 className="font-display text-4xl text-navy-900">{dash.entityName}</h1>
+        {archived ? <div className="mt-3"><ArchivedSpeBanner code={dash.entityCode} period={dash.period} /></div> : null}
         <p className="mt-2 max-w-3xl text-sm text-ink-700">
           Property ratio dashboard · {dash.unitCount} units
           {dash.strategy ? ` · ${dash.strategy.replaceAll("_", " ")}` : ""} · {dash.viewLabel}.

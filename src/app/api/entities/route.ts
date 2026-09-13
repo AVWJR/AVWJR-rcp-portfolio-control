@@ -13,6 +13,7 @@ export async function GET() {
       ownershipBps: e.ownershipBps,
       unitCount: e.unitCount,
       strategy: e.strategy,
+      lifecycleStatus: e.lifecycleStatus,
     })),
   );
 }

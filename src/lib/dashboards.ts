@@ -499,7 +499,7 @@ export async function buildOpCoDashboard(opts: {
     where: { id: opts.opcoId },
     include: { children: true },
   });
-  const spes = opco.children.filter((c) => c.type === "SPE").sort((a, b) => a.code.localeCompare(b.code));
+  const spes = opco.children.filter((c) => c.type === "SPE" && c.lifecycleStatus !== "ARCHIVED").sort((a, b) => a.code.localeCompare(b.code));
   const spePacks = await Promise.all(
     spes.map(async (spe) => {
       const pack = await buildOperatingPackage({

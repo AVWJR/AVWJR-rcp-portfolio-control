@@ -68,6 +68,8 @@ describe("expert Add Deal knowledge", () => {
     const ids = listNavTargets().map((t) => t.id);
     expect(ids).toContain("deals");
     expect(ids).toContain("add_deal");
+    expect(ids).toContain("archive");
+    expect(listNavTargets().find((t) => t.id === "archive")?.href).toBe("/archive");
     expect(listNavTargets().find((t) => t.id === "add_deal")?.href).toBe("/deals/new");
   });
 

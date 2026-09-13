@@ -64,9 +64,15 @@ export function isMutatingMethod(method: string): boolean {
   return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 }
 
+export function isArchiveApi(pathname: string): boolean {
+  if (pathname === "/api/archive" || pathname.startsWith("/api/archive/")) return true;
+  return /^\/api\/deals\/[^/]+\/archive\/?$/.test(pathname);
+}
+
 export function isViewerBlockedPath(pathname: string): boolean {
   if (pathname === "/deals/new" || pathname.startsWith("/deals/new/")) return true;
   if (pathname === "/admin/seed" || pathname.startsWith("/admin/")) return true;
+  if (pathname === "/archive" || pathname.startsWith("/archive/")) return true;
   return false;
 }
 
@@ -75,6 +81,7 @@ export function isViewerAllowedMutation(pathname: string): boolean {
 }
 
 export function viewerForbiddenApi(pathname: string, method: string): boolean {
+  if (isArchiveApi(pathname)) return true;
   if (!isMutatingMethod(method)) return false;
   if (isViewerAllowedMutation(pathname)) return false;
   return true;
