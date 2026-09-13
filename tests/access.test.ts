@@ -38,8 +38,12 @@ describe("partner viewer access", () => {
     expect(isViewerBlockedPath("/dashboard/SPE-WBG")).toBe(false);
     expect(isViewerBlockedPath("/narratives")).toBe(false);
     expect(viewerForbiddenApi("/api/deals/intake/files", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/deals/intake/blob", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/deals/intake/import", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/deals/intake", "POST")).toBe(true);
     expect(viewerForbiddenApi("/api/admin/seed", "POST")).toBe(true);
     expect(viewerForbiddenApi("/api/vault", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/vault/blob", "POST")).toBe(true);
     expect(viewerForbiddenApi("/api/expert/chat", "POST")).toBe(false);
     expect(viewerForbiddenApi("/api/access", "POST")).toBe(false);
     expect(viewerForbiddenApi("/api/narratives", "GET")).toBe(false);
