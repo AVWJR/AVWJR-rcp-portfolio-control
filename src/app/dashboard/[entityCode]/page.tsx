@@ -77,6 +77,9 @@ function PropertyView({ ctxLabel, dash }: { ctxLabel: string; dash: PropertyDash
           <Link className="text-navy-700 underline" href={`/dashboard/ratios?${q}`}>
             Ratio dictionary
           </Link>
+          <Link className="text-navy-700 underline" href={`/narratives?${q}`}>
+            Narratives / packs
+          </Link>
         </div>
       </div>
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} />
@@ -105,6 +108,9 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
           </Link>
           <Link className="text-navy-700 underline" href={`/dashboard/ratios?${q}`}>
             Ratio dictionary
+          </Link>
+          <Link className="text-navy-700 underline" href={`/narratives?${q}`}>
+            Narratives / packs
           </Link>
         </div>
       </div>

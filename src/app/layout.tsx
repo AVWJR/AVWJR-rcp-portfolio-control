@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: `${RCP_NAME} — ${RCP_PRODUCT}`,
-  description: "OpCo accounting and portfolio control — Phase D ratio dashboards",
+  description: "OpCo accounting and portfolio control — Phase E narratives and report packs",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

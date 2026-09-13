@@ -1,6 +1,6 @@
 # Roche Capital Partners — Portfolio Control
 
-OpCo accounting / portfolio control for **Roche Capital Partners**. Phase A is the book ledger. Phase B is the property operating package. Phase C adds the debt file, CapEx/CIP, intercompany matching, and period-close workflow. **Phase D** is the live ratio dictionary plus OpCo and property dashboards with formula drill-down.
+OpCo accounting / portfolio control for **Roche Capital Partners**. Phase A is the book ledger. Phase B is the property operating package. Phase C adds the debt file, CapEx/CIP, intercompany matching, and period-close workflow. Phase D is the live ratio dictionary plus OpCo and property dashboards with formula drill-down. **Phase E** is the chart / infographic layer, five-audience narratives, and PDF / PPTX report packs.
 
 Locked stack: TypeScript, Next.js App Router, Prisma, PostgreSQL in production, **SQLite for local demo**. Server actions + API routes. USD, `en-US`, `America/New_York`. Integer cents. Double-entry intact.
 
@@ -14,8 +14,8 @@ npm install
 npx prisma generate
 npm run db:reset    # prisma db push && seed (deletes ledger, units, budgets, loans, capex, close)
 npm test
-npm run verify:d    # Phase D dashboards + live dictionary
-npm run verify      # Phase A then B then C then D
+npm run verify:e    # Phase E narratives + PDF/PPTX packs
+npm run verify      # Phase A then B then C then D then E
 npm run dev
 ```
 
@@ -48,6 +48,8 @@ Prisma resolves that path relative to `prisma/`, so the file is `prisma/dev.db`.
 Books: opening **2026-07**, operating month **2026-08**. Switch entity and period in the navy header. On OpCo, choose **Combined roll-up** to stack wholly owned SPEs.
 
 Sample SPE to click: **Willow Bend Gardens (`SPE-WBG`)**  
+http://localhost:3000/narratives?entity=SPE-WBG&period=2026-08  
+http://localhost:3000/narratives/packs/monthly_investor?entity=SPE-WBG&period=2026-08  
 http://localhost:3000/dashboard  
 http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08  
 http://localhost:3000/dashboard/ratios/noi_period?entity=SPE-WBG&period=2026-08  
@@ -58,13 +60,23 @@ http://localhost:3000/close?entity=SPE-WBG&period=2026-07
 
 Close demo: WBG `2026-07` is **hard locked**. CVC `2026-07` is **soft closed**. August stays open.
 
+## Phase E — infographics, narratives, report packs
+
+- **Chart layer** — Recharts (light/dark RCP themes) plus print-ready PDF vectors and PPTX Office charts: GPR→NOI→BTCF waterfall; NOI / book-occupancy / OpEx ratio / DSCR trends; OpEx composition; CapEx vs reserves; debt maturity wall; NOI concentration and SPE heatmap; actual vs budget bridge; BS composition.
+- **Narrative engine** — LP, GP, Investment Committee, Lender, and Management Committee tones from the **same** period snapshot. Copy is plain professional English and cites key numbers with units. Regenerates when entity or period changes. IC memo includes a deterministic go / hold / fix.
+- **Packs** — Monthly Investor Pack (LP), Quarterly Lender Pack, IC Memo Pack, Management Flash. Export **PDF** and **PPTX**. Catalog: [docs/RCP_REPORT_CATALOG.md](./docs/RCP_REPORT_CATALOG.md).
+- **UI** — `/narratives` replaces the Phase D stub. Pack preview at `/narratives/packs/{id}`. Alias `/reports/packs`.
+- **API** — `GET /api/narratives?entity=SPE-WBG&period=2026-08` · `&audience=lp` · `GET /api/packs` · `GET /api/packs/monthly_investor?entity=SPE-WBG&period=2026-08&format=pdf|pptx|json`
+
+BTCF = period NOI − interest − principal (AM stays below NOI). CFADS remains the Phase D distributions proxy. T12 is not silently annualized. LTV and delinquency stay gated.
+
 ## Phase D — OpCo + property ratio dashboards
 
 - **Live dictionary** — `@rcp/analytics` implements [docs/RCP_RATIO_DICTIONARY_STUB.md](./docs/RCP_RATIO_DICTIONARY_STUB.md) with explicit formulas, units, and NOI definition labels (**period** vs **T12** vs **annualized period**). T12 is incomplete on the two-month demo seed and is not silently annualized.
 - **Property dashboard** — `/dashboard/[entityCode]` (e.g. `SPE-WBG`): period NOI, NOI/unit, EGI, OpEx ratio, tagged controllable OpEx, CapEx vs reserves, CFADS and CFADS/DSCR, cash, NOI budget variance, rent-roll physical occupancy / loss-to-lease / book economic occupancy / breakeven, loan DSCR / debt yield / UPB / maturity. Delinquency and LTV stay gated.
 - **OpCo dashboard** — `/dashboard` → `RCP-OPCO` combined: properties/units, look-through NOI and NOI/unit, liquidity months, look-through UPB / DSCR / debt yield (not LTV), fee income, G&A%, covenant watchlist, NOI concentration. Combined roll-up is labeled **not a GAAP consolidation**.
 - **Drill-down** — every tile opens `/dashboard/ratios/[id]` with the formula, NOI label, contributing accounts or rent-roll fields, and links to OS / TB / debt / rent roll / CapEx.
-- **Phase E** — `/narratives` is a stub only (no PDF packs).
+- **Phase E** — live at `/narratives` (this release).
 
 API: `GET /api/dashboard?entity=SPE-WBG&period=2026-08` · `GET /api/ratios`
 
@@ -134,12 +146,12 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 | `@rcp/ledger` | CoA, double-entry, TB / IS / BS / CF, close rules, IC match |
 | `@rcp/debt` | Loan amort, covenants, debt-service / CIP / current-portion journals |
 | `@rcp/properties` | Unit master, rent-roll CSV, occupancy / loss-to-lease |
-| `@rcp/reporting` | Operating statement + budget / MoM variance |
+| `@rcp/reporting` | Operating statement + variance + chart suite + five-audience narratives + pack assembly |
 | `@rcp/analytics` | Live ratio dictionary + formula helpers; LTV and delinquency still gated |
-| `@rcp/rcp-brand` | Institutional brand tokens |
+| `@rcp/rcp-brand` | Institutional brand tokens + chart themes |
 | `@rcp/entities` | HoldCo / OpCo / SPE types |
 | `@rcp/tax-bridge` | Phase F stub |
-| `@rcp/documents` | Phase E stub |
+| `@rcp/documents` | PDF / PPTX pack export; vault / scheduler remain Phase F stubs |
 
 ## Docs
 
@@ -148,6 +160,7 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 - [VERIFY_PHASE_B.md](./VERIFY_PHASE_B.md)
 - [VERIFY_PHASE_C.md](./VERIFY_PHASE_C.md)
 - [VERIFY_PHASE_D.md](./VERIFY_PHASE_D.md)
+- [VERIFY_PHASE_E.md](./VERIFY_PHASE_E.md)
 - [docs/RCP_COA_OUTLINE.md](./docs/RCP_COA_OUTLINE.md)
 - [docs/RCP_SPE_MONTHLY_CLOSE.md](./docs/RCP_SPE_MONTHLY_CLOSE.md)
 - [docs/RCP_DEBT.md](./docs/RCP_DEBT.md)
@@ -155,7 +168,8 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 - [docs/RCP_INTERCOMPANY.md](./docs/RCP_INTERCOMPANY.md)
 - [docs/RCP_OPERATING_KPIS.md](./docs/RCP_OPERATING_KPIS.md)
 - [docs/RCP_RATIO_DICTIONARY_STUB.md](./docs/RCP_RATIO_DICTIONARY_STUB.md)
+- [docs/RCP_REPORT_CATALOG.md](./docs/RCP_REPORT_CATALOG.md)
 
 ## Out of scope
 
-Phase E narratives/PDF (stub only). Phase F tax. No live PMS or bank feed. No promote waterfall. No BigBrainRE underwriting. No LTV from book cost.
+Phase F tax / K-1 / document vault / scheduler (stubs only). No live PMS or bank feed. No promote waterfall. No BigBrainRE underwriting. No LTV from book cost.

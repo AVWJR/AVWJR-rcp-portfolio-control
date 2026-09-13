@@ -33,9 +33,15 @@ export function EntitySwitcher({
       entity: next.entity ?? activeEntity,
       period: next.period ?? period,
     });
-    const view = next.view ?? (consolidated ? "combined" : "standalone");
-    if (view === "combined" || view === "consolidated") params.set("view", "combined");
     const entity = next.entity ?? activeEntity;
+    const nextType = entities.find((e) => e.code === entity)?.type;
+    const defaultView = nextType === "OPCO" || consolidated ? "combined" : "standalone";
+    const view = next.view ?? defaultView;
+    if (view === "combined" || view === "consolidated") params.set("view", "combined");
+    if (pathname.startsWith("/narratives/packs/")) {
+      router.push(`${pathname}?${params.toString()}`);
+      return;
+    }
     if (pathname === "/dashboard" || pathname.startsWith("/dashboard/SPE-") || pathname === "/dashboard/RCP-OPCO") {
       const dest =
         entity.startsWith("SPE-") || entity === "RCP-OPCO"

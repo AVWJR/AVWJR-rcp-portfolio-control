@@ -1,13 +1,18 @@
 /**
- * Document vault stub.
- * TODO(Phase E): audience narratives, PDF packs, operating agreements,
- * rent rolls, bank recs, lender notices. Phase D dashboards do not emit PDFs.
- * No live PMS or bank attachments.
+ * Phase E: report-pack catalog and PDF / PPTX exporters.
+ * Document vault, K-1 packets, and scheduler remain Phase F stubs.
  */
 
-export type DocumentKind = "oa" | "rent_roll" | "bank_rec" | "lender" | "narrative" | "pdf_pack" | "other";
+export {
+  PHASE_F_SCHEDULER_TODO,
+  PHASE_F_VAULT_TODO,
+  REPORT_PACKS,
+  listReportPacks,
+} from "./catalog";
+export { renderPdfPack } from "./pdf-pack";
+export { renderPptxPack } from "./pptx-pack";
 
-export const DOCUMENTS_STATUS = "not_implemented" as const;
+export const DOCUMENTS_STATUS = "packs_ready" as const;
 
 export const PHASE_E_TODO =
-  "TODO(Phase E): audience narratives and PDF packs. Do not generate lender/investor PDFs from Phase D dashboards.";
+  "Phase E live: audience narratives and PDF/PPTX packs at /narratives. Vault / scheduler are Phase F.";
