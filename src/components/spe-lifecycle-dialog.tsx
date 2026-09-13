@@ -94,7 +94,7 @@ export function SpeLifecycleDialog({
         {triggerLabel}
       </button>
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/50 px-4" role="presentation" onClick={close}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/50 px-4" role="presentation" onClick={() => close()}>
           <div
             role="dialog"
             aria-modal="true"
@@ -125,7 +125,7 @@ export function SpeLifecycleDialog({
                   <button
                     type="button"
                     className="border border-navy-900 px-4 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900"
-                    onClick={close}
+                    onClick={() => close()}
                   >
                     Cancel
                   </button>
@@ -163,7 +163,7 @@ export function SpeLifecycleDialog({
                     type="button"
                     className="border border-navy-900 px-4 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900"
                     disabled={busy}
-                    onClick={close}
+                    onClick={() => close()}
                   >
                     Cancel
                   </button>

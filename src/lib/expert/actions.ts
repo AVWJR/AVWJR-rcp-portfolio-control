@@ -303,7 +303,7 @@ export function rankSuggestedActions(
   }
 
   if (page.startsWith("/archive") && !viewer) {
-    return [
+    const archiveActions: ExpertSuggestedAction[] = [
       {
         id: "act_restore",
         kind: "intent",
@@ -317,7 +317,8 @@ export function rankSuggestedActions(
         label: "Back to live Deals",
         href: dest("/deals", ctx),
       },
-    ].slice(0, MAX_CHROME);
+    ];
+    return archiveActions.slice(0, MAX_CHROME);
   }
 
   if (!viewer && (page.startsWith("/properties") || page.startsWith("/dashboard"))) {
