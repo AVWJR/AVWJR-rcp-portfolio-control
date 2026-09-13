@@ -1,6 +1,19 @@
-import type { AudienceId, AudienceNarrative } from "@rcp/reporting";
+import type { AudienceId, AudienceNarrative, NarrativeCitation } from "@rcp/reporting";
 import { AUDIENCE_LABELS, AUDIENCES } from "@rcp/reporting";
 import Link from "next/link";
+
+function KpiTile({ citation: c }: { citation: NarrativeCitation }) {
+  return (
+    <div className="border border-cream-200 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-gold-700">{c.label}</p>
+      <p className="tabular text-sm font-semibold text-navy-900">{c.value}</p>
+      <p className="text-[10px] text-ink-500">
+        {c.unit} · {c.source}
+        {c.noiDefinition ? ` · ${c.noiDefinition}` : ""}
+      </p>
+    </div>
+  );
+}
 
 export function NarrativeView({
   narrative,
@@ -17,21 +30,33 @@ export function NarrativeView({
       <h2 className="font-display text-3xl text-navy-900">{narrative.title}</h2>
       <p className="mt-1 text-sm text-ink-700">{narrative.dek}</p>
       {narrative.tone ? <p className="mt-1 text-xs italic text-ink-500">{narrative.tone}</p> : null}
+      {narrative.seedDisclaimer ? (
+        <p className="mt-3 border border-cream-300 bg-cream-50 px-3 py-2 text-xs text-ink-700" role="note">
+          {narrative.seedDisclaimer}
+        </p>
+      ) : null}
       {narrative.recommendation ? (
         <p className="mt-3 border border-gold-500 bg-cream-50 px-3 py-2 text-sm text-navy-900">
           <strong>{narrative.recommendation.action}</strong> — {narrative.recommendation.rationale}
         </p>
       ) : null}
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {narrative.citations.slice(0, compact ? 6 : narrative.citations.length).map((c) => (
-          <div key={c.id} className="border border-cream-200 px-3 py-2">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-gold-700">{c.label}</p>
-            <p className="tabular text-sm font-semibold text-navy-900">{c.value}</p>
-            <p className="text-[10px] text-ink-500">
-              {c.unit} · {c.source}
-            </p>
+      {narrative.sharedCitations.length ? (
+        <div className="mt-4">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-ink-500">Shared KPIs</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {(compact ? narrative.sharedCitations.slice(0, 4) : narrative.sharedCitations).map((c) => (
+              <KpiTile key={c.id} citation={c} />
+            ))}
           </div>
-        ))}
+        </div>
+      ) : null}
+      <div className="mt-4">
+        <p className="text-[10px] uppercase tracking-[0.16em] text-ink-500">{narrative.audienceLabel} KPIs</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {(compact ? narrative.specificCitations.slice(0, 6) : narrative.specificCitations).map((c) => (
+            <KpiTile key={c.id} citation={c} />
+          ))}
+        </div>
       </div>
       <div className="mt-5 space-y-4">
         {narrative.sections.map((section) => (

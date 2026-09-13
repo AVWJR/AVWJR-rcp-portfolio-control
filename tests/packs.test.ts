@@ -55,13 +55,17 @@ describe("pack build smoke", () => {
     expect(investor.narrative.citations.map((c) => c.id)).not.toEqual(lender.narrative.citations.map((c) => c.id));
     const investorKpiSlide = investor.slides.find((s) => s.kind === "kpis");
     const lenderKpiSlide = lender.slides.find((s) => s.kind === "kpis");
-    expect(investorKpiSlide && investorKpiSlide.kind === "kpis" ? investorKpiSlide.kpis.map((k) => k.label) : []).toContain(
-      "NOI / unit",
-    );
-    expect(lenderKpiSlide && lenderKpiSlide.kind === "kpis" ? lenderKpiSlide.kpis.map((k) => k.label) : []).toContain("DSCR");
+    const investorLabels = investor.slides.filter((s) => s.kind === "kpis").flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
+    const lenderLabels = lender.slides.filter((s) => s.kind === "kpis").flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
+    expect(investorLabels).toContain("NOI / unit");
+    expect(lenderLabels).toContain("DSCR");
+    expect(investorLabels).not.toContain("DSCR");
     expect(lender.meta.charts).toContain("coverage_vs_threshold");
     expect(investor.meta.charts).toContain("portfolio_concentration");
+    expect(investor.meta.charts).toContain("t12_status");
     expect(investor.meta.charts).not.toEqual(lender.meta.charts);
+    expect(investorKpiSlide && investorKpiSlide.kind === "kpis").toBe(true);
+    expect(lenderKpiSlide && lenderKpiSlide.kind === "kpis").toBe(true);
   });
 
   it("keeps gated LTV language in pack disclosures", () => {

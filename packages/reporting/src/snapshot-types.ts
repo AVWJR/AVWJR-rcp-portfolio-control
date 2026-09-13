@@ -207,6 +207,13 @@ export type PeriodSnapshot = {
   bsTotalEquityCents: bigint;
   bsBalanced: boolean;
   capexProjects: CapexBrief[];
+
+  closeStatus: "open" | "soft_closed" | "closed" | "unknown";
+  glDebtCents: bigint | null;
+  leaseRollover12mCount: number | null;
+  propertyCount: number;
+  vaultDocCount: number | null;
+  schedulerJobCount: number | null;
 };
 
 /** BTCF presentation identity: period NOI − interest − principal. AM stays below NOI. */

@@ -185,15 +185,13 @@ export function ChartSuiteView({
         {show("portfolio_concentration") ? (
           <ChartFrame title={suite.concentration.title} footnote={suite.concentration.footnote} themeName={themeName}>
             <ResponsiveContainer>
-              <PieChart>
-                <Pie data={suite.concentration.slices} dataKey="usd" nameKey="label" cx="50%" cy="50%" outerRadius={90}>
-                  {suite.concentration.slices.map((s, i) => (
-                    <Cell key={s.key} fill={theme.series[i % theme.series.length]} />
-                  ))}
-                </Pie>
+              <BarChart data={suite.concentration.slices}>
+                <CartesianGrid stroke={theme.grid} vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: theme.axis, fontSize: 10 }} />
+                <YAxis tick={{ fill: theme.axis, fontSize: 10 }} />
                 <Tooltip />
-                <Legend />
-              </PieChart>
+                <Bar dataKey="usd" name="Period NOI $" fill={theme.navy} />
+              </BarChart>
             </ResponsiveContainer>
           </ChartFrame>
         ) : null}
@@ -285,9 +283,118 @@ export function ChartSuiteView({
             </ResponsiveContainer>
           </ChartFrame>
         ) : null}
+        {show("upb_stack") ? (
+          <ChartFrame title={suite.upbStack.title} footnote={suite.upbStack.footnote} themeName={themeName}>
+            <ResponsiveContainer>
+              <BarChart data={suite.upbStack.bars}>
+                <CartesianGrid stroke={theme.grid} vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: theme.axis, fontSize: 10 }} />
+                <YAxis tick={{ fill: theme.axis, fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="usd" name="UPB $" fill={theme.navy} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartFrame>
+        ) : null}
       </div>
+      {show("covenant_watchlist") ? <WatchlistStrip suite={suite} themeName={themeName} /> : null}
+      {show("t12_status") ? <T12Callout suite={suite} themeName={themeName} /> : null}
+      {show("decision_posture") ? <DecisionStrip suite={suite} themeName={themeName} /> : null}
+      {show("close_control") ? <CloseControlStrip suite={suite} themeName={themeName} /> : null}
       {show("portfolio_heatmap") ? <HeatmapTable suite={suite} themeName={themeName} /> : null}
     </div>
+  );
+}
+
+function WatchlistStrip({ suite, themeName }: { suite: ChartSuite; themeName: RcpChartThemeName }) {
+  const theme = rcpChartTheme(themeName);
+  return (
+    <figure className="border px-4 py-3" style={{ background: theme.surface, borderColor: theme.grid, color: theme.text }}>
+      <figcaption className="font-display text-xl" style={{ color: theme.navy }}>
+        {suite.covenantWatchlist.title}
+      </figcaption>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {suite.covenantWatchlist.rows.map((row) => (
+          <span
+            key={row.key}
+            className="px-3 py-1 text-sm"
+            style={{
+              background: row.tone === "fail" ? "#8A6F3A" : theme.navy,
+              color: "#F7F3EA",
+            }}
+          >
+            {row.label}: {row.reason}
+          </span>
+        ))}
+      </div>
+      <p className="mt-2 text-xs" style={{ color: theme.muted }}>
+        {suite.covenantWatchlist.footnote}
+      </p>
+    </figure>
+  );
+}
+
+function T12Callout({ suite, themeName }: { suite: ChartSuite; themeName: RcpChartThemeName }) {
+  const theme = rcpChartTheme(themeName);
+  return (
+    <figure className="border px-4 py-3" style={{ background: theme.surface, borderColor: theme.grid, color: theme.text }}>
+      <figcaption className="font-display text-xl" style={{ color: theme.navy }}>
+        {suite.t12Status.title}
+      </figcaption>
+      <p className="mt-2 text-lg font-semibold" style={{ color: theme.navy }}>
+        {suite.t12Status.complete
+          ? `T12 ready · ${suite.t12Status.monthsAvailable}/12`
+          : `T12 incomplete · ${suite.t12Status.monthsAvailable}/12 months · not annualized`}
+      </p>
+      <p className="text-sm">{suite.t12Status.label}</p>
+      <p className="mt-2 text-xs" style={{ color: theme.muted }}>
+        {suite.t12Status.footnote}
+      </p>
+    </figure>
+  );
+}
+
+function DecisionStrip({ suite, themeName }: { suite: ChartSuite; themeName: RcpChartThemeName }) {
+  const theme = rcpChartTheme(themeName);
+  return (
+    <figure className="border px-4 py-3" style={{ background: theme.surface, borderColor: theme.grid, color: theme.text }}>
+      <figcaption className="font-display text-xl" style={{ color: theme.navy }}>
+        {suite.decisionPosture.title}
+      </figcaption>
+      <p className="mt-2 text-2xl font-semibold" style={{ color: theme.navy }}>
+        {suite.decisionPosture.action}
+      </p>
+      <p className="mt-1 text-sm">{suite.decisionPosture.rationale}</p>
+      <ul className="mt-2 list-disc pl-5 text-xs" style={{ color: theme.muted }}>
+        {suite.decisionPosture.conditions.map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
+    </figure>
+  );
+}
+
+function CloseControlStrip({ suite, themeName }: { suite: ChartSuite; themeName: RcpChartThemeName }) {
+  const theme = rcpChartTheme(themeName);
+  return (
+    <figure className="border px-4 py-3" style={{ background: theme.surface, borderColor: theme.grid, color: theme.text }}>
+      <figcaption className="font-display text-xl" style={{ color: theme.navy }}>
+        {suite.closeControl.title}
+      </figcaption>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {suite.closeControl.rows.map((row) => (
+          <div key={row.key} className="border px-3 py-2" style={{ borderColor: theme.grid }}>
+            <p className="text-[10px] uppercase tracking-[0.14em]" style={{ color: theme.gold }}>
+              {row.label}
+            </p>
+            <p className="text-sm font-semibold">{row.display}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs" style={{ color: theme.muted }}>
+        {suite.closeControl.footnote}
+      </p>
+    </figure>
   );
 }
 
@@ -306,7 +413,7 @@ function HeatmapTable({ suite, themeName }: { suite: ChartSuite; themeName: RcpC
         {suite.heatmap.title}
       </figcaption>
       <p className="mt-1 text-xs" style={{ color: theme.muted }}>
-        LTV stays gated. Book occupancy is EGI / GPR. Physical occupancy is rent-roll sourced when present.
+        SPE scoreboard. Book occupancy is EGI / GPR. Physical occupancy is rent-roll sourced when present. LTV omitted (gated).
       </p>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm">

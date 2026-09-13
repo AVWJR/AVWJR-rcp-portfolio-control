@@ -88,6 +88,9 @@ function kpi(label: string, value: string, hint: string): PackKpi {
 
 function commonDisclosures(snap: PeriodSnapshot): string[] {
   return [
+    snap.entityCode === "SPE-WBG" || snap.entityCode === "RCP-OPCO"
+      ? `Seed / demo disclaimer: ${snap.entityCode} demo months. T12 incomplete is not annualized.`
+      : `Book basis · USD · en-US · America/New_York · integer cents. Period ${snap.period}.`,
     `Book basis · USD · en-US · America/New_York · integer cents. Period ${snap.period}.`,
     snap.t12Complete
       ? `T12 NOI ${formatUsd(snap.t12NoiCents)}.`
@@ -114,7 +117,9 @@ function coverBullets(snap: PeriodSnapshot, audience: AudienceId): string[] {
 }
 
 function kpisFromCitations(citations: NarrativeCitation[]): PackKpi[] {
-  return citations.slice(0, 8).map((c) => kpi(c.label, c.value, `${c.unit} · ${c.source}`));
+  return citations.map((c) =>
+    kpi(c.label, c.value, `${c.unit} · ${c.source}${c.noiDefinition ? ` · ${c.noiDefinition}` : ""}`),
+  );
 }
 
 export function buildPack(snap: PeriodSnapshot, packId: PackId): BuiltPack {
@@ -122,7 +127,8 @@ export function buildPack(snap: PeriodSnapshot, packId: PackId): BuiltPack {
   if (!meta) throw new Error(`Unknown pack ${packId}`);
   const charts = buildChartSuite(snap);
   const narrative = buildNarrative(snap, meta.audience);
-  const kpis = kpisFromCitations(narrative.citations);
+  const sharedKpis = kpisFromCitations(narrative.sharedCitations);
+  const specificKpis = kpisFromCitations(narrative.specificCitations);
   const slides: PackSlide[] = [
     {
       kind: "cover",
@@ -130,7 +136,10 @@ export function buildPack(snap: PeriodSnapshot, packId: PackId): BuiltPack {
       subtitle: `${snap.entityName} · ${periodLabel(snap.period)}`,
       bullets: coverBullets(snap, meta.audience),
     },
-    { kind: "kpis", title: "Period snapshot", kpis },
+    ...(sharedKpis.length
+      ? [{ kind: "kpis" as const, title: "Shared snapshot (3+ audiences)", kpis: sharedKpis }]
+      : []),
+    { kind: "kpis", title: `${AUDIENCE_LABELS[meta.audience]} KPIs`, kpis: specificKpis },
     ...meta.charts.map((chartId) => ({ kind: "chart" as const, title: CHART_TITLES[chartId], chartId })),
     { kind: "narrative", title: `${AUDIENCE_LABELS[meta.audience]} narrative`, narrative },
     { kind: "disclosures", title: "Disclosures", bullets: commonDisclosures(snap) },

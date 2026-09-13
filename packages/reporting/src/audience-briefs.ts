@@ -1,6 +1,6 @@
 import type { ChartId } from "./charts";
 import type { AudienceId } from "./snapshot-types";
-import { AUDIENCE_LABELS } from "./snapshot-types";
+import { AUDIENCE_LABELS, AUDIENCES } from "./snapshot-types";
 
 export type AudienceKpiId =
   | "noi"
@@ -9,10 +9,12 @@ export type AudienceKpiId =
   | "occupancy"
   | "occ_book"
   | "breakeven"
+  | "be_cushion"
   | "budget_variance"
   | "cash"
   | "btcf"
   | "cfads"
+  | "cfads_dscr"
   | "dscr"
   | "debt_yield"
   | "upb"
@@ -23,12 +25,20 @@ export type AudienceKpiId =
   | "liquidity"
   | "fee_income"
   | "am_fees"
+  | "ga_ratio"
   | "look_through_noi"
   | "concentration"
   | "controllable_opex"
   | "ltl"
   | "capex"
-  | "recommendation";
+  | "recommendation"
+  | "t12_status"
+  | "annualized_noi"
+  | "lease_rollover"
+  | "close_status"
+  | "mom"
+  | "units"
+  | "properties";
 
 export type AudienceBrief = {
   audience: AudienceId;
@@ -43,35 +53,13 @@ export type AudienceBrief = {
 };
 
 export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
-  lender: {
-    audience: "lender",
-    label: AUDIENCE_LABELS.lender,
-    title: "Lender credit memo",
-    dek: "Covenant coverage, debt service, reserves, maturity, and occupancy versus breakeven — not an LP update.",
-    tone: "Covenant / credit memo. Numeric. Conservative. No investor-return theater.",
-    sectionHeadings: [
-      "DSCR and debt yield versus threshold",
-      "Debt service, UPB, and maturity",
-      "NOI available for debt service",
-      "Occupancy, breakeven, and covenant watch",
-      "Reserves and CapEx as collateral",
-    ],
-    kpiIds: ["dscr", "debt_yield", "upb", "debt_service", "reserves", "maturity", "noi", "occupancy", "breakeven", "covenant_watch"],
-    chartIds: ["coverage_vs_threshold", "trends_noi_occupancy_opex_dscr", "debt_maturity_wall", "capex_vs_reserves"],
-    exclude: ["LP IRR", "promote waterfall", "IC go/hold theater", "G&A politics"],
-  },
   lp: {
     audience: "lp",
     label: AUDIENCE_LABELS.lp,
     title: "Limited Partner update",
-    dek: "Stewardship update: period NOI and NOI/unit versus plan, occupancy (physical and book), concentration, liquidity, and CFADS as a distributions proxy.",
-    tone: "Capital-partner stewardship. One to two pages. Cites units. Covenants appear only as a fail strip — not the lead story.",
-    sectionHeadings: [
-      "Period NOI and NOI per unit",
-      "Occupancy, book economic occupancy, and loss-to-lease",
-      "Capital at risk",
-      "Cash, BTCF, and distributions proxy",
-    ],
+    dek: "Stewardship: period NOI and NOI/unit versus plan, capital at risk (concentration, covenant stress, liquidity), and the ask / next capital event.",
+    tone: "Capital-partner stewardship. One to two pages. Cites units. Covenant fails appear only as a watchlist strip — not the lead story.",
+    sectionHeadings: ["NOI / NOI-unit versus plan", "Capital at risk", "Ask / next capital event"],
     kpiIds: [
       "look_through_noi",
       "noi_per_unit",
@@ -80,26 +68,26 @@ export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
       "occupancy",
       "occ_book",
       "ltl",
-      "breakeven",
+      "be_cushion",
       "concentration",
       "liquidity",
       "upb",
     ],
-    chartIds: ["portfolio_concentration", "occupancy_breakeven", "actual_vs_budget_bridge", "coverage_vs_threshold"],
-    exclude: ["loan covenant minutiae as the lead", "raw trial-balance dumps", "invented LTV"],
+    chartIds: ["portfolio_concentration", "occupancy_breakeven", "t12_status", "covenant_watchlist"],
+    exclude: [
+      "full chart of accounts dump",
+      "K-1 / tax bridge detail",
+      "OpCo G&A% deep dive",
+      "gated LTV or delinquency shown as live",
+    ],
   },
   gp: {
     audience: "gp",
     label: AUDIENCE_LABELS.gp,
     title: "General Partner operating view",
-    dek: "What to intervene on this month: per-SPE NOI, fee income versus property, CapEx versus reserves, and the problem-child file.",
-    tone: "Sponsor operating view. Actionable. Blunt is fine. Fee income is below NOI on the SPE.",
-    sectionHeadings: [
-      "Fee income below NOI",
-      "Look-through NOI and SPE contribution",
-      "Liquidity runway",
-      "Execution versus plan",
-    ],
+    dek: "What to intervene on this month: fee income and OpCo burn versus property, and the problem-child SPE.",
+    tone: "Sponsor operating view. Actionable. Blunt is fine. Lender-legal jargon is not the spine.",
+    sectionHeadings: ["Intervene this month", "Fee income / OpCo burn versus property", "Problem-child SPE"],
     kpiIds: [
       "noi",
       "occupancy",
@@ -110,50 +98,83 @@ export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
       "cfads",
       "budget_variance",
       "fee_income",
+      "ga_ratio",
       "liquidity",
+      "lease_rollover",
     ],
-    chartIds: ["portfolio_heatmap", "capex_vs_reserves", "portfolio_concentration", "fee_vs_noi"],
-    exclude: ["LP waterfall fluff", "lender covenant memo as the spine"],
+    chartIds: ["portfolio_heatmap", "capex_vs_reserves", "covenant_watchlist"],
+    exclude: ["lender-legal jargon as the primary frame", "tax M-1", "fake delinquency"],
   },
   ic: {
     audience: "ic",
     label: AUDIENCE_LABELS.ic,
     title: "Investment Committee memo",
-    dek: "Underwrite-to-decision: go / hold / fix, period versus T12 versus annualized labels, concentration, and what would change the call.",
-    tone: "Decision memo. Skeptical. Recommendation first. No silent T12 annualization. LTV stays gated.",
-    sectionHeadings: [
-      "Go / hold / fix",
-      "Thesis versus actuals",
-      "Key risks",
-      "CapEx and CIP status",
-      "What would change the call",
+    dek: "Underwrite-to-decision: go / hold / kill on thesis, clean period vs T12 vs annualized labels, and explicit falsifiers.",
+    tone: "Decision memo. Skeptical. Recommendation first. No silent T12 annualization. LTV stays gated without appraisal.",
+    sectionHeadings: ["Go / hold / kill", "Period versus T12 versus annualized", "Falsifiers"],
+    kpiIds: [
+      "recommendation",
+      "noi",
+      "t12_status",
+      "annualized_noi",
+      "dscr",
+      "debt_yield",
+      "maturity",
+      "occupancy",
+      "occ_book",
+      "be_cushion",
+      "ltl",
+      "concentration",
     ],
-    kpiIds: ["recommendation", "noi", "budget_variance", "dscr", "debt_yield", "occupancy", "concentration", "capex", "maturity"],
-    chartIds: [
-      "coverage_vs_threshold",
-      "debt_maturity_wall",
-      "actual_vs_budget_bridge",
-      "portfolio_concentration",
-      "portfolio_heatmap",
+    chartIds: ["decision_posture", "upb_stack", "t12_status"],
+    exclude: ["marketing fluff", "unlabeled annualized-as-T12", "LTV without appraisal"],
+  },
+  lender: {
+    audience: "lender",
+    label: AUDIENCE_LABELS.lender,
+    title: "Lender credit memo",
+    dek: "Covenant-first: in covenant, cure path, DSCR / debt yield / reserves / maturity, and collateral ops (occupancy, breakeven, cash).",
+    tone: "Covenant-first credit memo. Numeric. No spin. No LP narrative. OpCo fee is not property cash.",
+    sectionHeadings: ["In covenant?", "Cure path", "Collateral operations"],
+    kpiIds: [
+      "dscr",
+      "debt_yield",
+      "upb",
+      "maturity",
+      "reserves",
+      "capex",
+      "occupancy",
+      "breakeven",
+      "occ_book",
+      "cash",
+      "cfads",
+      "cfads_dscr",
+      "covenant_watch",
     ],
-    exclude: ["LP distribution theater", "site-level weekly punch list as the memo"],
+    chartIds: ["coverage_vs_threshold", "trends_noi_occupancy_opex_dscr", "debt_maturity_wall", "capex_vs_reserves"],
+    exclude: ["OpCo fee as property cash", "LP stewardship narrative", "tax / K-1", "invented LTV"],
   },
   mgmt: {
     audience: "mgmt",
     label: AUDIENCE_LABELS.mgmt,
-    title: "Management flash",
-    dek: "Controller-plus-ops flash: close hygiene, AM below NOI, variance, occupancy / LTL, and what ships externally.",
-    tone: "Controller + ops checklist. Combined roll-up is not a GAAP consolidation. No tax-filing language.",
-    sectionHeadings: [
-      "What to do this week",
-      "Occupancy and loss-to-lease",
-      "Controllable OpEx and variance drivers",
-      "CapEx versus R&M",
-      "Period-close follow-through",
+    title: "Management Committee close",
+    dek: "Controller-plus-ops checklist: books close clean, combined coherent, variance / IC / close locks, and what ships externally.",
+    tone: "Controller + ops checklist. Combined roll-up is not a GAAP consolidation. No tax-filing language. No marketing copy.",
+    sectionHeadings: ["Books close clean?", "Combined coherent?", "What ships externally?"],
+    kpiIds: [
+      "close_status",
+      "am_fees",
+      "budget_variance",
+      "mom",
+      "look_through_noi",
+      "concentration",
+      "covenant_watch",
+      "occupancy",
+      "units",
+      "properties",
     ],
-    kpiIds: ["occupancy", "ltl", "breakeven", "controllable_opex", "budget_variance", "look_through_noi", "concentration", "am_fees"],
-    chartIds: ["actual_vs_budget_bridge", "portfolio_heatmap", "opex_composition", "capex_vs_reserves"],
-    exclude: ["IC go/hold theater", "LP IRR / waterfall fluff", "raw TB dumps"],
+    chartIds: ["close_control", "actual_vs_budget_bridge", "portfolio_heatmap"],
+    exclude: ["marketing copy", "claiming GAAP consolidation", "tax filing language"],
   },
 };
 
@@ -167,4 +188,29 @@ export function audienceChartIds(audience: AudienceId): ChartId[] {
 
 export function audienceKpiIds(audience: AudienceId): AudienceKpiId[] {
   return AUDIENCE_BRIEFS[audience].kpiIds;
+}
+
+/** KPI ids that appear on three or more audience briefs — the only shared strip. */
+export function sharedAudienceKpiIds(): AudienceKpiId[] {
+  const counts = new Map<AudienceKpiId, number>();
+  for (const audience of AUDIENCES) {
+    for (const id of AUDIENCE_BRIEFS[audience].kpiIds) {
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].filter(([, n]) => n >= 3).map(([id]) => id);
+}
+
+export function partitionAudienceKpis(audience: AudienceId): {
+  shared: AudienceKpiId[];
+  specific: AudienceKpiId[];
+} {
+  const shared = new Set(sharedAudienceKpiIds());
+  const sharedIds: AudienceKpiId[] = [];
+  const specific: AudienceKpiId[] = [];
+  for (const id of AUDIENCE_BRIEFS[audience].kpiIds) {
+    if (shared.has(id)) sharedIds.push(id);
+    else specific.push(id);
+  }
+  return { shared: sharedIds, specific };
 }

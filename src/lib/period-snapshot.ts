@@ -24,7 +24,7 @@ import {
   type IncomeStatement,
   type PostedLine,
 } from "@rcp/ledger";
-import { bookEconomicOccupancy, breakevenOccupancy, summarizeRentRoll } from "@rcp/properties";
+import { bookEconomicOccupancy, breakevenOccupancy, summarizeRentRoll, type UnitSnapshot } from "@rcp/properties";
 import { pairVariance, btcfCents, type MoneyLine, type PeriodSnapshot, type TrendPoint } from "@rcp/reporting";
 import { loadCapexProjects } from "./capex";
 import { buildOpCoDashboard, buildPropertyDashboard } from "./dashboards";
@@ -33,6 +33,67 @@ import { buildOperatingPackage } from "./operating";
 import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
+
+function leaseRollover12mCount(units: { leaseEnd: Date | null }[], asOf: Date): number | null {
+  if (!units.length) return null;
+  if (!units.some((u) => u.leaseEnd)) return null;
+  const horizon = new Date(asOf.getTime());
+  horizon.setUTCFullYear(horizon.getUTCFullYear() + 1);
+  return units.filter((u) => u.leaseEnd && u.leaseEnd > asOf && u.leaseEnd <= horizon).length;
+}
+
+function glMortgageCents(throughEnd: PostedLine[]): bigint {
+  let n = 0n;
+  for (const line of throughEnd) {
+    if (line.accountCode === "2110" || line.accountCode === "2210") n += line.credit - line.debit;
+  }
+  return n;
+}
+
+function mapCloseStatus(status: string | undefined): PeriodSnapshot["closeStatus"] {
+  if (status === "CLOSED") return "closed";
+  if (status === "SOFT_CLOSED") return "soft_closed";
+  if (status === "OPEN") return "open";
+  return "unknown";
+}
+
+async function loadOpsControls(opts: {
+  entityId: string;
+  entityIds: string[];
+  entityCode: string;
+  year: number;
+  month: number;
+  throughEnd: PostedLine[];
+  units: { leaseEnd: Date | null }[];
+  asOf: Date;
+  propertyCount: number;
+}): Promise<{
+  closeStatus: PeriodSnapshot["closeStatus"];
+  glDebtCents: bigint;
+  leaseRollover12mCount: number | null;
+  propertyCount: number;
+  vaultDocCount: number;
+  schedulerJobCount: number;
+}> {
+  const [periodRow, vaultDocCount, schedulerJobCount] = await Promise.all([
+    prisma.period.findUnique({
+      where: { entityId_year_month: { entityId: opts.entityId, year: opts.year, month: opts.month } },
+      select: { status: true },
+    }),
+    prisma.vaultDocument.count({ where: { entityId: { in: opts.entityIds } } }),
+    prisma.reportJob.count({
+      where: { OR: [{ entityId: { in: opts.entityIds } }, { entityCode: opts.entityCode }] },
+    }),
+  ]);
+  return {
+    closeStatus: mapCloseStatus(periodRow?.status),
+    glDebtCents: glMortgageCents(opts.throughEnd),
+    leaseRollover12mCount: leaseRollover12mCount(opts.units, opts.asOf),
+    propertyCount: opts.propertyCount,
+    vaultDocCount,
+    schedulerJobCount,
+  };
+}
 
 function debitNetMap(lines: PostedLine[]): Map<string, bigint> {
   const map = new Map<string, bigint>();
@@ -204,6 +265,17 @@ async function loadSpeSnapshot(opts: {
   const trends = await trendForEntity(opts.entityId, opts.year, opts.month);
   const t12 = dash.t12;
   const entity = pack.scope.entity;
+  const controls = await loadOpsControls({
+    entityId: opts.entityId,
+    entityIds: [opts.entityId],
+    entityCode: entity.code,
+    year: opts.year,
+    month: opts.month,
+    throughEnd: pack.scope.throughEnd,
+    units: pack.units,
+    asOf: pack.scope.period.endDate,
+    propertyCount: 1,
+  });
 
   return {
     entityCode: entity.code,
@@ -329,6 +401,12 @@ async function loadSpeSnapshot(opts: {
     bsTotalEquityCents: bs.totalEquity,
     bsBalanced: bs.balanced,
     capexProjects: capex,
+    closeStatus: controls.closeStatus,
+    glDebtCents: controls.glDebtCents,
+    leaseRollover12mCount: controls.leaseRollover12mCount,
+    propertyCount: controls.propertyCount,
+    vaultDocCount: controls.vaultDocCount,
+    schedulerJobCount: controls.schedulerJobCount,
   };
 }
 
@@ -412,7 +490,7 @@ async function loadOpCoSnapshot(opts: {
   let down = 0;
   let lossToLease = 0n;
   let hasRr = false;
-  const allUnits = [];
+  const allUnits: UnitSnapshot[] = [];
 
   for (const row of spePacks) {
     const a = row.pack.operating.actual;
@@ -546,6 +624,17 @@ async function loadOpCoSnapshot(opts: {
 
   const lookThroughUnits = dash.properties.reduce((acc, p) => acc + p.unitCount, 0);
   const near = loans[0];
+  const controls = await loadOpsControls({
+    entityId: opts.entityId,
+    entityIds: [opts.entityId, ...spes.map((s) => s.id)],
+    entityCode: opco.code,
+    year: opts.year,
+    month: opts.month,
+    throughEnd: combinedScope.throughEnd,
+    units: allUnits,
+    asOf: combinedScope.period.endDate,
+    propertyCount: dash.properties.length || spes.length,
+  });
 
   return {
     entityCode: opco.code,
@@ -694,5 +783,11 @@ async function loadOpCoSnapshot(opts: {
     bsTotalEquityCents: combinedBs.totalEquity,
     bsBalanced: combinedBs.balanced,
     capexProjects: capex,
+    closeStatus: controls.closeStatus,
+    glDebtCents: controls.glDebtCents,
+    leaseRollover12mCount: controls.leaseRollover12mCount,
+    propertyCount: controls.propertyCount,
+    vaultDocCount: controls.vaultDocCount,
+    schedulerJobCount: controls.schedulerJobCount,
   };
 }

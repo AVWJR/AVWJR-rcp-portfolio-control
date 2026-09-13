@@ -137,13 +137,48 @@ function chartData(pack: BuiltPack, chartId: string): { labels: string[]; values
       values: suite.feeVsNoi.bars.map((s) => s.usd),
     };
   }
+  if (chartId === "upb_stack") {
+    return {
+      title: suite.upbStack.title,
+      labels: suite.upbStack.bars.map((s) => s.label),
+      values: suite.upbStack.bars.map((s) => s.usd),
+    };
+  }
+  if (chartId === "covenant_watchlist") {
+    return {
+      title: suite.covenantWatchlist.title,
+      labels: suite.covenantWatchlist.rows.map((r) => r.label),
+      values: suite.covenantWatchlist.rows.map((r) => (r.tone === "fail" ? 1 : 0)),
+    };
+  }
+  if (chartId === "t12_status") {
+    return {
+      title: suite.t12Status.title,
+      labels: ["Months"],
+      values: [suite.t12Status.monthsAvailable],
+    };
+  }
+  if (chartId === "decision_posture") {
+    return {
+      title: suite.decisionPosture.title,
+      labels: [suite.decisionPosture.action],
+      values: [suite.decisionPosture.action === "GO" ? 3 : suite.decisionPosture.action === "HOLD" ? 2 : 1],
+    };
+  }
+  if (chartId === "close_control") {
+    return {
+      title: suite.closeControl.title,
+      labels: suite.closeControl.rows.map((r) => r.label),
+      values: suite.closeControl.rows.map((_, i) => i + 1),
+    };
+  }
   if (chartId === "portfolio_heatmap") {
     return {
       title: suite.heatmap.title,
       labels: suite.heatmap.spec.rows.map((r) => r.label),
       values: suite.heatmap.spec.rows.map((r) => {
-        const cell = suite.heatmap.spec.cells.find((c) => c.rowKey === r.key && c.colKey === "share");
-        const n = Number(String(cell?.display ?? "0").replace("%", ""));
+        const cell = suite.heatmap.spec.cells.find((c) => c.rowKey === r.key && c.colKey === "noi");
+        const n = Number(String(cell?.display ?? "0").replace(/[^0-9.-]/g, ""));
         return Number.isFinite(n) ? n : 0;
       }),
     };

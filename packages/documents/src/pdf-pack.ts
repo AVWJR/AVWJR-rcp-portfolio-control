@@ -206,6 +206,61 @@ function drawChart(doc: PDFKit.PDFDocument, pack: BuiltPack, chartId: string, y:
     doc.fillColor("#6B7280").font("Times-Roman").fontSize(8).text(suite.feeVsNoi.footnote, x, y + h + 8, { width: w });
     return;
   }
+  if (chartId === "upb_stack") {
+    doc.text(suite.upbStack.title, x, y);
+    simpleBars(
+      doc,
+      suite.upbStack.bars.map((s) => ({ label: s.label, usd: s.usd })),
+      x,
+      y + 20,
+      w,
+      h,
+    );
+    doc.fillColor("#6B7280").font("Times-Roman").fontSize(8).text(suite.upbStack.footnote, x, y + h + 8, { width: w });
+    return;
+  }
+  if (chartId === "covenant_watchlist") {
+    doc.text(suite.covenantWatchlist.title, x, y);
+    let rowY = y + 24;
+    for (const row of suite.covenantWatchlist.rows) {
+      doc.font("Times-Roman").fontSize(10).fillColor(RCP_COLORS.ink).text(`${row.label}: ${row.reason}`, x, rowY);
+      rowY += 16;
+    }
+    doc.fillColor("#6B7280").fontSize(8).text(suite.covenantWatchlist.footnote, x, rowY + 4, { width: w });
+    return;
+  }
+  if (chartId === "t12_status") {
+    doc.text(suite.t12Status.title, x, y);
+    doc
+      .font("Times-Roman")
+      .fontSize(12)
+      .fillColor(RCP_COLORS.ink)
+      .text(
+        suite.t12Status.complete
+          ? `T12 ready · ${suite.t12Status.monthsAvailable}/12`
+          : `T12 incomplete · ${suite.t12Status.monthsAvailable}/12 · not annualized`,
+        x,
+        y + 28,
+      );
+    doc.fillColor("#6B7280").fontSize(8).text(suite.t12Status.footnote, x, y + 56, { width: w });
+    return;
+  }
+  if (chartId === "decision_posture") {
+    doc.text(suite.decisionPosture.title, x, y);
+    doc.font("Times-Bold").fontSize(18).fillColor(RCP_COLORS.navy).text(suite.decisionPosture.action, x, y + 28);
+    doc.font("Times-Roman").fontSize(10).fillColor(RCP_COLORS.ink).text(suite.decisionPosture.rationale, x, y + 56, { width: w });
+    return;
+  }
+  if (chartId === "close_control") {
+    doc.text(suite.closeControl.title, x, y);
+    let rowY = y + 24;
+    for (const row of suite.closeControl.rows) {
+      doc.font("Times-Roman").fontSize(10).fillColor(RCP_COLORS.ink).text(`${row.label}: ${row.display}`, x, rowY);
+      rowY += 16;
+    }
+    doc.fillColor("#6B7280").fontSize(8).text(suite.closeControl.footnote, x, rowY + 4, { width: w });
+    return;
+  }
   if (chartId === "portfolio_heatmap") {
     doc.text(suite.heatmap.title, x, y);
     let rowY = y + 28;
