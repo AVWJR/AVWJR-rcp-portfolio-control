@@ -132,6 +132,9 @@ describe("expert live fallback copy", () => {
     expect(publicErrorMessage(new Error("AI_GATEWAY_API_KEY=sk-secret"))).toMatch(/could not read live books/i);
     expect(publicErrorMessage(new Error("404 model not found"))).toMatch(/EXPERT_MODEL=spacexai\/grok-4\.6/);
     expect(publicErrorMessage(new Error("401 Unauthorized"))).toMatch(/rejected the key/i);
+    expect(publicErrorMessage(new Error("No output generated. Check the stream for errors."))).toMatch(
+      /Gateway returned no text/,
+    );
     expect(expertBannerCopy("grok", { degraded: true })).toMatch(/Live Grok failed/i);
     const reason = liveFallbackReason(new Error("unknown model spacexai/nope"), "spacexai/nope");
     expect(reason).toMatch(/Live Grok \(spacexai\/nope\) failed/);

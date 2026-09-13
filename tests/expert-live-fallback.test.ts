@@ -73,6 +73,16 @@ describe("expert live Gateway fallback is visible", () => {
     expect(result.message.sources?.join(" ")).toMatch(/offline coach/i);
   });
 
+  it("marks the opener as last-resort offline when live open fails", async () => {
+    const result = await runExpertChat({
+      intent: "open",
+      context: { pathname: "/", entityCode: "RCP-OPCO", periodLabel: "2026-08" },
+    });
+    expect(result.mode).toBe("offline");
+    expect(result.fallbackReason).toMatch(/Live Grok/);
+    expect(result.message.sources?.join(" ")).toMatch(/last resort|offline coach/i);
+  });
+
   it("streams an error event before the offline last-resort reply", async () => {
     const events: { type: string; message?: string; response?: { fallbackReason?: string; mode?: string } }[] = [];
     for await (const event of streamExpertChat({

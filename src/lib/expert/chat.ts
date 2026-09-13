@@ -144,6 +144,13 @@ function responseEnvelope(
   };
 }
 
+function attachFallbackSource(message: ExpertMessage, reason?: string): ExpertMessage {
+  if (!reason) return message;
+  const sources = message.sources ?? [];
+  if (sources.some((source) => /offline coach|last resort/i.test(source))) return { ...message, sources };
+  return { ...message, sources: [...sources, "Offline last resort after live Grok failed"] };
+}
+
 function systemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle): string {
   return buildSystemForTurn(ctx, bundle);
 }
@@ -336,7 +343,10 @@ export async function runExpertChat(req: ExpertChatRequest): Promise<ExpertChatR
   if (resolved.provider !== "none" && (userText || req.intent === "open")) {
     const ai = await answerWithModel(userText, ctx, bundle, req.messages ?? [], resolved);
     if (ai.message) return responseEnvelope("ai", resolved, ai.message);
-    const message = userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle);
+    const message = attachFallbackSource(
+      userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle),
+      ai.error ?? undefined,
+    );
     return responseEnvelope("offline", resolved, message, ai.error ?? undefined);
   }
   const message = userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle);
@@ -414,7 +424,10 @@ export async function* streamExpertChat(req: ExpertChatRequest): AsyncGenerator<
     if (fallbackReason) yield { type: "error", message: fallbackReason };
   }
 
-  const message = userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle);
+  const message = attachFallbackSource(
+    userText ? answerOffline(userText, ctx, bundle) : buildOpener(ctx, bundle),
+    fallbackReason,
+  );
   yield {
     type: "start",
     aiEnabled,

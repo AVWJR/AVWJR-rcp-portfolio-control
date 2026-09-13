@@ -67,6 +67,7 @@ export function ExpertRoot() {
   const [accessRole, setAccessRole] = useState<ExpertAccessRole | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveConfirmed, setLiveConfirmed] = useState(false);
   const [composer, setComposer] = useState("");
   const [score, setScore] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -97,6 +98,7 @@ export function ExpertRoot() {
       setPending(true);
       setError(null);
       setLiveError(null);
+      setLiveConfirmed(false);
       try {
         const params = new URLSearchParams({
           entity: ctx.entityCode,
@@ -207,8 +209,13 @@ export function ExpertRoot() {
     }
     setAiEnabled(data.aiEnabled);
     setBanner(data.banner);
-    if (data.fallbackReason) setLiveError(data.fallbackReason);
-    else if (data.mode === "ai") setLiveError(null);
+    if (data.fallbackReason) {
+      setLiveError(data.fallbackReason);
+      setLiveConfirmed(false);
+    } else if (data.mode === "ai") {
+      setLiveError(null);
+      setLiveConfirmed(true);
+    }
     setMessages([...next, data.message]);
   }
 
@@ -257,8 +264,13 @@ export function ExpertRoot() {
       } else if (event.type === "done") {
         setAiEnabled(event.response.aiEnabled);
         setBanner(event.response.banner);
-        if (event.response.fallbackReason) setLiveError(event.response.fallbackReason);
-        else if (event.response.mode === "ai") setLiveError(null);
+        if (event.response.fallbackReason) {
+          setLiveError(event.response.fallbackReason);
+          setLiveConfirmed(false);
+        } else if (event.response.mode === "ai") {
+          setLiveError(null);
+          setLiveConfirmed(true);
+        }
         setMessages((prev) => prev.map((message) => (message.id === draftId ? event.response.message : message)));
       }
     }
@@ -279,6 +291,7 @@ export function ExpertRoot() {
     setPending(true);
     setError(null);
     setLiveError(null);
+    setLiveConfirmed(false);
     try {
       const res = await fetch("/api/expert/chat", {
         method: "POST",
@@ -343,6 +356,7 @@ export function ExpertRoot() {
             aiEnabled={aiEnabled}
             error={error ?? liveError}
             degraded={Boolean(liveError)}
+            liveReady={liveConfirmed}
             completenessScore={score}
             onClose={closePanel}
             onMinimize={() => setState("minimized")}

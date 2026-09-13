@@ -137,8 +137,12 @@ export function expertModelId(env: EnvMap = process.env): string {
   return resolveExpertProvider(env).modelId;
 }
 
-export function expertBannerCopy(banner: ExpertBannerKind, opts?: { degraded?: boolean }): string {
+export function expertBannerCopy(
+  banner: ExpertBannerKind,
+  opts?: { degraded?: boolean; connecting?: boolean },
+): string {
   if (opts?.degraded) return "Live Grok failed — using offline coach";
+  if (opts?.connecting) return "Connecting to Grok";
   if (banner === "offline") return "Offline coach — add key";
   return "Grok connected";
 }
@@ -159,6 +163,9 @@ export function publicErrorMessage(err: unknown): string {
   }
   if (isUnknownGatewayModelError(err)) {
     return `Gateway model was not found. Set EXPERT_MODEL=${DEFAULT_GROK_GATEWAY_MODEL} (xai/ aliases are rewritten).`;
+  }
+  if (/no output generated|returned no text|empty (response|text)/i.test(raw)) {
+    return `Gateway returned no text. Confirm EXPERT_MODEL=${DEFAULT_GROK_GATEWAY_MODEL} and AI Gateway credits.`;
   }
   const cleaned = raw.replace(/\s+/g, " ").trim();
   return cleaned.length > 160 ? `${cleaned.slice(0, 157)}…` : cleaned;

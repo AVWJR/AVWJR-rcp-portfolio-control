@@ -27,6 +27,7 @@ export function ExpertPanel({
   onCopy,
   banner,
   degraded,
+  liveReady,
   composer,
   setComposer,
   panelRef,
@@ -45,6 +46,7 @@ export function ExpertPanel({
   onCopy: () => void;
   banner: ExpertBannerKind;
   degraded?: boolean;
+  liveReady?: boolean;
   composer: string;
   setComposer: (value: string) => void;
   panelRef: RefObject<HTMLDivElement | null>;
@@ -75,11 +77,17 @@ export function ExpertPanel({
   }
 
   const shownBanner: ExpertBannerKind = aiEnabled ? banner : "offline";
-  const display: "offline" | "degraded" | ExpertBannerKind = !aiEnabled
+  const display: "offline" | "degraded" | "connecting" | "unconfirmed" | "grok" | "live" = !aiEnabled
     ? "offline"
     : degraded
       ? "degraded"
-      : shownBanner;
+      : liveReady
+        ? shownBanner === "offline"
+          ? "grok"
+          : shownBanner
+        : pending
+          ? "connecting"
+          : "unconfirmed";
   const lastExpert = [...messages].reverse().find((m) => m.role === "expert");
   const lastChips: ExpertChip[] = lastExpert?.chips ?? [];
   const lastActions: ExpertSuggestedAction[] = lastExpert?.actions ?? [];
@@ -157,10 +165,14 @@ export function ExpertPanel({
             ? "expert-offline-banner"
             : display === "degraded"
               ? "expert-degraded-banner"
-              : "expert-live-banner"
+              : display === "connecting"
+                ? "expert-connecting-banner"
+                : display === "unconfirmed"
+                  ? "expert-unconfirmed-banner"
+                  : "expert-live-banner"
         }
         className={
-          display === "offline" || display === "degraded"
+          display === "offline" || display === "degraded" || display === "connecting" || display === "unconfirmed"
             ? "border-b border-gold-500 bg-gold-100 px-3 py-1.5 text-[11px] text-navy-900"
             : "border-b border-emerald-700 bg-emerald-50 px-3 py-1.5 text-[11px] text-emerald-900"
         }
@@ -169,7 +181,11 @@ export function ExpertPanel({
           ? `${expertBannerCopy("offline")}. Coaching still uses live completeness and anomaly tools.`
           : display === "degraded"
             ? `${expertBannerCopy(shownBanner, { degraded: true })}. Coaching still uses live completeness and anomaly tools.`
-            : `${expertBannerCopy(shownBanner)}. Streaming live replies; tools stay read-only until you confirm a write.`}
+            : display === "connecting"
+              ? `${expertBannerCopy(shownBanner, { connecting: true })}. If this fails, the offline coach stays as last resort.`
+              : display === "unconfirmed"
+                ? "Grok key is set. Last reply was not live — send a message to retry."
+                : `${expertBannerCopy(shownBanner)}. Streaming live replies; tools stay read-only until you confirm a write.`}
       </div>
 
       {error ? (
