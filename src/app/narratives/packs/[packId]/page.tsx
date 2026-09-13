@@ -17,9 +17,11 @@ export default async function PackPreviewPage({
   const { packId } = await params;
   if (!isPackId(packId)) notFound();
   const query = await searchParams;
+  const merged: ReportSearch =
+    query.entity === "RCP-OPCO" ? { ...query, view: query.view ?? "combined" } : query;
 
   return (
-    <ReportShell searchParams={query} pathname={`/narratives/packs/${packId}`}>
+    <ReportShell searchParams={merged} pathname={`/narratives/packs/${packId}`}>
       {async (ctx) => {
         if (ctx.entity.type === "HOLDCO") {
           return (

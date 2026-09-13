@@ -13,9 +13,11 @@ export default async function NarrativesPage({
 }) {
   const params = await searchParams;
   const audience = params.audience && isAudienceId(params.audience) ? params.audience : "lp";
+  const merged: ReportSearch & { audience?: string } =
+    params.entity === "RCP-OPCO" ? { ...params, view: params.view ?? "combined" } : params;
 
   return (
-    <ReportShell searchParams={params} pathname="/narratives">
+    <ReportShell searchParams={merged} pathname="/narratives">
       {async (ctx) => {
         const period = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
         const qs = new URLSearchParams({ entity: ctx.entity.code, period });

@@ -157,7 +157,7 @@ export function icRecommendation(snap: PeriodSnapshot): { action: IcAction; rati
     ]
       .filter(Boolean)
       .join("; ");
-    return { action: "FIX", rationale: `Fix: ${reasons || "coverage or occupancy shortfall"}. Value-add monthly DSCR below 1.25x is a control result, not a data error.` };
+    return { action: "FIX", rationale: `${reasons || "Coverage or occupancy shortfall"}. Value-add monthly DSCR below 1.25x is a control result, not a data error.` };
   }
 
   if (snap.entityType === "OPCO" && failingSpes.length) {
