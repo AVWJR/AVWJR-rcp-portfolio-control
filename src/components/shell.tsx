@@ -13,6 +13,10 @@ const NAV = [
   { href: "/debt", label: "Debt" },
   { href: "/capex", label: "CapEx" },
   { href: "/close", label: "Close" },
+  { href: "/tax", label: "Tax" },
+  { href: "/vault", label: "Vault" },
+  { href: "/scheduler", label: "Scheduler" },
+  { href: "/vendors", label: "1099" },
   { href: "/reports/trial-balance", label: "Trial Balance" },
   { href: "/reports/income-statement", label: "Income Statement" },
   { href: "/reports/balance-sheet", label: "Balance Sheet" },
@@ -82,6 +86,8 @@ export function Shell({
                     ? pathname.startsWith("/dashboard/ratios")
                     : item.href === "/narratives"
                       ? pathname.startsWith("/narratives")
+                    : item.href === "/tax"
+                      ? pathname.startsWith("/tax")
                     : pathname === item.href;
               return (
                 <Link
@@ -112,7 +118,7 @@ export function Shell({
       <footer className="border-t border-cream-300 bg-cream-200">
         <div className="mx-auto flex max-w-7xl justify-between px-6 py-4 text-[11px] uppercase tracking-[0.14em] text-ink-500">
           <span>{RCP_CONFIDENTIAL}</span>
-          <span>Phase E narratives / packs · Book basis</span>
+          <span>Phase F tax / vault / scheduler · Does not file</span>
         </div>
       </footer>
     </div>

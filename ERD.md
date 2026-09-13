@@ -1,4 +1,4 @@
-# Phase A–D Entity-Relationship Diagram
+# Phase A–F Entity-Relationship Diagram
 
 Roche Capital Partners ledger + unit master + debt + CIP + close — book basis, USD cents (`BigInt`), `America/New_York`.
 
@@ -19,6 +19,13 @@ erDiagram
   CapexProject ||--o{ CapexCost : costs
   Journal ||--|{ JournalLine : splits
   Account ||--o{ JournalLine : posted-to
+  Entity ||--o{ TaxAdjustment : tax-overlay
+  Entity ||--o{ Partner : members
+  Partner ||--o{ PartnerCapitalActivity : rollforward
+  Entity ||--o{ VendorPayment : 1099-overlay
+  Entity ||--o{ VaultDocument : vault
+  Entity ||--o{ ReportJob : scheduled-packs
+  ReportJob ||--o{ ReportJobRun : runs
 
   Entity {
     string id PK
