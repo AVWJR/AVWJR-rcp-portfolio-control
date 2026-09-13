@@ -5,6 +5,9 @@ vi.mock("ai", () => ({
   streamText: () => {
     throw new Error("unknown model spacexai/grok-4.6");
   },
+  generateText: async () => {
+    throw new Error("unknown model spacexai/grok-4.6");
+  },
   tool: (def: unknown) => def,
   stepCountIs: () => 6,
   gateway: (id: string) => id,

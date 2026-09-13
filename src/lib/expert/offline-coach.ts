@@ -1,4 +1,5 @@
 import { pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
+import { isClearHowToQuery, isDeleteDealQuery, isVagueQuery } from "./feature-intents";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
@@ -372,6 +373,56 @@ You asked: “${userText.trim()}”
 Are you asking about a number on this page, something missing for this entity, or a click path?`;
 }
 
+function deleteDealCopy(ctx: ExpertClientContext): string {
+  const list = link("/deals", ctx, "Deals");
+  const add = link("/deals/new", ctx, "Add Deal");
+  const vault = link("/vault", ctx, "Vault");
+  return `**This demo does not delete SPEs yet.** There is no Delete, archive, or hide on a deal or property SPE.
+
+What you *can* do:
+- Open ${list} (gold nav **Deals**) to see SPEs and unfinished Add Deal drafts. Created SPEs stay in the books.
+- On an Add Deal draft you can remove an uploaded **file** (red remove on that row). That does not delete the SPE or the draft.
+- ${vault} can delete a **document**. That is not deleting the deal.
+- Leave the SPE as-is. Seeded demo SPEs (\`SPE-WBG\`, \`SPE-CVC\`, \`SPE-HCR\`) are meant to stay.
+
+If you meant to **onboard** a different property, open ${add}. I will not invent a delete or archive screen.`;
+}
+
+function vaultCopy(ctx: ExpertClientContext): string {
+  const vault = link("/vault", ctx, "Vault");
+  return `Gold nav **Vault** — ${vault} — is the entity document store (OM, rent roll, loan, lease, insurance). Drop a file there, or send it through **Add Deal** and it is vaulted on ingest.
+
+You can delete a **vault document**. That does not delete the SPE. Files over ~3.5 MB on Vercel need \`BLOB_READ_WRITE_TOKEN\`. Not a bank or PMS feed.`;
+}
+
+function narrativesCopy(ctx: ExpertClientContext): string {
+  return `Gold nav **Narratives** — ${link("/narratives", ctx, "Narratives")} — five audience tones (LP / GP / IC / Lender / Mgmt) from the **same** period snapshot. Pick the audience, then export PDF / PPTX from the matching pack.
+
+It does not invent covenants or LTV. Scheduler (${link("/scheduler", ctx, "Scheduler")}) writes pack files; it does not email.`;
+}
+
+function schedulerCopy(ctx: ExpertClientContext): string {
+  return `Gold nav **Scheduler** — ${link("/scheduler", ctx, "Scheduler")} — monthly investor and quarterly lender jobs. It **writes pack files**. It does **not** email anyone. Open Narratives if you want to read the tone first.`;
+}
+
+function unlockCopy(): string {
+  return `Partner / viewer links are read-only. Unlock writes at **/unlock** with \`PRINCIPAL_PASSWORD\`, or \`/?unlock=\`. Share an LP link with \`/?share=\` plus the partner token. This is not multi-tenant auth.`;
+}
+
+function featureHowTo(q: string, ctx: ExpertClientContext): string {
+  const targets = listNavTargets().filter((t) => {
+    const hay = `${t.id.replace(/_/g, " ")} ${t.label} ${t.hint}`.toLowerCase();
+    return hay.split(/\s+/).some((word) => word.length > 3 && q.includes(word));
+  });
+  if (targets[0]) {
+    const t = targets[0];
+    return `Open **${t.label}** — ${t.hint}. Gold nav or ${link(t.href, ctx, t.label)}. I will not invent a screen that is not in this app.`;
+  }
+  return `I can walk every real screen in this app. Gold nav: Overview, Dashboard, Deals, Properties, Debt, CapEx, Close, Tax, Vault, Narratives, Scheduler.
+
+There is no hidden delete or archive. Name the screen or the job (add deal, vault a file, export a pack, close the period) and I will give the click path.`;
+}
+
 function navHelp(text: string, ctx: ExpertClientContext): string {
   const q = text.toLowerCase();
   const targets = listNavTargets().filter(
@@ -395,7 +446,9 @@ export function answerOffline(
   if (!q || q === "open" || q === "hello" || q === "hi") {
     return buildOpener(ctx, bundle);
   }
-  if (/tour|this page|controls|lost|where am i/.test(q) && !/wrong/.test(q)) {
+  if (isDeleteDealQuery(q)) {
+    content = deleteDealCopy(ctx);
+  } else if (/tour|this page|controls|lost|where am i/.test(q) && !/wrong/.test(q)) {
     content = tour(ctx);
   } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
     content = addDealFlow(ctx);
@@ -419,12 +472,24 @@ export function answerOffline(
     content = packFlow("lp", ctx, bundle);
   } else if (/tax|k-?1|1099|macrs/.test(q)) {
     content = taxCopy(ctx);
+  } else if (/vault|document store|file (the )?(om|lease|loan)/.test(q)) {
+    content = vaultCopy(ctx);
+  } else if (/narrative|audience tone/.test(q)) {
+    content = narrativesCopy(ctx);
+  } else if (/schedul/.test(q)) {
+    content = schedulerCopy(ctx);
+  } else if (/unlock|partner view|viewer (link|gate)/.test(q)) {
+    content = unlockCopy();
   } else if (/navigat|where is|how do i get|click path|menu/.test(q)) {
     content = navHelp(q, ctx);
   } else if (/noi|bridge|kpi|ratio/.test(q)) {
     content = kpiCopy(ctx, bundle, q);
-  } else {
+  } else if (isClearHowToQuery(q)) {
+    content = featureHowTo(q, ctx);
+  } else if (isVagueQuery(q)) {
     content = clarifyCopy(userText);
+  } else {
+    content = featureHowTo(q, ctx);
   }
   return {
     id: newId(),

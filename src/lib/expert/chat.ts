@@ -167,7 +167,7 @@ async function answerWithGateway(
   modelId: string,
   onDelta?: (text: string) => void,
 ): Promise<ExpertMessage | null> {
-  const { streamText, tool, stepCountIs, gateway } = await import("ai");
+  const { streamText, generateText, tool, stepCountIs, gateway } = await import("ai");
   const { z } = await import("zod");
   const {
     getAnomalies,
@@ -262,8 +262,19 @@ async function answerWithGateway(
         }
       }
 
-      const text = (await result.text)?.trim();
-      if (!text) return null;
+      let text = (await result.text)?.trim();
+      if (!text) {
+        const plain = await generateText({
+          model: typeof gateway === "function" ? gateway(candidate) : candidate,
+          system: systemForTurn(ctx, bundle),
+          messages: [
+            ...historyMessages(history),
+            { role: "user" as const, content: userText || openCoachPrompt() },
+          ],
+        });
+        text = plain.text?.trim() ?? "";
+      }
+      if (!text) throw new Error("No output generated. Check the stream for errors.");
       return wrapMessage(text, ctx, bundle, ["From live Expert tools + Grok"], proposed, userText);
     } catch (error) {
       lastError = error;
