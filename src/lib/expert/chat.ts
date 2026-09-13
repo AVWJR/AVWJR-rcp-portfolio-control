@@ -83,8 +83,15 @@ async function answerWithModel(
   try {
     const { generateText, tool, stepCountIs } = await import("ai");
     const { z } = await import("zod");
-    const { getAnomalies, getDataCompleteness, getEntitySummary, getKpiSnapshot, getPeriodStatus, listNavTargets } =
-      await import("./tools");
+    const {
+      getAnomalies,
+      getDataCompleteness,
+      getDealIntakeStatus,
+      getEntitySummary,
+      getKpiSnapshot,
+      getPeriodStatus,
+      listNavTargets,
+    } = await import("./tools");
 
     const tools = {
       getEntitySummary: tool({
@@ -116,6 +123,11 @@ async function answerWithModel(
         description: "Allowed in-app routes for linkification.",
         inputSchema: z.object({}),
         execute: async () => listNavTargets(),
+      }),
+      getDealIntakeStatus: tool({
+        description: "Read an Add Deal wizard draft (status, SPE code, files, apply errors). Never invent an intake.",
+        inputSchema: z.object({ intakeId: z.string() }),
+        execute: async ({ intakeId }) => getDealIntakeStatus(intakeId),
       }),
     };
 

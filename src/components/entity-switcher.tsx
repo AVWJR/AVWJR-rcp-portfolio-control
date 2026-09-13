@@ -17,6 +17,7 @@ export function EntitySwitcher({
   month,
   consolidated,
   pathname,
+  periodLabels,
 }: {
   entities: EntityOption[];
   activeEntity: string;
@@ -24,6 +25,7 @@ export function EntitySwitcher({
   month: number;
   consolidated: boolean;
   pathname: string;
+  periodLabels?: string[];
 }) {
   const router = useRouter();
   const period = `${year}-${String(month).padStart(2, "0")}`;
@@ -55,6 +57,7 @@ export function EntitySwitcher({
 
   const current = entities.find((e) => e.code === activeEntity);
   const canConsolidate = current?.type === "OPCO";
+  const periods = [...new Set([...(periodLabels ?? []), "2026-07", "2026-08", period])].sort();
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -77,8 +80,11 @@ export function EntitySwitcher({
         value={period}
         onChange={(e) => go({ period: e.target.value })}
       >
-        <option value="2026-07">2026-07</option>
-        <option value="2026-08">2026-08</option>
+        {periods.map((label) => (
+          <option key={label} value={label}>
+            {label}
+          </option>
+        ))}
       </select>
       {canConsolidate ? (
         <select

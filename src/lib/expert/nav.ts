@@ -90,6 +90,23 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    test: /^\/deals\/new$/,
+    title: "Add Deal",
+    hints: [
+      "Eight guided steps: goal → identity → source files → classify → create SPE → apply CSVs/loan → completeness → done.",
+      "Upload works now. Dropbox / email / RCP mailbox show honest empty states until tokens or RCP_INGEST_MAILBOX exist.",
+      "Rent-roll and budget imports replace existing rows only after you confirm.",
+    ],
+  },
+  {
+    test: /^\/deals$/,
+    title: "Deals",
+    hints: [
+      "SPE list plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
+      "Click Add Deal or resume a draft. The entity switcher updates after you create the SPE.",
+    ],
+  },
+  {
     test: /^\/properties$/,
     title: "Properties",
     hints: ["SPE list with unit counts. Open a property for the rent roll and occupancy."],
@@ -161,6 +178,8 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "is", href: "/reports/income-statement", label: "Income Statement", hint: "Book P/L" },
   { id: "bs", href: "/reports/balance-sheet", label: "Balance Sheet", hint: "A = L + E" },
   { id: "cf", href: "/reports/cash-flow", label: "Cash Flow", hint: "Indirect; ties to BS" },
+  { id: "deals", href: "/deals", label: "Deals", hint: "SPE list and Add Deal drafts" },
+  { id: "add_deal", href: "/deals/new", label: "Add Deal", hint: "Guided SPE intake" },
   { id: "properties", href: "/properties", label: "Properties", hint: "SPE list / rent roll" },
   { id: "debt", href: "/debt", label: "Debt", hint: "Loan file and covenants" },
   { id: "capex", href: "/capex", label: "CapEx", hint: "CIP and R&M" },

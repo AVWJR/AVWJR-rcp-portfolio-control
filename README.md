@@ -39,6 +39,23 @@ Every page mounts a lower-right **Expert** FAB that opens a miniature coaching d
 - `GET /api/expert/context?entity=SPE-WBG&period=2026-08&pathname=/dashboard/SPE-WBG` · `POST /api/expert/chat` (JSON `{ context, messages?, intent? }`). The chat route is rate-limited and read-only.
 - Follow-on (not in this release): partner auth / multi-tenant permissions if the demo URL is public. The Expert is a read-only coach on the seeded ledger.
 
+### Add Deal (new property SPE)
+
+Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deals** → **Add Deal**, or Overview → Add Deal. Route: [`/deals/new`](http://localhost:3000/deals/new) · SPE list: [`/deals`](http://localhost:3000/deals). Expert chip: **Add a new deal**.
+
+| Mode | This release |
+| --- | --- |
+| 1. Upload files | **Live** — multi-file dropzone, classify, vault + optional rent-roll / budget import |
+| 2. Dropbox | Provider + UI. List/import when `DROPBOX_ACCESS_TOKEN` is set; otherwise a **Connect Dropbox** empty state |
+| 3. Email attachment | Upload `.eml` / attachment files, or fetch when `GMAIL_ACCESS_TOKEN` / `MICROSOFT_ACCESS_TOKEN` is set |
+| 4. RCP mailbox | Architecture + stub. `RCP_INGEST_MAILBOX` is a placeholder. **Mailbox address is not decided yet.** **Scan RCP inbox** no-ops with an honest message |
+
+Drafts persist (`DealIntake`). Rent-roll / budget replace still requires confirm. File cap **10 MB** (Vercel Functions can accept larger bodies; this demo matches the vault limit — split large OMs or upload later on `/vault`). Tokens are server-only. The public Vercel demo has **no partner auth** yet; Add Deal mutates the demo database (acceptable for the Principal demo).
+
+Sample CSVs: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/budget.csv`](./data/samples/budget.csv). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
+
+APIs: `POST /api/deals` · `POST /api/deals/intake` · `POST /api/deals/intake/files` · `POST /api/deals/intake/import` · `POST /api/deals/intake/from-dropbox` · `POST /api/deals/intake/from-email` · `POST /api/deals/intake/scan-mailbox`
+
 Sample: [http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1](http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1)
 
 Screenshots: [FAB](./docs/expert/expert_fab.png) · [opener](./docs/expert/expert_panel_opener.png) · [SPE-WBG flags](./docs/expert/expert_anomaly_spe_wbg.png) · [mobile](./docs/expert/expert_mobile_sheet.png)
@@ -88,6 +105,11 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | `AI_GATEWAY_API_KEY` | No | Enables live Expert model replies (Vercel AI Gateway). Offline coach works without it |
 | `EXPERT_MODEL` | No | Gateway model id, default `openai/gpt-5.4` |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | No | Alternate server-only keys for live Expert replies |
+| `DROPBOX_ACCESS_TOKEN` | No | Enables Dropbox file pick on Add Deal (server-only) |
+| `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` | No | Reserved for Dropbox OAuth follow-on |
+| `GMAIL_ACCESS_TOKEN` / `MICROSOFT_ACCESS_TOKEN` | No | Optional mailbox connectors for email-attachment intake |
+| `RCP_INGEST_MAILBOX` | No | Placeholder for the RCP-owned ingest inbox (**address TBD**) |
+| `RCP_DEFAULT_OPCO` | No | Parent OpCo code for new deals, default `RCP-OPCO` |
 
 Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POSTGRES_URL` for the pooled URL; `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` for the direct URL.
 
@@ -121,6 +143,8 @@ http://localhost:3000/properties/SPE-WBG?entity=SPE-WBG&period=2026-08
 http://localhost:3000/debt?entity=SPE-WBG&period=2026-08  
 http://localhost:3000/capex?entity=SPE-WBG&period=2026-08  
 http://localhost:3000/close?entity=SPE-WBG&period=2026-07
+http://localhost:3000/deals
+http://localhost:3000/deals/new
 
 Close demo: WBG `2026-07` is **hard locked**. CVC `2026-07` is **soft closed**. August stays open.
 
@@ -248,8 +272,9 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 - [docs/RCP_REPORT_CATALOG.md](./docs/RCP_REPORT_CATALOG.md)
 - [docs/RCP_TAX_BRIDGE.md](./docs/RCP_TAX_BRIDGE.md)
 - [docs/RCP_DOCUMENT_VAULT.md](./docs/RCP_DOCUMENT_VAULT.md)
+- [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md)
 - [docs/RCP_SCHEDULER.md](./docs/RCP_SCHEDULER.md)
 
 ## Out of scope
 
-No live PMS or bank feed. No promote waterfall. No IRS e-file / SSO. No full AP invoice subledger (1099 overlay only). No BigBrainRE underwriting. No LTV from book cost. Does not file taxes.
+No live PMS or bank feed. No promote waterfall. No IRS e-file / SSO. No full AP invoice subledger (1099 overlay only). No BigBrainRE underwriting. No LTV from book cost. Does not file taxes. Does not choose the final RCP ingest mailbox address. Dropbox / Gmail OAuth product polish waits on partner credentials.

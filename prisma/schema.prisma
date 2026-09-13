@@ -80,6 +80,14 @@ enum JournalStatus {
   POSTED
 }
 
+enum DealIntakeStatus {
+  DRAFT
+  AWAITING_FILES
+  READY
+  APPLIED
+  FAILED
+}
+
 enum UnitStatus {
   OCCUPIED
   VACANT
@@ -115,6 +123,7 @@ model Entity {
   vendorPayments   VendorPayment[]
   vaultDocuments   VaultDocument[]
   reportJobs       ReportJob[]
+  dealIntakes      DealIntake[]
 }
 
 /// Master template rows use entityId = null. Entity CoA is cloned from the template.
@@ -471,6 +480,60 @@ model VaultDocument {
   uploadedAt  DateTime @default(now())
 
   @@index([entityId, kind])
+}
+
+/// Guided Add Deal session. Draft JSON-equivalent fields persist so refresh
+/// does not lose Principal progress. Files land in the vault after the SPE exists.
+model DealIntake {
+  id                    String           @id @default(cuid())
+  status                DealIntakeStatus @default(DRAFT)
+  currentStep           Int              @default(1)
+  goal                  String?
+  targetPeriod          String?
+  speName               String?
+  speCode               String?
+  unitCount             Int?
+  strategy              SpeStrategy?
+  parentOpCoCode        String           @default("RCP-OPCO")
+  entityId              String?
+  entity                Entity?          @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  sourcesJson           String           @default("[\"upload\"]")
+  loanName              String?
+  loanLender            String?
+  loanUpbCents          BigInt?
+  loanRateBps           Int?
+  loanPaymentCents      BigInt?
+  loanOrigination       DateTime?
+  loanMaturity          DateTime?
+  dscrThresholdBps      Int?
+  debtYieldThresholdBps Int?
+  lastError             String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  files DealIntakeFile[]
+
+  @@index([status])
+  @@index([entityId])
+}
+
+model DealIntakeFile {
+  id              String     @id @default(cuid())
+  intakeId        String
+  intake          DealIntake @relation(fields: [intakeId], references: [id], onDelete: Cascade)
+  source          String
+  classification  String     @default("other")
+  filename        String
+  mimeType        String
+  byteSize        Int
+  storagePath     String
+  vaultDocumentId String?
+  remoteId        String?
+  status          String     @default("stored")
+  lastError       String?
+  createdAt       DateTime   @default(now())
+
+  @@index([intakeId])
 }
 
 model ReportJob {

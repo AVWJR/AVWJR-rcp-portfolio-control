@@ -25,6 +25,8 @@ erDiagram
   Entity ||--o{ VendorPayment : 1099-overlay
   Entity ||--o{ VaultDocument : vault
   Entity ||--o{ ReportJob : scheduled-packs
+  Entity ||--o{ DealIntake : add-deal
+  DealIntake ||--o{ DealIntakeFile : files
   ReportJob ||--o{ ReportJobRun : runs
 
   Entity {

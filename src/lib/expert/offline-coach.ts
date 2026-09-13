@@ -62,7 +62,31 @@ function rankChips(ctx: ExpertClientContext, bundle: OfflineBundle): ExpertChip[
     });
   }
   const page = ctx.pathname;
+  if (page === "/" || page.startsWith("/deals")) {
+    return [
+      {
+        id: "add_deal",
+        label: "Add a new deal",
+        prompt: "Add a new deal. Walk me through the Add Deal wizard click path for a new property SPE under OpCo.",
+      },
+      {
+        id: "whats_missing_spe",
+        label: "What's missing for this SPE?",
+        prompt: "What's missing for this SPE? Use the live completeness score and tell me which screen to open.",
+      },
+      {
+        id: "import_rent_roll",
+        label: "Import rent roll",
+        prompt: "How do I import a rent roll for this SPE? Include the confirm-replace step if units already exist.",
+      },
+    ];
+  }
   const extras: ExpertChip[] = [
+    {
+      id: "add_deal",
+      label: "Add a new deal",
+      prompt: "Add a new deal. Walk me through the Add Deal wizard click path for a new property SPE under OpCo.",
+    },
     {
       id: "audit_page",
       label: "What's wrong on this page?",
@@ -278,6 +302,43 @@ ${gaps ? `Finish these inputs first:\n${gaps}` : "Completeness items look popula
 Scheduled jobs live on ${link("/scheduler", ctx, "Scheduler")} (writes files; does not email).`;
 }
 
+function addDealFlow(ctx: ExpertClientContext): string {
+  const start = link("/deals/new", ctx, "Add Deal");
+  const list = link("/deals", ctx, "Deals");
+  const vault = link("/vault", ctx, "Vault");
+  const props = link("/properties", ctx, "Properties");
+  return `**Add a new deal — new property SPE under OpCo**
+
+Do this in the product — click paths only.
+
+1. Gold nav **Deals** → ${list}, or Overview → **Add Deal**. Open ${start}.
+2. **Goal** — stabilize / value-add / light rehab, plus the target period.
+3. **Identity** — SPE legal name, code (use **Suggest** for \`SPE-XXX\`), unit count, parent OpCo (usually RCP-OPCO).
+4. **Source files** — **Upload files** works now. Dropbox / email / RCP mailbox stay visible; if they are not connected, follow the on-screen note and keep uploading.
+5. **Classify files** — rent-roll CSV, budget CSV, loan, lease, OM/CIM, insurance, or other. Files land in ${vault} after the SPE exists.
+6. **Create entity** — creates the SPE, clones the master chart of accounts, opens periods. The new code appears in the navy **Entity** switcher after a refresh.
+7. **Apply data** — optional rent-roll and budget import for the target period. If rows already exist, check **confirm replace** (this overwrites). Capture lender, UPB, rate, payment, maturity, DSCR / debt-yield thresholds on the existing loan file. Do not invent LTV.
+8. **Completeness** — same Expert score as month-end. Then open Dashboard, ${props}, Debt, Vault, or Narratives.
+
+RCP mailbox address is **not decided yet**. Until \`RCP_INGEST_MAILBOX\` and a connector exist, **Scan RCP inbox** is an honest no-op.
+
+When the SPE exists, ask me for month-end checklist or “What’s missing for this SPE?”`;
+}
+
+function rentRollImportCopy(ctx: ExpertClientContext): string {
+  const dest = ctx.entityCode.startsWith("SPE-")
+    ? link(`/properties/${ctx.entityCode}`, ctx, "this SPE’s rent roll")
+    : link("/deals/new", ctx, "Add Deal");
+  return `**Import a rent roll**
+
+1. Prefer Add Deal if this is a **new** SPE — classify the CSV as **Rent-roll CSV**, create the entity, then Apply (confirm replace if units already exist).
+2. For an existing SPE, open ${dest}. Use the CSV import on that page. Headers: \`unit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent,lease_start,lease_end,concession\`.
+3. If units already exist, you must **confirm replace**. That deletes the current unit file and loads the CSV. Sample file: \`data/samples/rent-roll.csv\` (linked from Add Deal).
+4. Occupancy is not derived from GL 4020.
+
+I will not invent a rent roll from the income statement.`;
+}
+
 function taxCopy(ctx: ExpertClientContext): string {
   return `**Tax / K-1 — CPA export only**
 
@@ -347,6 +408,10 @@ export function answerOffline(
   }
   if (/tour|this page|controls|lost|where am i/.test(q) && !/wrong/.test(q)) {
     content = tour(ctx);
+  } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
+    content = addDealFlow(ctx);
+  } else if (/import rent roll|rent-?roll csv/.test(q)) {
+    content = rentRollImportCopy(ctx);
   } else if (/check ?list|month-end|month end|close books|soft close|hard lock/.test(q)) {
     content = checklistMode(ctx, bundle);
   } else if (/wrong on this page|audit/.test(q) || (q.includes("wrong") && q.includes("page"))) {

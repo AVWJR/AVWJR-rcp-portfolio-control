@@ -1,0 +1,948 @@
+"use client";
+
+import {
+  DEAL_FILE_CLASS_LABELS,
+  DEAL_FILE_CLASSES,
+  DEAL_WIZARD_STEPS,
+  INTAKE_MAX_BYTES,
+  INTAKE_MAX_BYTES_LABEL,
+  type DealFileClass,
+  type DealFileSource,
+  type DealGoal,
+} from "@/lib/deals/types";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+type IntakeFile = {
+  id: string;
+  source: string;
+  classification: string;
+  filename: string;
+  mimeType: string;
+  byteSize: number;
+  vaultDocumentId: string | null;
+  status: string;
+  lastError: string | null;
+};
+
+type Intake = {
+  id: string;
+  status: string;
+  currentStep: number;
+  goal: DealGoal | string | null;
+  targetPeriod: string | null;
+  speName: string | null;
+  speCode: string | null;
+  unitCount: number | null;
+  strategy: string | null;
+  parentOpCoCode: string;
+  entityId: string | null;
+  entityCode: string | null;
+  entityName: string | null;
+  sources: DealFileSource[];
+  loanName: string | null;
+  loanLender: string | null;
+  loanUpbCents: string | number | null;
+  loanRateBps: number | null;
+  loanPaymentCents: string | number | null;
+  loanOrigination: string | null;
+  loanMaturity: string | null;
+  dscrThresholdBps: number | null;
+  debtYieldThresholdBps: number | null;
+  lastError: string | null;
+  files: IntakeFile[];
+};
+
+type ProviderStatus = { id: DealFileSource; label: string; configured: boolean; message: string };
+
+type Completeness = {
+  score: number;
+  ready: number;
+  applicable: number;
+  items: { id: string; label: string; status: string; detail: string; href: string }[];
+};
+
+const GOALS: { id: DealGoal; title: string; copy: string }[] = [
+  { id: "stabilize", title: "Stabilize", copy: "In-place operations. Hold and harvest cash flow." },
+  { id: "value_add", title: "Value-add", copy: "Garden-style or interior upside. CapEx will follow." },
+  { id: "light_rehab", title: "Light rehab", copy: "Targeted unit turns without a full recap story." },
+];
+
+function centsToUsd(value: string | number | null | undefined) {
+  if (value == null || value === "") return "";
+  const n = Number(value) / 100;
+  if (!Number.isFinite(n)) return "";
+  return n.toFixed(2);
+}
+
+function fieldClass() {
+  return "mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 text-sm text-ink-900";
+}
+
+export function AddDealWizard({
+  initialIntakeId,
+  opcos,
+  periodLabels,
+}: {
+  initialIntakeId?: string;
+  opcos: { code: string; name: string }[];
+  periodLabels: string[];
+}) {
+  const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [intake, setIntake] = useState<Intake | null>(null);
+  const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [dropboxFiles, setDropboxFiles] = useState<{ id: string; name: string }[]>([]);
+  const [emailFiles, setEmailFiles] = useState<{ id: string; name: string }[]>([]);
+  const [selectedRemote, setSelectedRemote] = useState<string[]>([]);
+  const [uploads, setUploads] = useState<{ name: string; progress: "queued" | "uploading" | "done" | "error"; error?: string }[]>([]);
+  const [confirmReplace, setConfirmReplace] = useState(false);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
+  const [completeness, setCompleteness] = useState<Completeness | null>(null);
+  const [form, setForm] = useState({
+    goal: "value_add" as DealGoal,
+    targetPeriod: "2026-08",
+    speName: "",
+    speCode: "",
+    unitCount: "",
+    parentOpCoCode: opcos[0]?.code ?? "RCP-OPCO",
+    sources: ["upload"] as DealFileSource[],
+    loanName: "",
+    loanLender: "",
+    loanUpbUsd: "",
+    loanRatePercent: "",
+    loanPaymentUsd: "",
+    loanOrigination: "",
+    loanMaturity: "",
+    dscrThreshold: "1.25",
+    debtYieldThresholdPercent: "8",
+  });
+
+  const hydrate = useCallback((row: Intake) => {
+    setIntake(row);
+    setStep(Math.min(8, Math.max(1, row.currentStep || 1)));
+    setForm((prev) => ({
+      ...prev,
+      goal: (row.goal as DealGoal) || prev.goal,
+      targetPeriod: row.targetPeriod || prev.targetPeriod,
+      speName: row.speName || "",
+      speCode: row.speCode || "",
+      unitCount: row.unitCount != null ? String(row.unitCount) : "",
+      parentOpCoCode: row.parentOpCoCode || prev.parentOpCoCode,
+      sources: row.sources?.length ? row.sources : prev.sources,
+      loanName: row.loanName || "",
+      loanLender: row.loanLender || "",
+      loanUpbUsd: centsToUsd(row.loanUpbCents),
+      loanRatePercent: row.loanRateBps != null ? (row.loanRateBps / 100).toFixed(2) : "",
+      loanPaymentUsd: centsToUsd(row.loanPaymentCents),
+      loanOrigination: row.loanOrigination ? row.loanOrigination.slice(0, 10) : "",
+      loanMaturity: row.loanMaturity ? row.loanMaturity.slice(0, 10) : "",
+      dscrThreshold: row.dscrThresholdBps != null ? (row.dscrThresholdBps / 10_000).toFixed(2) : prev.dscrThreshold,
+      debtYieldThresholdPercent:
+        row.debtYieldThresholdBps != null ? (row.debtYieldThresholdBps / 100).toFixed(2) : prev.debtYieldThresholdPercent,
+    }));
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/deals/providers")
+      .then((r) => r.json())
+      .then((json: { providers?: ProviderStatus[] }) => setProviders(json.providers ?? []));
+  }, []);
+
+  useEffect(() => {
+    if (!initialIntakeId) return;
+    void fetch(`/api/deals/intake?id=${initialIntakeId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json?.id) hydrate(json as Intake);
+      });
+  }, [hydrate, initialIntakeId]);
+
+  const payload = useMemo(
+    () => ({
+      goal: form.goal,
+      targetPeriod: form.targetPeriod,
+      speName: form.speName || null,
+      speCode: form.speCode || null,
+      unitCount: form.unitCount ? Number(form.unitCount) : null,
+      parentOpCoCode: form.parentOpCoCode,
+      sources: form.sources,
+      loanName: form.loanName || null,
+      loanLender: form.loanLender || null,
+      loanUpbUsd: form.loanUpbUsd || null,
+      loanRatePercent: form.loanRatePercent || null,
+      loanPaymentUsd: form.loanPaymentUsd || null,
+      loanOrigination: form.loanOrigination || null,
+      loanMaturity: form.loanMaturity || null,
+      dscrThreshold: form.dscrThreshold || null,
+      debtYieldThresholdPercent: form.debtYieldThresholdPercent || null,
+      currentStep: step,
+    }),
+    [form, step],
+  );
+
+  async function saveDraft(nextStep = step) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/deals/intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: intake?.id, ...payload, currentStep: nextStep }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not save the draft.");
+      hydrate(json as Intake);
+      if (!intake?.id) {
+        router.replace(`/deals/new?intake=${json.id}`);
+      }
+      setMessage("Draft saved. You can refresh — this deal intake will still be here.");
+      return json as Intake;
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "Save failed";
+      setError(text);
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function go(next: number) {
+    const saved = await saveDraft(next);
+    if (saved) setStep(next);
+  }
+
+  async function suggestCode() {
+    if (!form.speName.trim()) return;
+    const res = await fetch(`/api/deals?suggest=${encodeURIComponent(form.speName)}`);
+    const json = (await res.json()) as { code?: string };
+    if (json.code) setForm((f) => ({ ...f, speCode: json.code! }));
+  }
+
+  async function uploadFiles(fileList: FileList | File[], source: DealFileSource = "upload") {
+    let current = intake;
+    if (!current) current = await saveDraft(3);
+    if (!current) return;
+    const files = Array.from(fileList);
+    setUploads(files.map((f) => ({ name: f.name, progress: "uploading" })));
+    const body = new FormData();
+    body.set("intakeId", current.id);
+    body.set("source", source);
+    for (const file of files) body.append("file", file);
+    const res = await fetch("/api/deals/intake/files", { method: "POST", body });
+    const json = await res.json();
+    if (!res.ok) {
+      setUploads(files.map((f) => ({ name: f.name, progress: "error", error: json.error })));
+      setError(json.error ?? "Upload failed");
+      return;
+    }
+    setUploads(files.map((f) => ({ name: f.name, progress: "done" })));
+    if (json.intake) hydrate(json.intake as Intake);
+    setMessage(`${files.length} file(s) stored. Classify them on the next step.`);
+  }
+
+  async function removeFile(id: string) {
+    await fetch(`/api/deals/intake/files?id=${id}`, { method: "DELETE" });
+    if (!intake) return;
+    const res = await fetch(`/api/deals/intake?id=${intake.id}`);
+    const json = await res.json();
+    if (json.id) hydrate(json as Intake);
+  }
+
+  async function classify(fileId: string, classification: DealFileClass) {
+    await fetch("/api/deals/intake/files", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileId, classification }),
+    });
+    if (!intake) return;
+    setIntake({
+      ...intake,
+      files: intake.files.map((f) => (f.id === fileId ? { ...f, classification } : f)),
+    });
+  }
+
+  async function loadDropbox() {
+    const res = await fetch("/api/deals/intake/from-dropbox");
+    const json = await res.json();
+    setDropboxFiles(json.files ?? []);
+    if (!json.configured) setMessage(json.message);
+  }
+
+  async function loadEmail() {
+    const res = await fetch("/api/deals/intake/from-email");
+    const json = await res.json();
+    setEmailFiles(json.files ?? []);
+    if (!json.configured) setMessage(json.message);
+  }
+
+  async function importRemote(kind: "dropbox" | "email") {
+    if (!intake) await saveDraft(3);
+    const id = intake?.id;
+    if (!id) return;
+    const url = kind === "dropbox" ? "/api/deals/intake/from-dropbox" : "/api/deals/intake/from-email";
+    const body = kind === "dropbox" ? { intakeId: id, paths: selectedRemote } : { intakeId: id, messageIds: selectedRemote };
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setError(json.error ?? "Could not import remote files.");
+      return;
+    }
+    if (json.intake) hydrate(json.intake as Intake);
+    setSelectedRemote([]);
+    setMessage("Remote files attached. Classify them next.");
+  }
+
+  async function scanMailbox() {
+    const res = await fetch("/api/deals/intake/scan-mailbox", { method: "POST" });
+    const json = await res.json();
+    setMessage(json.message);
+  }
+
+  async function createEntity() {
+    const saved = await saveDraft(5);
+    if (!saved) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/deals/intake/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intakeId: saved.id, action: "create_entity" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not create the SPE.");
+      if (json.intake) hydrate(json.intake as Intake);
+      setMessage(`Created ${json.intake?.speCode}. The chart of accounts was cloned from the master template.`);
+      setStep(6);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyData() {
+    const saved = await saveDraft(6);
+    if (!saved) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/deals/intake/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          intakeId: saved.id,
+          action: "apply",
+          confirmReplace,
+          importRentRoll: true,
+          importBudget: true,
+          saveLoan: true,
+        }),
+      });
+      const json = await res.json();
+      if (res.status === 409) {
+        setNeedsConfirm(true);
+        setError(json.error);
+        return;
+      }
+      if (!res.ok) throw new Error(json.error ?? "Apply failed");
+      if (json.intake) hydrate(json.intake as Intake);
+      setNeedsConfirm(false);
+      setMessage("Structured data applied. Review completeness next.");
+      setStep(7);
+      await loadCompleteness(json.intake?.entityCode, json.intake?.targetPeriod);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Apply failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadCompleteness(code?: string | null, period?: string | null) {
+    const entity = code || intake?.entityCode;
+    const label = period || form.targetPeriod;
+    if (!entity) return;
+    const res = await fetch(`/api/expert/context?entity=${entity}&period=${label}&pathname=/deals/new`);
+    const json = await res.json();
+    if (json.completeness && !json.completeness.ok) return;
+    if (json.completeness) setCompleteness(json.completeness as Completeness);
+  }
+
+  useEffect(() => {
+    if (step === 7 && intake?.entityCode) void loadCompleteness();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, intake?.entityCode]);
+
+  const provider = (id: DealFileSource) => providers.find((p) => p.id === id);
+  const qs = intake?.entityCode
+    ? `entity=${intake.entityCode}&period=${form.targetPeriod}`
+    : `entity=${form.parentOpCoCode}&period=${form.targetPeriod}`;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">Add Deal · new property SPE</p>
+        <h1 className="font-display text-4xl text-navy-900">Onboard a deal under OpCo</h1>
+        <p className="mt-2 max-w-2xl text-sm text-ink-700">
+          New deals are <strong>SPE</strong> entities under {form.parentOpCoCode}. Upload files now. Dropbox,
+          email, and the RCP mailbox appear even when they are not connected yet — they will not crash this
+          page. Drafts save as you go.
+        </p>
+      </div>
+
+      <ol className="grid gap-2 md:grid-cols-8">
+        {DEAL_WIZARD_STEPS.map((row) => {
+          const active = step === row.id;
+          const done = step > row.id;
+          return (
+            <li key={row.id}>
+              <button
+                type="button"
+                onClick={() => void go(row.id)}
+                className={`w-full border px-2 py-2 text-left ${
+                  active
+                    ? "border-gold-500 bg-navy-900 text-cream-50"
+                    : done
+                      ? "border-gold-400 bg-cream-50 text-navy-900"
+                      : "border-cream-300 bg-white text-ink-600"
+                }`}
+              >
+                <span className="block text-[10px] uppercase tracking-[0.14em]">{row.id}</span>
+                <span className="block text-xs font-medium">{row.title}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      {error ? <p className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
+      {message ? <p className="border border-gold-300 bg-cream-50 px-4 py-3 text-sm text-ink-700">{message}</p> : null}
+
+      <div className="border border-cream-300 bg-white px-6 py-6 shadow-ledger">
+        {step === 1 ? (
+          <section className="space-y-4">
+            <h2 className="font-display text-2xl text-navy-900">What are you onboarding?</h2>
+            <div className="grid gap-3 md:grid-cols-3">
+              {GOALS.map((goal) => (
+                <button
+                  key={goal.id}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, goal: goal.id }))}
+                  className={`border px-4 py-4 text-left ${
+                    form.goal === goal.id ? "border-gold-500 bg-cream-50" : "border-cream-300"
+                  }`}
+                >
+                  <p className="font-display text-xl text-navy-900">{goal.title}</p>
+                  <p className="mt-1 text-sm text-ink-600">{goal.copy}</p>
+                </button>
+              ))}
+            </div>
+            <label className="block text-sm text-ink-700">
+              Target period
+              <select
+                className={fieldClass()}
+                value={form.targetPeriod}
+                onChange={(e) => setForm((f) => ({ ...f, targetPeriod: e.target.value }))}
+              >
+                {[...new Set([...periodLabels, form.targetPeriod, "2026-07", "2026-08"])].map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+        ) : null}
+
+        {step === 2 ? (
+          <section className="space-y-4">
+            <h2 className="font-display text-2xl text-navy-900">SPE identity</h2>
+            <p className="text-sm text-ink-600">
+              This becomes a legal entity under OpCo. The code should look like <code>SPE-XXX</code>.
+            </p>
+            <label className="block text-sm text-ink-700">
+              SPE legal name
+              <input
+                className={fieldClass()}
+                value={form.speName}
+                onChange={(e) => setForm((f) => ({ ...f, speName: e.target.value }))}
+                onBlur={() => void suggestCode()}
+                placeholder="Riverside Terrace LLC"
+              />
+            </label>
+            <label className="block text-sm text-ink-700">
+              SPE code
+              <div className="mt-1 flex gap-2">
+                <input
+                  className={`${fieldClass()} mt-0`}
+                  value={form.speCode}
+                  onChange={(e) => setForm((f) => ({ ...f, speCode: e.target.value.toUpperCase() }))}
+                  placeholder="SPE-RT"
+                />
+                <button type="button" className="border border-navy-900 px-3 text-xs uppercase tracking-[0.12em]" onClick={() => void suggestCode()}>
+                  Suggest
+                </button>
+              </div>
+            </label>
+            <label className="block text-sm text-ink-700">
+              Unit count
+              <input
+                className={fieldClass()}
+                inputMode="numeric"
+                value={form.unitCount}
+                onChange={(e) => setForm((f) => ({ ...f, unitCount: e.target.value }))}
+                placeholder="216"
+              />
+            </label>
+            <label className="block text-sm text-ink-700">
+              Parent OpCo
+              <select
+                className={fieldClass()}
+                value={form.parentOpCoCode}
+                onChange={(e) => setForm((f) => ({ ...f, parentOpCoCode: e.target.value }))}
+              >
+                {opcos.map((opco) => (
+                  <option key={opco.code} value={opco.code}>
+                    {opco.name} ({opco.code})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+        ) : null}
+
+        {step === 3 ? (
+          <section className="space-y-5">
+            <h2 className="font-display text-2xl text-navy-900">Source files</h2>
+            <p className="text-sm text-ink-600">
+              Choose one or more intake modes. Upload works now (max {INTAKE_MAX_BYTES_LABEL} per file). Larger
+              offering-memorandum PDFs can be noted and added later on Vault.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {(
+                [
+                  ["upload", "Upload files", "Primary path. Works without any partner login."],
+                  ["dropbox", "Import from Dropbox", provider("dropbox")?.message ?? "Connect Dropbox when a token is present."],
+                  ["email_attachment", "Email attachment", provider("email_attachment")?.message ?? "Upload a .eml or the attachment files."],
+                  ["rcp_mailbox", "RCP mailbox", provider("rcp_mailbox")?.message ?? "Mailbox address is not decided yet."],
+                ] as const
+              ).map(([id, title, copy]) => {
+                const on = form.sources.includes(id);
+                const configured = provider(id)?.configured ?? id === "upload";
+                return (
+                  <div
+                    key={id}
+                    className={`border px-4 py-3 text-left ${on ? "border-gold-500 bg-cream-50" : "border-cream-300"}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          sources: on ? f.sources.filter((s) => s !== id) : [...f.sources, id],
+                        }))
+                      }
+                      className="w-full text-left"
+                    >
+                      <p className="font-display text-lg text-navy-900">{title}</p>
+                      <p className="mt-1 text-xs text-ink-600">{copy}</p>
+                      <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-gold-700">
+                        {configured ? "Connected" : id === "upload" ? "Ready" : "Not connected"}
+                      </p>
+                    </button>
+                    {id === "rcp_mailbox" ? (
+                      <button
+                        type="button"
+                        onClick={() => void scanMailbox()}
+                        className="mt-3 border border-navy-900 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-navy-900"
+                      >
+                        Scan RCP inbox
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {form.sources.includes("upload") ? (
+              <FileDropzone
+                onFiles={(files) => void uploadFiles(files, "upload")}
+                hint={`Drop rent-roll CSV, budget CSV, loan PDFs, OM, insurance. Max ${INTAKE_MAX_BYTES_LABEL}.`}
+              />
+            ) : null}
+
+            {form.sources.includes("dropbox") ? (
+              <div className="border border-cream-300 bg-cream-50 px-4 py-3">
+                <p className="text-sm font-medium text-navy-900">Dropbox</p>
+                {provider("dropbox")?.configured ? (
+                  <>
+                    <button type="button" className="mt-2 text-xs uppercase tracking-[0.12em] underline" onClick={() => void loadDropbox()}>
+                      List Dropbox files
+                    </button>
+                    <RemotePicker files={dropboxFiles} selected={selectedRemote} onToggle={setSelectedRemote} />
+                    <button type="button" className="mt-2 bg-navy-900 px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-cream-50" onClick={() => void importRemote("dropbox")}>
+                      Attach selected
+                    </button>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-ink-600">{provider("dropbox")?.message}</p>
+                )}
+              </div>
+            ) : null}
+
+            {form.sources.includes("email_attachment") ? (
+              <div className="border border-cream-300 bg-cream-50 px-4 py-3 space-y-3">
+                <p className="text-sm font-medium text-navy-900">Email attachment</p>
+                <p className="text-sm text-ink-600">
+                  Upload the attachment files or a forwarded <code>.eml</code>. If a mailbox connector is
+                  configured, you can also pick a message.
+                </p>
+                <FileDropzone onFiles={(files) => void uploadFiles(files, "email_attachment")} hint="Drop .eml or attachment files." />
+                {provider("email_attachment")?.configured ? (
+                  <>
+                    <button type="button" className="text-xs uppercase tracking-[0.12em] underline" onClick={() => void loadEmail()}>
+                      List mailbox messages
+                    </button>
+                    <RemotePicker files={emailFiles} selected={selectedRemote} onToggle={setSelectedRemote} />
+                    <button type="button" className="bg-navy-900 px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-cream-50" onClick={() => void importRemote("email")}>
+                      Pull selected message
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-sm text-ink-600">{provider("email_attachment")?.message}</p>
+                )}
+              </div>
+            ) : null}
+
+            {form.sources.includes("rcp_mailbox") ? (
+              <div className="border border-dashed border-gold-400 bg-cream-50 px-4 py-3">
+                <p className="text-sm font-medium text-navy-900">Scan RCP inbox</p>
+                <p className="mt-1 text-sm text-ink-600">{provider("rcp_mailbox")?.message}</p>
+                <button type="button" className="mt-3 border border-navy-900 px-3 py-1.5 text-xs uppercase tracking-[0.12em]" onClick={() => void scanMailbox()}>
+                  Scan RCP inbox
+                </button>
+              </div>
+            ) : null}
+
+            {uploads.length ? (
+              <ul className="text-sm text-ink-700">
+                {uploads.map((row) => (
+                  <li key={row.name}>
+                    {row.name} — {row.progress}
+                    {row.error ? ` (${row.error})` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {intake?.files.length ? (
+              <p className="text-sm text-ink-600">{intake.files.length} file(s) on this draft.</p>
+            ) : null}
+          </section>
+        ) : null}
+
+        {step === 4 ? (
+          <section className="space-y-4">
+            <h2 className="font-display text-2xl text-navy-900">Classify files</h2>
+            <p className="text-sm text-ink-600">
+              Map each file so it lands in the vault with the right kind. CSV types can run the existing
+              rent-roll and budget importers after the SPE exists.
+            </p>
+            {!intake?.files.length ? (
+              <p className="text-sm text-ink-600">No files yet. Go back and upload, or continue if you will add files later.</p>
+            ) : (
+              <ul className="space-y-3">
+                {intake.files.map((file) => (
+                  <li key={file.id} className="border border-cream-300 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm text-navy-900">{file.filename}</p>
+                        <p className="text-xs text-ink-500">
+                          {(file.byteSize / 1024).toFixed(1)} KB · {file.source} · {file.status}
+                        </p>
+                      </div>
+                      <button type="button" className="text-xs uppercase tracking-[0.12em] text-red-800" onClick={() => void removeFile(file.id)}>
+                        Remove
+                      </button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {DEAL_FILE_CLASSES.map((kind) => (
+                        <button
+                          key={kind}
+                          type="button"
+                          onClick={() => void classify(file.id, kind)}
+                          className={`px-2 py-1 text-[11px] uppercase tracking-[0.1em] ${
+                            file.classification === kind ? "bg-navy-900 text-cream-50" : "border border-cream-300 text-ink-600"
+                          }`}
+                        >
+                          {DEAL_FILE_CLASS_LABELS[kind]}
+                        </button>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : null}
+
+        {step === 5 ? (
+          <section className="space-y-4">
+            <h2 className="font-display text-2xl text-navy-900">Create the SPE</h2>
+            <p className="text-sm text-ink-700">
+              This creates <strong>{form.speCode || "SPE-…"}</strong> ({form.speName || "name pending"}) under{" "}
+              {form.parentOpCoCode}, clones the master chart of accounts, and opens the target period plus the
+              demo months so the header switcher still works.
+            </p>
+            {intake?.entityCode ? (
+              <p className="border border-gold-300 bg-cream-50 px-4 py-3 text-sm">
+                Already created: <strong>{intake.entityCode}</strong>. Continue to apply rent-roll / budget / loan.
+              </p>
+            ) : (
+              <button
+                type="button"
+                disabled={busy || !form.speName || !form.speCode}
+                onClick={() => void createEntity()}
+                className="bg-navy-900 px-5 py-2 text-[12px] uppercase tracking-[0.14em] text-cream-50 disabled:opacity-50"
+              >
+                Create SPE and clone CoA
+              </button>
+            )}
+          </section>
+        ) : null}
+
+        {step === 6 ? (
+          <section className="space-y-4">
+            <h2 className="font-display text-2xl text-navy-900">Apply structured data</h2>
+            <p className="text-sm text-ink-600">
+              Optional. Rent-roll and budget CSVs use the existing importers. If rows already exist, you must
+              confirm a full replace.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="block text-sm text-ink-700">
+                Lender
+                <input className={fieldClass()} value={form.loanLender} onChange={(e) => setForm((f) => ({ ...f, loanLender: e.target.value }))} />
+              </label>
+              <label className="block text-sm text-ink-700">
+                Loan name
+                <input className={fieldClass()} value={form.loanName} onChange={(e) => setForm((f) => ({ ...f, loanName: e.target.value }))} />
+              </label>
+              <label className="block text-sm text-ink-700">
+                Unpaid principal (USD)
+                <input className={fieldClass()} value={form.loanUpbUsd} onChange={(e) => setForm((f) => ({ ...f, loanUpbUsd: e.target.value }))} placeholder="18500000.00" />
+              </label>
+              <label className="block text-sm text-ink-700">
+                Annual rate %
+                <input className={fieldClass()} value={form.loanRatePercent} onChange={(e) => setForm((f) => ({ ...f, loanRatePercent: e.target.value }))} placeholder="5.68" />
+              </label>
+              <label className="block text-sm text-ink-700">
+                Monthly payment (USD)
+                <input className={fieldClass()} value={form.loanPaymentUsd} onChange={(e) => setForm((f) => ({ ...f, loanPaymentUsd: e.target.value }))} />
+              </label>
+              <label className="block text-sm text-ink-700">
+                Maturity
+                <input type="date" className={fieldClass()} value={form.loanMaturity} onChange={(e) => setForm((f) => ({ ...f, loanMaturity: e.target.value }))} />
+              </label>
+              <label className="block text-sm text-ink-700">
+                Origination
+                <input type="date" className={fieldClass()} value={form.loanOrigination} onChange={(e) => setForm((f) => ({ ...f, loanOrigination: e.target.value }))} />
+              </label>
+              <label className="block text-sm text-ink-700">
+                DSCR threshold (e.g. 1.25)
+                <input className={fieldClass()} value={form.dscrThreshold} onChange={(e) => setForm((f) => ({ ...f, dscrThreshold: e.target.value }))} />
+              </label>
+              <label className="block text-sm text-ink-700">
+                Debt-yield threshold %
+                <input className={fieldClass()} value={form.debtYieldThresholdPercent} onChange={(e) => setForm((f) => ({ ...f, debtYieldThresholdPercent: e.target.value }))} />
+              </label>
+            </div>
+            <label className="flex items-start gap-2 text-sm text-ink-700">
+              <input type="checkbox" checked={confirmReplace} onChange={(e) => setConfirmReplace(e.target.checked)} />
+              I understand rent-roll / budget import <strong>replaces</strong> existing rows for this SPE.
+            </label>
+            {needsConfirm ? (
+              <p className="text-sm text-red-800">Check the box above, then apply again. This is a destructive replace.</p>
+            ) : null}
+            <button
+              type="button"
+              disabled={busy || !intake?.entityId}
+              onClick={() => void applyData()}
+              className="bg-navy-900 px-5 py-2 text-[12px] uppercase tracking-[0.14em] text-cream-50 disabled:opacity-50"
+            >
+              Apply rent roll, budget, and loan
+            </button>
+            <p className="text-xs text-ink-500">
+              Sample CSVs: <code>data/samples/rent-roll.csv</code> and <code>data/samples/budget.csv</code>. LTV is
+              not invented from book cost.
+            </p>
+          </section>
+        ) : null}
+
+        {step === 7 ? (
+          <section className="space-y-4">
+            <h2 className="font-display text-2xl text-navy-900">Completeness</h2>
+            {completeness ? (
+              <>
+                <p className="font-display text-3xl text-navy-900">
+                  {completeness.score}/100{" "}
+                  <span className="text-base text-ink-500">
+                    ({completeness.ready}/{completeness.applicable} ready)
+                  </span>
+                </p>
+                <ul className="space-y-2 text-sm">
+                  {completeness.items
+                    .filter((item) => item.status !== "na")
+                    .map((item) => (
+                      <li key={item.id} className="border border-cream-300 px-3 py-2">
+                        <span className="uppercase tracking-[0.12em] text-[11px] text-gold-700">{item.status}</span>{" "}
+                        <strong>{item.label}</strong> — {item.detail}
+                      </li>
+                    ))}
+                </ul>
+              </>
+            ) : (
+              <p className="text-sm text-ink-600">Create the SPE first, then Expert can score what is still missing.</p>
+            )}
+          </section>
+        ) : null}
+
+        {step === 8 ? (
+          <section className="space-y-4">
+            <h2 className="font-display text-2xl text-navy-900">Deal is on the books</h2>
+            <p className="text-sm text-ink-700">
+              {intake?.entityCode ? (
+                <>
+                  <strong>{intake.entityName ?? intake.speName}</strong> ({intake.entityCode}) is in the entity
+                  switcher. Open the screens below, or ask Expert to walk you through month-end.
+                </>
+              ) : (
+                "Create the SPE on step 5 to unlock deep links."
+              )}
+            </p>
+            {intake?.entityCode ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  [`/dashboard/${intake.entityCode}`, "Dashboard"],
+                  [`/properties/${intake.entityCode}`, "Properties / rent roll"],
+                  ["/debt", "Debt"],
+                  ["/vault", "Vault"],
+                  ["/narratives", "Narratives"],
+                  ["/close", "Period close"],
+                ].map(([href, label]) => (
+                  <Link key={href} href={`${href}?${qs}`} className="border border-cream-300 px-4 py-3 hover:border-gold-500">
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+            <Link href={`/?${qs}&expert=1`} className="inline-block bg-gold-500 px-4 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-950">
+              Ask Expert to walk me through month-end
+            </Link>
+          </section>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          disabled={step === 1 || busy}
+          onClick={() => void go(step - 1)}
+          className="border border-navy-900 px-4 py-2 text-[12px] uppercase tracking-[0.14em] disabled:opacity-40"
+        >
+          Back
+        </button>
+        <div className="flex gap-2">
+          <button type="button" disabled={busy} onClick={() => void saveDraft(step)} className="border border-gold-500 px-4 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900">
+            Save draft
+          </button>
+          {step < 8 ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void go(step + 1)}
+              className="bg-navy-900 px-4 py-2 text-[12px] uppercase tracking-[0.14em] text-cream-50"
+            >
+              Continue
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <p className="text-[11px] uppercase tracking-[0.14em] text-ink-500">
+        File cap {INTAKE_MAX_BYTES / (1024 * 1024)} MB · tokens stay on the server · public demo mutates the demo DB
+      </p>
+    </div>
+  );
+}
+
+function FileDropzone({ onFiles, hint }: { onFiles: (files: File[]) => void; hint: string }) {
+  const [over, setOver] = useState(false);
+  return (
+    <label
+      className={`block cursor-pointer border-2 border-dashed px-4 py-8 text-center ${
+        over ? "border-gold-500 bg-cream-50" : "border-cream-400 bg-white"
+      }`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        onFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      <input
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) onFiles(Array.from(e.target.files));
+          e.target.value = "";
+        }}
+      />
+      <p className="font-display text-xl text-navy-900">Drop files here or click to choose</p>
+      <p className="mt-1 text-sm text-ink-600">{hint}</p>
+    </label>
+  );
+}
+
+function RemotePicker({
+  files,
+  selected,
+  onToggle,
+}: {
+  files: { id: string; name: string }[];
+  selected: string[];
+  onToggle: (next: string[]) => void;
+}) {
+  if (!files.length) return null;
+  return (
+    <ul className="mt-2 max-h-48 space-y-1 overflow-auto text-sm">
+      {files.map((file) => {
+        const on = selected.includes(file.id);
+        return (
+          <li key={file.id}>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={() => onToggle(on ? selected.filter((id) => id !== file.id) : [...selected, file.id])}
+              />
+              {file.name}
+            </label>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
