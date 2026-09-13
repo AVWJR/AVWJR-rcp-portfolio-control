@@ -1,3 +1,4 @@
+import { looksLikeRentRollHeaders } from "@rcp/properties";
 import { read, utils } from "xlsx";
 import { suggestSpeCode } from "./codes";
 import { isDealFileClass, type DealFileClass } from "./types";
@@ -54,9 +55,14 @@ export function sniffWorkbookRole(bytes: Buffer, filename: string): DealFileClas
       workbook.SheetNames.find((name) => /budget/i.test(name)) ??
       workbook.SheetNames[0];
     const sheet = preferred ? workbook.Sheets[preferred] : undefined;
-    const csv = sheet ? utils.sheet_to_csv(sheet, { blankrows: false }).slice(0, 4000) : "";
+    const csv = sheet ? utils.sheet_to_csv(sheet, { blankrows: false }).slice(0, 8000) : "";
+    const headerLine = csv.split(/\r?\n/).find((line) => line.trim()) ?? "";
+    const headers = headerLine.split(",").map((h) => h.trim());
     const hay = `${filename} ${names} ${csv}`.toLowerCase();
-    if (/unit_id|unit code|unit_code/.test(hay) && /market_rent|in_place_rent|status/.test(hay)) {
+    if (
+      looksLikeRentRollHeaders(headers) ||
+      (/unit/.test(hay) && /rent/.test(hay) && /status|occ|leased/.test(hay))
+    ) {
       return "rent_roll_csv";
     }
     if (/account_code/.test(hay) && /amount/.test(hay)) return "budget_csv";
@@ -79,8 +85,12 @@ export function inferFileRole(filename: string, bytes?: Buffer): DealFileClass {
 }
 
 export function looksMappableRentRoll(csv: string): boolean {
-  const header = csv.split(/\r?\n/, 1)[0]?.toLowerCase() ?? "";
-  return header.includes("unit_id") && header.includes("status");
+  const lines = csv.split(/\r?\n/).filter((line) => line.trim());
+  for (const line of lines.slice(0, 25)) {
+    const headers = line.split(",").map((h) => h.trim());
+    if (looksLikeRentRollHeaders(headers)) return true;
+  }
+  return false;
 }
 
 export function looksMappableBudget(csv: string): boolean {

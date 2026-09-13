@@ -1,6 +1,7 @@
 import { importBudgetCsv } from "@/lib/budgets";
 import { ReplaceRequiresConfirmError } from "@/lib/import-guard";
 import { prisma } from "@/lib/prisma";
+import { inferAsOfDate } from "./infer";
 import { importRentRollCsv } from "@/lib/rent-roll";
 import { parsePeriodLabel } from "@/lib/expert/period";
 import { createSpeDeal } from "./create-spe";
@@ -11,9 +12,12 @@ import { bytesToImportCsv } from "./workbook";
 
 function coachStructuredImportError(filename: string, error: unknown): never {
   const raw = error instanceof Error ? error.message : String(error);
+  if (/could not map columns/i.test(raw)) {
+    throw new Error(`${filename} is stored, but ${raw}`);
+  }
   if (/missing required column|unit_id|account_code|no rows we can read|file is empty/i.test(raw)) {
     throw new Error(
-      `${filename} is stored, but columns do not match the importer (${raw}). Ask Expert to map columns (rent-roll: unit_id, floorplan, beds, baths, sqft, status, market_rent, in_place_rent, lease_start, lease_end; budget: account_code, amount) or save the first sheet as CSV. Do not invent rows.`,
+      `${filename} is stored, but columns do not match the importer (${raw}). Broker rent-roll headers (Unit, Floorplan, Beds, Market Rent, Lease Rent, Status) are accepted. If this still fails, ask Expert — do not invent rows.`,
     );
   }
   throw error instanceof Error ? error : new Error(raw);
@@ -74,20 +78,25 @@ export async function applyStructuredData(opts: {
         if (loaded) {
           let units;
           try {
+            const asOf = inferAsOfDate(loaded.file.filename);
             units = await importRentRollCsv({
               entityId: intake.entityId,
               csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
               confirmReplace: opts.confirmReplace,
+              asOfDate: asOf ? new Date(`${asOf}T16:00:00.000Z`) : undefined,
             });
           } catch (error) {
             if (error instanceof ReplaceRequiresConfirmError) throw error;
             if (opts.lenient) {
               const message = error instanceof Error ? error.message : String(error);
+              const skipped = /could not map columns/i.test(message)
+                ? `${loaded.file.filename}: ${message}`
+                : `${loaded.file.filename} stored in vault; ${message}`;
               await prisma.dealIntakeFile.update({
                 where: { id: csvFile.id },
                 data: { status: "needs_mapping", lastError: message.slice(0, 500) },
               });
-              results.push({ kind: "rent_roll", skipped: `${loaded.file.filename} stored in vault; columns need mapping.` });
+              results.push({ kind: "rent_roll", skipped });
               units = undefined;
             } else {
               coachStructuredImportError(loaded.file.filename, error);
@@ -97,6 +106,10 @@ export async function applyStructuredData(opts: {
           await prisma.dealIntakeFile.update({
             where: { id: csvFile.id },
             data: { status: "imported", lastError: null },
+          });
+          await prisma.entity.update({
+            where: { id: intake.entityId },
+            data: { unitCount: units.length },
           });
           results.push({ kind: "rent_roll", imported: units.length });
           }

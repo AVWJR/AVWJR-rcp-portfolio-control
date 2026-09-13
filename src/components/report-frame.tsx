@@ -74,6 +74,17 @@ export async function ReportShell({
         </div>
       );
     }
+    if (/period not found/i.test(message)) {
+      return (
+        <div className="mx-auto max-w-xl px-6 py-24 text-center">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">Roche Capital Partners</p>
+          <h1 className="mt-2 font-display text-4xl text-navy-900">Period is not open</h1>
+          <p className="mt-3 text-sm text-ink-700">
+            Switch the navy header back to <strong>2026-08</strong>. A rent-roll as-of date is not the OpCo close month.
+          </p>
+        </div>
+      );
+    }
     throw error;
   }
   return (

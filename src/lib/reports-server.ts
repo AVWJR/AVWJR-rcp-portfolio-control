@@ -4,6 +4,7 @@ import {
   buildIncomeStatement,
   buildTrialBalance,
 } from "@rcp/ledger";
+import { openPeriod } from "@/lib/deals/periods";
 import { buildOperatingPackage } from "./operating";
 import { consolidationEntityIds, loadPostedLines } from "./queries";
 import { prisma } from "./prisma";
@@ -20,10 +21,14 @@ export async function resolveReportScope(opts: {
   });
   if (!entity) throw new Error("Entity not found");
 
-  const period = await prisma.period.findUnique({
+  let period = await prisma.period.findUnique({
     where: { entityId_year_month: { entityId: entity.id, year: opts.year, month: opts.month } },
   });
-  if (!period) throw new Error("Period not found");
+  if (!period) {
+    // Filename as-of dates (e.g. Harrington RR 2019-11) land in the global picker.
+    // Opening the missing month keeps Overview / Dashboard from 500ing.
+    period = await openPeriod(entity.id, opts.year, opts.month);
+  }
 
   const canConsolidate = entity.type === "OPCO" && entity.children.some((c) => c.type === "SPE");
   const consolidated = opts.consolidated && canConsolidate;

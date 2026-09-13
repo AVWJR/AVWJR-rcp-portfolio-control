@@ -307,18 +307,16 @@ function addDealFlow(ctx: ExpertClientContext): string {
   const list = link("/deals", ctx, "Deals");
   const vault = link("/vault", ctx, "Vault");
   const props = link("/properties", ctx, "Properties");
-  return `**Add a new deal — new property SPE under OpCo**
+  return `**Add a new deal — upload-first, then open the new SPE**
 
-Do this in the product — click paths only.
+Do this in the product — click paths only. Drop the broker **XLSX** on Add Deal. Do not make a spreadsheet conversion the default.
 
 1. Gold nav **Deals** → ${list}, or Overview → **Add Deal**. Open ${start}.
-2. **Goal** — stabilize / value-add / light rehab, plus the target period.
-3. **Identity** — SPE legal name, code (use **Suggest** for \`SPE-XXX\`), unit count, parent OpCo (usually RCP-OPCO). You can skip this and upload first.
-4. **Source files** — **Upload files** works now, including before the deal is named (an Untitled deal draft is created; files go one at a time, max 32 MB). Dropbox / email / RCP mailbox stay visible; if they are not connected, follow the on-screen note and keep uploading.
-5. **Classify files** — rent-roll CSV/XLSX, budget CSV/XLSX, loan, lease, OM/CIM, insurance, or other. Files land in ${vault} after the SPE exists. Password-protected workbooks are rejected; ambiguous columns stay stored — ask me to map them.
-6. **Create entity** — creates the SPE, clones the master chart of accounts, opens periods. The new code appears in the navy **Entity** switcher after a refresh.
-7. **Apply data** — optional rent-roll and budget import for the target period. If rows already exist, check **confirm replace** (this overwrites). Capture lender, UPB, rate, payment, maturity, DSCR / debt-yield thresholds on the existing loan file. Do not invent LTV.
-8. **Completeness** — same Expert score as month-end. Then open Dashboard, ${props}, Debt, Vault, or Narratives.
+2. Drop the OM / rent-roll / T12 files on **Upload files**. Naming the SPE is optional — filenames infer Life at Harrington Park → \`SPE-HRP\`. Files upload **one at a time** (max **32 MB each**). Four files totaling ~6 MB is fine; a 5.5 MB OM is under the cap.
+3. **XLSX rent rolls are first-class.** Broker workbooks (\`RR_-_Harrington_-_…xlsx\`) auto-map Unit / Floorplan / Beds / Baths / Sqft / Status / Market Rent / Lease Rent / lease dates / concession. Auto-ingest creates the SPE, writes **Unit** rows, and vaults the rest.
+4. If columns cannot be mapped you will see **could not map columns: … Detected headers: …** — not a silent vault-only success. Ask me with that header list. Do not invent units.
+5. After ingest, open ${props} and ${link("/dashboard", ctx, "Dashboard")} for the new \`SPE-xxx\` (header period **2026-08**). Occupancy / loss-to-lease come from the rent roll, not GL 4020.
+6. T12 / P&L workbooks stay in ${vault}. Full GL mapping is a follow-on — do not invent accounts. Loan basics stay on Apply if you have them. If units already exist, **confirm replace**. Do not invent LTV.
 
 RCP mailbox address is **not decided yet**. Until \`RCP_INGEST_MAILBOX\` and a connector exist, **Scan RCP inbox** is an honest no-op.
 
@@ -328,14 +326,17 @@ When the SPE exists, ask me for month-end checklist or “What’s missing for t
 function rentRollImportCopy(ctx: ExpertClientContext): string {
   const dest = ctx.entityCode.startsWith("SPE-")
     ? link(`/properties/${ctx.entityCode}`, ctx, "this SPE’s rent roll")
-    : link("/deals/new", ctx, "Add Deal");
-  return `**Import a rent roll**
+    : link("/properties", ctx, "Properties");
+  const dash = ctx.entityCode.startsWith("SPE-")
+    ? link(`/dashboard/${ctx.entityCode}`, ctx, `Dashboard for ${ctx.entityCode}`)
+    : link("/dashboard", ctx, "Dashboard");
+  return `**Import a rent roll — XLSX is the primary path**
 
-1. Prefer Add Deal if this is a **new** SPE — classify the CSV or **XLSX** as **Rent-roll CSV / XLSX**, create the entity, then Apply (confirm replace if units already exist).
-2. For an existing SPE, open ${dest}. Use the CSV import on that page, or upload an XLSX on Add Deal (first sheet named RentRoll / units, else the first sheet).
-3. Required columns: \`unit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent,lease_start,lease_end,concession\`. Budget workbooks need \`account_code,amount\`. If those headers are missing, the file stays in the vault — map the columns or save that sheet as CSV. I will not invent units.
-4. If units already exist, you must **confirm replace**. That deletes the current unit file and loads the CSV/XLSX. Samples: \`data/samples/rent-roll.csv\` and \`data/samples/rent-roll.xlsx\`.
-5. Occupancy is not derived from GL 4020. Password-protected or corrupt workbooks must be re-saved without a password.
+1. **New SPE:** Add Deal → drop the broker workbook (CSV or **XLSX/XLS**). Upload-first auto-ingest classifies \`RR_\` / “rent roll” files, creates the SPE, and writes Unit rows. Then open ${dash} and ${dest}.
+2. **Existing SPE:** apply from Add Deal on that draft, or use the import on ${dest}. Keep the workbook as XLSX when it already maps.
+3. Canonical columns still work: \`unit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent,lease_start,lease_end,concession\`. Broker aliases are mapped automatically (Unit, Unit Type, SF, Occupied/Vacant/Notice, Market Rent, Lease/In-place Rent, lease dates, concession). Title rows above the header are skipped.
+4. If mapping fails you get **could not map columns: … Detected headers: …**. The file stays in the vault — I will not invent units.
+5. Confirm replace if units already exist. Occupancy is not derived from GL 4020. Password-protected workbooks must be re-saved without a password.
 
 I will not invent a rent roll from the income statement.`;
 }

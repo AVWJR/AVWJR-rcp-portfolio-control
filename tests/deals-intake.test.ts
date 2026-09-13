@@ -90,9 +90,24 @@ describe("expert Add Deal knowledge", () => {
     expect(reply.content).toMatch(/Add Deal/);
     expect(reply.content).toMatch(/\/deals\/new/);
     expect(reply.content).toMatch(/confirm replace/i);
+    expect(reply.content).toMatch(/upload-first|Upload-first|drop the OM/i);
+    expect(reply.content).toMatch(/32 MB/);
+    expect(reply.content).toMatch(/XLSX/);
+    expect(reply.content).toMatch(/Dashboard/);
     expect(reply.content).toMatch(/not decided/);
     expect(reply.content).not.toMatch(/npm |npx |\bCLI\b/i);
+    expect(reply.content).not.toMatch(/existing deal.*CSV|CSV into an existing/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/Add Deal/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/\/deals\/new/);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/XLSX is first-class/);
+  });
+
+  it("teaches broker xlsx apply and Properties / Dashboard after ingest", () => {
+    const ctx = readExpertContext("/deals/new", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
+    const reply = answerOffline("How do I import a rent-roll xlsx?", ctx, emptyBundle);
+    expect(reply.content).toMatch(/XLSX/i);
+    expect(reply.content).toMatch(/could not map columns/i);
+    expect(reply.content).toMatch(/Dashboard/);
+    expect(reply.content).toMatch(/Keep the workbook as XLSX/i);
   });
 });

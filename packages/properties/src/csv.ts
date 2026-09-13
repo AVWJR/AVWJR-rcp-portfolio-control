@@ -1,5 +1,6 @@
 import { dollars } from "@rcp/ledger";
-import { bathsToTenths, isUnitStatus, type UnitSnapshot, type UnitStatus } from "./types";
+import { type UnitSnapshot } from "./types";
+import { couldNotMapColumnsMessage, findRentRollHeaderRow, parseMappedRentRollRows } from "./rent-roll-map";
 
 export const RENT_ROLL_CSV_HEADERS = [
   "unit_id",
@@ -96,81 +97,25 @@ export function parseUsdToCents(raw: string, line: number, field: string): bigin
   return sign * (whole * 100n + BigInt(frac));
 }
 
-function parseOptionalDate(raw: string, line: number, field: string): Date | null {
-  if (!raw) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    throw new CsvParseError(line, `${field} must be YYYY-MM-DD, got "${raw}"`);
+export function parseRentRollCsv(text: string, opts: { lenient?: boolean } = {}): UnitSnapshot[] {
+  const lines = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((l) => l.trimEnd())
+    .filter((l) => l.length > 0 && !l.startsWith("#"));
+  if (lines.length === 0) {
+    throw new CsvParseError(0, "file is empty");
   }
-  const date = new Date(`${raw}T16:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) {
-    throw new CsvParseError(line, `${field} is not a valid date`);
+  const table = lines.map(splitCsvLine);
+  const headerIdx = findRentRollHeaderRow(table);
+  if (headerIdx < 0) {
+    throw new CsvParseError(1, couldNotMapColumnsMessage((table[0] ?? []).filter(Boolean), ["unit"]));
   }
-  return date;
-}
-
-export function parseRentRollCsv(text: string): UnitSnapshot[] {
-  const { headers, rows } = parseCsvTable(text);
-  const unitId = headerIndex(headers, "unit_id");
-  const floorplan = headerIndex(headers, "floorplan");
-  const beds = headerIndex(headers, "beds");
-  const baths = headerIndex(headers, "baths");
-  const sqft = headerIndex(headers, "sqft");
-  const status = headerIndex(headers, "status");
-  const market = headerIndex(headers, "market_rent");
-  const inPlace = headerIndex(headers, "in_place_rent");
-  const leaseStart = headerIndex(headers, "lease_start");
-  const leaseEnd = headerIndex(headers, "lease_end");
-  const concessionIdx = headers.indexOf("concession");
-
-  const seen = new Set<string>();
-  return rows.map((cols, i) => {
-    const line = i + 2;
-    const unitCode = cols[unitId] ?? "";
-    if (!unitCode) throw new CsvParseError(line, "unit_id is required");
-    if (seen.has(unitCode)) throw new CsvParseError(line, `duplicate unit_id ${unitCode}`);
-    seen.add(unitCode);
-
-    const statusRaw = (cols[status] ?? "").toUpperCase();
-    if (!isUnitStatus(statusRaw)) {
-      throw new CsvParseError(line, `status must be OCCUPIED, VACANT, or DOWN`);
-    }
-    const statusValue = statusRaw as UnitStatus;
-
-    const bedsN = Number(cols[beds]);
-    const bathsN = Number(cols[baths]);
-    const sqftN = Number(cols[sqft]);
-    if (!Number.isInteger(bedsN) || bedsN < 0) {
-      throw new CsvParseError(line, "beds must be a non-negative integer");
-    }
-    if (!Number.isFinite(bathsN) || bathsN < 0) {
-      throw new CsvParseError(line, "baths must be a non-negative number");
-    }
-    if (!Number.isInteger(sqftN) || sqftN < 0) {
-      throw new CsvParseError(line, "sqft must be a non-negative integer");
-    }
-
-    const marketRent = parseUsdToCents(cols[market] ?? "", line, "market_rent");
-    const inPlaceRent = parseUsdToCents(cols[inPlace] ?? "", line, "in_place_rent");
-    const concessionCents =
-      concessionIdx === -1 ? 0n : parseUsdToCents(cols[concessionIdx] ?? "", line, "concession");
-
-    if (statusValue !== "OCCUPIED" && inPlaceRent !== 0n) {
-      throw new CsvParseError(line, "in_place_rent must be 0 unless status is OCCUPIED");
-    }
-
-    return {
-      unitCode,
-      floorplan: cols[floorplan] ?? "",
-      beds: bedsN,
-      bathsTenths: bathsToTenths(bathsN),
-      sqft: sqftN,
-      status: statusValue,
-      marketRent,
-      inPlaceRent,
-      leaseStart: parseOptionalDate(cols[leaseStart] ?? "", line, "lease_start"),
-      leaseEnd: parseOptionalDate(cols[leaseEnd] ?? "", line, "lease_end"),
-      concessionCents,
-    };
+  const headers = table[headerIdx] ?? [];
+  const canonical = headers.map((h) => h.toLowerCase());
+  const isCanonical = canonical.includes("unit_id") && canonical.includes("market_rent");
+  return parseMappedRentRollRows(headers, table.slice(headerIdx + 1), {
+    lenient: opts.lenient ?? !isCanonical,
   });
 }
 
