@@ -44,6 +44,6 @@ Intake routes are rate-limited (40 / minute / IP). Tokens never go to the client
 
 - Choose the RCP ingest mailbox address and set `RCP_INGEST_MAILBOX`  
 - Dropbox / Gmail / Microsoft OAuth product polish  
-- Vercel Blob is **required on Vercel for files over ~3.5 MB** (typical OM PDFs). See the click-by-click in the README.  
+- Vercel Blob is **required on Vercel for files over ~3.5 MB** (typical OM PDFs). **Add Deal and `/vault` share the same Blob client-upload helpers.** See the click-by-click in the README.  
 
 Sample files: [`data/samples/rent-roll.csv`](../data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](../data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](../data/samples/budget.csv), [`data/samples/budget.xlsx`](../data/samples/budget.xlsx), redIQ Harrington fixtures in [`data/samples/harrington/`](../data/samples/harrington/).

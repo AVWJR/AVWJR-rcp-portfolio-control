@@ -50,7 +50,7 @@ Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deal
 | 3. Email attachment | Upload `.eml` / attachment files, or fetch when `GMAIL_ACCESS_TOKEN` / `MICROSOFT_ACCESS_TOKEN` is set |
 | 4. RCP mailbox | Architecture + stub. `RCP_INGEST_MAILBOX` is a placeholder. **Mailbox address is not decided yet.** **Scan RCP inbox** no-ops with an honest message |
 
-Drafts persist (`DealIntake`). **Upload-first:** drop files with no identity keystrokes. The wizard auto-creates an **Untitled deal** draft, infers name/code from filenames, uploads **one file at a time**, then auto-ingests (create SPE + vault + broker rent-roll XLSX → Unit rows). T12/P&L workbooks are vaulted, not invented into the GL. File cap **32 MB**. Files over ~3.5 MB use **Vercel Blob client upload** (not the serverless body). Without Blob on Vercel a 5.5 MB OM shows “OM is 5.5 MB — add `BLOB_READ_WRITE_TOKEN`…” instead of a naked HTTP 413. Durable store: **local `data/vault/`**, **Neon `StoredBlob`** for small Vercel uploads, or **Vercel Blob** (`BLOB_READ_WRITE_TOKEN`, **required** for OM PDFs over ~3.5 MB).
+Drafts persist (`DealIntake`). **Upload-first:** drop files with no identity keystrokes. The wizard auto-creates an **Untitled deal** draft, infers name/code from filenames, uploads **one file at a time**, then auto-ingests (create SPE + vault + broker rent-roll XLSX → Unit rows). T12/P&L workbooks are vaulted, not invented into the GL. File cap **32 MB**. **Add Deal and the document vault** send files over ~3.5 MB through **Vercel Blob client upload** (not the serverless body). Without Blob on Vercel a 5.5 MB OM shows “OM is 5.5 MB — add `BLOB_READ_WRITE_TOKEN`…” instead of a naked HTTP 413 or a stuck **Uploading…**. Durable store: **local `data/vault/`**, **Neon `StoredBlob`** for small Vercel uploads, or **Vercel Blob** (`BLOB_READ_WRITE_TOKEN`, **required** for OM PDFs over ~3.5 MB).
 
 Sample files: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](./data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](./data/samples/budget.csv), [`data/samples/budget.xlsx`](./data/samples/budget.xlsx). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
 
@@ -121,7 +121,7 @@ Laptop seed against Neon (optional): put the same URLs in `.env` and run `npm ru
 
 #### Connect Vercel Blob (Principal — required for a 5.5 MB OM)
 
-The app cap is **32 MB per file**. Vercel’s function **request body** is still ~**4.5 MB** on typical Hobby/Pro requests, so `Life_at_Harrington_Park_OM_….pdf` at **5,605 KB** 413s if the bytes go through `/api/deals/intake/files` as multipart. After Blob is connected, Add Deal uploads those bytes with `@vercel/blob` `upload()` / `handleUpload`.
+The app cap is **32 MB per file**. Vercel’s function **request body** is still ~**4.5 MB** on typical Hobby/Pro requests, so `Life_at_Harrington_Park_OM_….pdf` at **5,605 KB** 413s if the bytes go through `/api/deals/intake/files` or `/api/vault` as multipart. After Blob is connected, **Add Deal and `/vault`** upload those bytes with `@vercel/blob` `upload()` / `handleUpload` (token routes `/api/deals/intake/blob` and `/api/vault/blob`).
 
 1. Open [vercel.com](https://vercel.com) and select this project.
 2. Click **Storage**.
@@ -129,7 +129,7 @@ The app cap is **32 MB per file**. Vercel’s function **request body** is still
 4. Create the store and **connect** it to this project (Production + Preview).
 5. Confirm the env var name is exactly **`BLOB_READ_WRITE_TOKEN`** (Vercel injects it when the store is connected). If you created the token by hand: Settings → Environment Variables → add `BLOB_READ_WRITE_TOKEN` for Production and Preview.
 6. **Redeploy** the latest production deployment (Deployments → ⋯ → Redeploy) so the token is in the running function.
-7. Retry Add Deal: drop the three small xlsx first if you want, then the OM — or drop all four. The OM should store instead of HTTP 413.
+7. Retry Add Deal or `/vault?entity=SPE-HRP3`: drop the three small xlsx first if you want, then the OM — or drop all four. The OM should store instead of HTTP 413 / a stuck **Uploading…**. Vault filenames with `_OM_` store as kind **OM / CIM**.
 
 ## Seed entities
 
@@ -167,7 +167,7 @@ Close demo: WBG `2026-07` is **hard locked**. CVC `2026-07` is **soft closed**. 
 - **Books-to-tax** — `/tax` worksheet per entity: book NI, 6210 depreciation, 6110 interest, 6310 AM fees (below NOI) vs tax columns. MACRS lives hooks (27.5-year residential, 15-year site, 5-year FF&E). Every line labeled **BOOKS** / **TAX** / **BRIDGE**. Sample adjustments seeded on SPE-WBG and RCP-OPCO. Combined roll-up is **not a tax consolidation**.
 - **Partner capital / K-1 export** — `/tax/k1` rollforward `beg + contrib − dist ± book NI = end`. CSV / Excel for CPA K-1 prep. **Not a filed Schedule K-1.** Seed SPEs stay 100% owned.
 - **1099 vendor hooks** — `/vendors` master (form, TIN last4) plus reportable-payment overlay. Phase A AP (`2010`/`2020`) has no invoice subledger; empty overlay stubs honestly. Not a filed 1099.
-- **Document vault** — `/vault` stores metadata plus file blobs (leases, loans, K-1s, draws, insurance) linked to an entity. **Laptop:** `data/vault/`. **Vercel:** Neon `StoredBlob` for small multipart files, or private Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set (required for Add Deal OM PDFs over ~3.5 MB). The serverless filesystem is not used for durable uploads. Upload / list / download.
+- **Document vault** — `/vault` stores metadata plus file blobs (leases, loans, K-1s, draws, insurance, OMs) linked to an entity. **Laptop:** `data/vault/`. **Vercel:** Neon `StoredBlob` for small multipart files, or private Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set. **Vault and Add Deal** both use Blob client upload for files over ~3.5 MB (required for OM PDFs). Filenames with `_OM_` / offering memo prefer kind `om_cim`. The serverless filesystem is not used for durable uploads. Upload / list / download.
 - **Scheduled reporting** — `/scheduler` job defs for monthly investor and quarterly lender packs. CLI `npm run reports:run -- --pack=...`. Writes PDF/PPTX under `data/reports/` and persists last-run status. No email send.
 
 Docs: [docs/RCP_TAX_BRIDGE.md](./docs/RCP_TAX_BRIDGE.md) · [docs/RCP_DOCUMENT_VAULT.md](./docs/RCP_DOCUMENT_VAULT.md) · [docs/RCP_SCHEDULER.md](./docs/RCP_SCHEDULER.md) · [VERIFY_PHASE_F.md](./VERIFY_PHASE_F.md).

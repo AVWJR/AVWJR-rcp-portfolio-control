@@ -1,3 +1,4 @@
+import { looksLikeOmCimFilename } from "@rcp/documents";
 import { looksLikeRentRollHeaders, parseCsvRows, resolveRentRollHeader } from "@rcp/properties";
 import { read, utils } from "xlsx";
 import { suggestSpeCode } from "./codes";
@@ -39,7 +40,7 @@ export function classifyFromFilename(filename: string): DealFileClass {
   if (tabular && /budget/.test(lower)) return "budget_csv";
   if (/loan|note|mortgage|deed/.test(lower)) return "loan_doc";
   if (/lease/.test(lower)) return "lease";
-  if (/\bom\b|cim|offering/.test(lower)) return "om_cim";
+  if (looksLikeOmCimFilename(filename) || /\bom\b|cim|offering/.test(lower)) return "om_cim";
   if (/insur|binder|policy/.test(lower)) return "insurance";
   if (tabular && /\b(t12|t-12|noi|p&l|p\/l|profit[_\s-]*loss)\b/.test(lower)) return "t12_pl";
   if (tabular) return "other";

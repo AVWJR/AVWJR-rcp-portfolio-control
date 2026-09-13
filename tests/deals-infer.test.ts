@@ -20,6 +20,7 @@ const HARRINGTON = [
 describe("Add Deal filename inference", () => {
   it("classifies Harrington-style prefixes", () => {
     expect(classifyFromFilename(HARRINGTON[0]!)).toBe("om_cim");
+    expect(classifyFromFilename("Life_at_Harrington_Park_OM.pdf")).toBe("om_cim");
     expect(classifyFromFilename(HARRINGTON[1]!)).toBe("t12_pl");
     expect(classifyFromFilename(HARRINGTON[2]!)).toBe("rent_roll_csv");
     expect(classifyFromFilename(HARRINGTON[3]!)).toBe("t12_pl");

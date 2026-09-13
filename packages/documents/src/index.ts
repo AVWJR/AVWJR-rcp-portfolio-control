@@ -10,7 +10,9 @@ export {
 export { renderPdfPack } from "./pdf-pack";
 export { renderPptxPack } from "./pptx-pack";
 export {
+  guessVaultKind,
   isVaultKind,
+  looksLikeOmCimFilename,
   PHASE_F_VAULT_TODO,
   safeVaultFilename,
   VAULT_KIND_LABELS,

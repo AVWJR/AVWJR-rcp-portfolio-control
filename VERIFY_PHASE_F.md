@@ -12,7 +12,7 @@ Automated: `npm run verify:f` (after `npm run db:reset`). `npm run verify` runs 
 | 2 | Sample adjustments seeded for one SPE + OpCo | WBG meals + prepaid; OpCo meals + fee-character hook |
 | 3 | Partner capital rollforward identity + CSV/Excel K-1-oriented export | `/tax/k1?entity=SPE-WBG&period=2026-08` · `GET /api/tax/k1?...&format=csv` |
 | 4 | 1099 vendor master + overlay; empty AP stubs honestly | `/vendors?entity=SPE-WBG&period=2026-08` |
-| 5 | Document vault metadata + blobs; upload / list / download | `/vault?entity=SPE-WBG` |
+| 5 | Document vault metadata + blobs; upload / list / download. Large files (≥ ~3.5 MB) use the same Vercel Blob client path as Add Deal; `_OM_` filenames store as `om_cim` | `/vault?entity=SPE-WBG` · `/vault?entity=SPE-HRP3` |
 | 6 | Scheduled packs (monthly investor, quarterly lender) + CLI + last-run status | `/scheduler` · `npm run reports:run -- --pack=monthly_investor` |
 | 7 | Docs + disclaimer | this file, README, `docs/RCP_TAX_BRIDGE.md`, `docs/RCP_DOCUMENT_VAULT.md`, `docs/RCP_SCHEDULER.md` |
 | 8 | `npm run verify:f` + unit tests; A–E chain still green | `npm test` · `npm run verify` |
