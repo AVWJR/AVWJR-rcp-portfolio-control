@@ -71,6 +71,14 @@ const flagHeavyBundle: OfflineBundle = {
     periodLabel: "2026-08",
     flags: [
       {
+        id: "watch_SPE-HCR",
+        severity: "blocker",
+        title: "SPE-HCR covenant watch",
+        detail: "DSCR below the loan-file threshold",
+        source: "From OpCo dashboard watchlist / Loan file",
+        href: "/dashboard/SPE-HCR",
+      },
+      {
         id: "watch_SPE-WBG",
         severity: "watch",
         title: "SPE-WBG covenant watch",
@@ -133,6 +141,7 @@ describe("expert coach voice", () => {
     expect(opener.content).not.toMatch(/DSCR 1\.16/i);
     expect(opener.content).not.toMatch(/Leading items/i);
     expect(opener.content).not.toMatch(/does not file/i);
+    expect(opener.content).not.toMatch(/covenant watch/i);
     expect(opener.content.length).toBeLessThan(520);
     expect(opener.chips?.length).toBeLessThanOrEqual(3);
   });
@@ -169,7 +178,7 @@ describe("expert coach voice", () => {
   it("summarizes the tool snapshot instead of stuffing every flag into the model turn", () => {
     const ctx = readExpertContext("/", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
     const snap = summarizeExpertSnapshot(ctx, flagHeavyBundle);
-    expect(snap.blockers).toEqual([]);
+    expect(snap.blockers.map((row) => row.id)).toEqual(["watch_SPE-HCR"]);
     expect(snap.watchInfoFlagCount).toBe(3);
     expect(JSON.stringify(snap)).not.toMatch(/LTV is gated/);
     expect(JSON.stringify(snap)).not.toMatch(/uiHints/);

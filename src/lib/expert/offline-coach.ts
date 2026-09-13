@@ -58,13 +58,15 @@ function pageRelevantBlocker(flags: AnomalyFlag[], ctx: ExpertClientContext): An
   const path = ctx.pathname;
   const hits = blockers(flags).filter((flag) => {
     const hay = `${flag.id} ${flag.title} ${flag.href}`.toLowerCase();
+    if (path === "/") return /tb_|bs_|cf_|ic_fail|draft|no_period|statement/.test(flag.id);
     if (path.startsWith("/debt")) return /dscr|debt|yield|maturity/.test(hay);
     if (path.startsWith("/properties")) return /unit|occupancy|rent/.test(hay);
     if (path.startsWith("/close")) return /check|period|lock|ic|journal|tb_|bs_|cf_|draft/.test(hay);
     if (path.startsWith("/tax")) return /tax/.test(hay);
     if (path.startsWith("/reports/trial")) return /tb_|journal|draft|balance/.test(hay);
     if (path.includes("operating")) return /noi|variance/.test(hay);
-    return true;
+    if (path.startsWith("/dashboard")) return /tb_|bs_|cf_|ic_fail|draft|no_period|dscr|debt_yield|watch_/.test(flag.id);
+    return /tb_|bs_|cf_|ic_fail|draft|no_period|statement/.test(flag.id);
   });
   return hits[0] ?? null;
 }
