@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyPrismaEnv, buildPostgresqlSchema } from "./prisma-provider.mjs";
+import { applyPrismaEnv, buildPostgresqlSchema, isPrismaDataLossAbort } from "./prisma-provider.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sqliteSchemaPath = path.join(root, "prisma", "schema.prisma");
@@ -69,14 +69,29 @@ if (prismaArgs.length === 0) {
   process.exit(0);
 }
 
+const tolerateDrift = process.env.PRISMA_PUSH_TOLERATE_DRIFT === "1";
 const result = spawnSync(
   "npx",
   ["prisma", ...prismaArgs, "--schema", path.relative(root, schema)],
   {
     cwd: root,
-    stdio: "inherit",
+    encoding: "utf8",
+    stdio: tolerateDrift ? ["inherit", "pipe", "pipe"] : "inherit",
     env: { ...process.env, ...env },
   },
 );
+
+if (tolerateDrift) {
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  if (stdout) process.stdout.write(stdout);
+  if (stderr) process.stderr.write(stderr);
+  if (result.status && isPrismaDataLossAbort(`${stdout}\n${stderr}`)) {
+    console.warn(
+      "[prisma] db push skipped: preview DB has extra columns from another branch. Not dropping them. Continuing to next build.",
+    );
+    process.exit(0);
+  }
+}
 
 process.exit(result.status === null ? 1 : result.status);

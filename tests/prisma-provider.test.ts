@@ -4,6 +4,7 @@ import {
   buildPostgresqlSchema,
   deriveNeonUnpooledUrl,
   isPostgresUrl,
+  isPrismaDataLossAbort,
   isSqliteUrl,
   resolveDatabaseUrl,
   resolveDirectUrl,
@@ -78,5 +79,14 @@ describe("prisma provider selection", () => {
     expect(provider).toBe("postgresql");
     expect(isPostgresUrl(env.DATABASE_URL)).toBe(true);
     expect(isPostgresUrl(env.DIRECT_URL)).toBe(true);
+  });
+
+  it("recognizes prisma db push CI aborts that would drop sibling-preview columns", () => {
+    expect(
+      isPrismaDataLossAbort(
+        "⚠️  There might be data loss when applying the changes:\n\nError: Use the --accept-data-loss flag to ignore the data loss warnings like prisma db push --accept-data-loss",
+      ),
+    ).toBe(true);
+    expect(isPrismaDataLossAbort("Error: P1001 Can't reach database server")).toBe(false);
   });
 });

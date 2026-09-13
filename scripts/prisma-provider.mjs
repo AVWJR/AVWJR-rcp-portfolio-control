@@ -92,3 +92,20 @@ export function applyPrismaEnv(env = process.env) {
   }
   return { provider, env: next };
 }
+
+/**
+ * `prisma db push` in CI exits instead of dropping columns. Sibling preview
+ * branches (e.g. SPE archive) can add unused columns to a shared Neon DB.
+ * This branch must not `--accept-data-loss` (that would wipe those columns).
+ * Extra columns are safe: this Prisma client simply does not select them.
+ *
+ * @param {string} output
+ */
+export function isPrismaDataLossAbort(output = "") {
+  const text = String(output);
+  return (
+    /accept-data-loss/i.test(text) ||
+    /data loss when applying the changes/i.test(text) ||
+    /there might be data loss/i.test(text)
+  );
+}
