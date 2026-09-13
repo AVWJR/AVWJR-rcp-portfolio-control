@@ -239,22 +239,21 @@ export function findRentRollHeader(
   rows: string[][],
   maxScan = 40,
 ): { index: number; headers: string[]; score: number } | null {
+  type Found = { index: number; headers: string[]; score: number };
   const limit = Math.min(rows.length, maxScan);
-  let best: { index: number; headers: string[]; score: number } | null = null;
-  const consider = (index: number, headers: string[], score: number) => {
-    if (score < 8) return;
-    if (!best || score > best.score) best = { index, headers, score };
-  };
+  let best: Found | null = null;
   for (let i = 0; i < limit; i += 1) {
-    const single = rows[i] ?? [];
-    consider(i, single, scoreRentRollHeaderRow(single));
+    const headers = rows[i] ?? [];
+    const score = scoreRentRollHeaderRow(headers);
+    if (score >= 8 && (!best || score > best.score)) best = { index: i, headers, score };
   }
   if (best && rediqMachineHeaderBonus(best.headers) >= 12) return best;
   for (let i = 0; i < limit; i += 1) {
     const next = rows[i + 1];
     if (!next) continue;
-    const merged = mergeHeaderRows(rows[i] ?? [], next);
-    consider(i + 1, merged, scoreRentRollHeaderRow(merged));
+    const headers = mergeHeaderRows(rows[i] ?? [], next);
+    const score = scoreRentRollHeaderRow(headers);
+    if (score >= 8 && (!best || score > best.score)) best = { index: i + 1, headers, score };
   }
   if (best) return best;
   const inferred = inferUnitColumnFromRows(rows);
