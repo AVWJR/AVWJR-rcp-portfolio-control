@@ -11,6 +11,15 @@ type SeedResponse = {
   disclaimer?: string;
 };
 
+function statusText(result: SeedResponse) {
+  if (result.error) return result.error;
+  if (result.reason === "already_seeded") {
+    return "Demo data is already present. Check wipe only if you intend to replace it.";
+  }
+  if (result.seeded) return result.disclaimer ? `Demo data loaded. ${result.disclaimer}` : "Demo data loaded.";
+  return result.message ?? "No changes.";
+}
+
 export function SeedDemoForm() {
   const [secret, setSecret] = useState("");
   const [force, setForce] = useState(false);
@@ -76,8 +85,7 @@ export function SeedDemoForm() {
       </button>
       {result ? (
         <p className={`text-sm ${result.ok === false ? "text-red-800" : "text-ink-700"}`} role="status">
-          {result.error ?? result.message ?? (result.seeded ? "Demo data loaded." : "No changes.")}
-          {result.disclaimer ? ` ${result.disclaimer}` : null}
+          {statusText(result)}
         </p>
       ) : null}
     </form>

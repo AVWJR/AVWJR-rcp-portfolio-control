@@ -7,7 +7,8 @@ import { isPostgresUrl, resolveDatabaseUrl } from "./db-provider";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
-  const log = process.env.NODE_ENV === "development" ? (["error", "warn"] as const) : (["error"] as const);
+  const log: Array<"error" | "warn"> =
+    process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"];
   const databaseUrl = resolveDatabaseUrl();
 
   if (isPostgresUrl(databaseUrl)) {
