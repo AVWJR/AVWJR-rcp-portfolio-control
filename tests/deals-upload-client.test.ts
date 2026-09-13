@@ -55,7 +55,8 @@ describe("Add Deal upload client helpers", () => {
       "RR_-_Harrington_-_12.31.19_-_Resi.xlsx",
       "T12_NOI_-_Life_at_Harrington_-_11.2019.xlsx",
     ]);
-    expect(name).toMatch(/Harrington/i);
+    expect(name).toMatch(/Harrington Park/i);
+    expect(name).not.toMatch(/offering|xlsx|om/i);
     expect(name?.length).toBeGreaterThan(10);
   });
 

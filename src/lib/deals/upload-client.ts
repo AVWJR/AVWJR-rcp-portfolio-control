@@ -107,6 +107,8 @@ const NOISE = new Set([
   "and",
   "of",
   "llc",
+  "offering",
+  "memorandum",
 ]);
 
 function titleCase(value: string): string {
