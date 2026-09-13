@@ -16,13 +16,14 @@ export function NarrativeView({
       <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{narrative.audienceLabel}</p>
       <h2 className="font-display text-3xl text-navy-900">{narrative.title}</h2>
       <p className="mt-1 text-sm text-ink-700">{narrative.dek}</p>
+      {narrative.tone ? <p className="mt-1 text-xs italic text-ink-500">{narrative.tone}</p> : null}
       {narrative.recommendation ? (
         <p className="mt-3 border border-gold-500 bg-cream-50 px-3 py-2 text-sm text-navy-900">
           <strong>{narrative.recommendation.action}</strong> — {narrative.recommendation.rationale}
         </p>
       ) : null}
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {narrative.citations.slice(0, compact ? 8 : 12).map((c) => (
+        {narrative.citations.slice(0, compact ? 6 : narrative.citations.length).map((c) => (
           <div key={c.id} className="border border-cream-200 px-3 py-2">
             <p className="text-[10px] uppercase tracking-[0.14em] text-gold-700">{c.label}</p>
             <p className="tabular text-sm font-semibold text-navy-900">{c.value}</p>

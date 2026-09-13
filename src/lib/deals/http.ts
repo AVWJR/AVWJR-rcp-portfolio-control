@@ -1,4 +1,5 @@
 import { DealValidationError } from "./create-spe";
+import { FileStoreError } from "@/lib/file-store";
 import { ReplaceRequiresConfirmError } from "@/lib/import-guard";
 import { allowRequest, clientKey } from "@/lib/expert/rate-limit";
 import { NextResponse } from "next/server";
@@ -23,6 +24,9 @@ export function dealErrorResponse(error: unknown) {
       },
       { status: 409 },
     );
+  }
+  if (error instanceof FileStoreError) {
+    return NextResponse.json({ error: error.message }, { status: 503 });
   }
   const message = error instanceof Error ? error.message : "Request failed";
   const status = error instanceof DealValidationError ? 400 : 400;

@@ -44,7 +44,9 @@ describe("intake file classification", () => {
     expect(isVaultKind("rent_roll")).toBe(true);
     expect(isVaultKind("om_cim")).toBe(true);
     expect(guessClassification("willow-rent-roll.csv")).toBe("rent_roll_csv");
+    expect(guessClassification("willow-rent-roll.xlsx")).toBe("rent_roll_csv");
     expect(guessClassification("2026-08-budget.csv")).toBe("budget_csv");
+    expect(guessClassification("2026-08-budget.xls")).toBe("budget_csv");
   });
 });
 

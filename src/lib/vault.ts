@@ -1,17 +1,9 @@
 import { isVaultKind, safeVaultFilename, type VaultDocumentMeta, type VaultKind } from "@rcp/documents";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { deleteStoredFile, getStoredFile, putStoredFile } from "./file-store";
 import { prisma } from "./prisma";
 
-export const VAULT_ROOT = resolve(process.cwd(), "data", "vault");
 export const VAULT_MAX_BYTES = 10 * 1024 * 1024;
 const MAX_BYTES = VAULT_MAX_BYTES;
-
-function absPath(storagePath: string) {
-  const abs = resolve(VAULT_ROOT, storagePath);
-  if (!abs.startsWith(VAULT_ROOT)) throw new Error("Invalid vault path");
-  return abs;
-}
 
 export async function listVaultDocuments(entityId?: string): Promise<VaultDocumentMeta[]> {
   const rows = await prisma.vaultDocument.findMany({
@@ -58,32 +50,28 @@ export async function storeVaultDocument(opts: {
       notes: opts.notes?.trim() || null,
     },
   });
-  const storagePath = `${entity.code}/${created.id}-${filename}`;
-  const dest = absPath(storagePath);
-  await mkdir(dirname(dest), { recursive: true });
-  await writeFile(dest, opts.bytes);
-  return prisma.vaultDocument.update({
-    where: { id: created.id },
-    data: { storagePath },
-  });
+  try {
+    const storagePath = await putStoredFile(`${entity.code}/${created.id}-${filename}`, opts.bytes, opts.mimeType);
+    return prisma.vaultDocument.update({
+      where: { id: created.id },
+      data: { storagePath },
+    });
+  } catch (error) {
+    await prisma.vaultDocument.delete({ where: { id: created.id } }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function readVaultDocument(id: string) {
   const doc = await prisma.vaultDocument.findUnique({ where: { id }, include: { entity: true } });
   if (!doc) return null;
-  const bytes = await readFile(absPath(doc.storagePath));
+  const bytes = await getStoredFile(doc.storagePath);
   return { doc, bytes };
 }
 
 export async function deleteVaultDocument(id: string) {
   const doc = await prisma.vaultDocument.findUnique({ where: { id } });
   if (!doc) return;
-  try {
-    await unlink(absPath(doc.storagePath));
-  } catch {
-    // metadata delete still proceeds if the blob is already gone
-  }
+  await deleteStoredFile(doc.storagePath);
   await prisma.vaultDocument.delete({ where: { id } });
 }
-
-export { join };

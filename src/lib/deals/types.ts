@@ -22,8 +22,8 @@ export const DEAL_FILE_CLASSES = [
 export type DealFileClass = (typeof DEAL_FILE_CLASSES)[number];
 
 export const DEAL_FILE_CLASS_LABELS: Record<DealFileClass, string> = {
-  rent_roll_csv: "Rent-roll CSV",
-  budget_csv: "Budget CSV",
+  rent_roll_csv: "Rent-roll CSV / XLSX",
+  budget_csv: "Budget CSV / XLSX",
   loan_doc: "Loan document",
   lease: "Lease",
   om_cim: "OM / CIM",

@@ -154,6 +154,58 @@ function drawChart(doc: PDFKit.PDFDocument, pack: BuiltPack, chartId: string, y:
     doc.fillColor("#6B7280").font("Times-Roman").fontSize(8).text(suite.bsComposition.footnote, x, y + h + 8, { width: w });
     return;
   }
+  if (chartId === "coverage_vs_threshold") {
+    doc.text(suite.coverageVsThreshold.title, x, y);
+    simpleBars(
+      doc,
+      suite.coverageVsThreshold.rows.map((r) => ({ label: `${r.label} ${r.unit}`, usd: r.actual })),
+      x,
+      y + 20,
+      w,
+      h,
+    );
+    doc.fillColor("#6B7280").font("Times-Roman").fontSize(8).text(suite.coverageVsThreshold.footnote, x, y + h + 8, { width: w });
+    return;
+  }
+  if (chartId === "occupancy_breakeven") {
+    doc.text(suite.occupancyBreakeven.title, x, y);
+    simpleBars(
+      doc,
+      suite.occupancyBreakeven.rows.map((r) => ({ label: r.label, usd: r.pct ?? 0 })),
+      x,
+      y + 20,
+      w,
+      h,
+    );
+    doc.fillColor("#6B7280").font("Times-Roman").fontSize(8).text(suite.occupancyBreakeven.footnote, x, y + h + 8, { width: w });
+    return;
+  }
+  if (chartId === "liquidity_runway") {
+    doc.text(suite.liquidityRunway.title, x, y);
+    simpleBars(
+      doc,
+      suite.liquidityRunway.bars.map((s) => ({ label: s.label, usd: s.usd })),
+      x,
+      y + 20,
+      w,
+      h,
+    );
+    doc.fillColor("#6B7280").font("Times-Roman").fontSize(8).text(suite.liquidityRunway.footnote, x, y + h + 8, { width: w });
+    return;
+  }
+  if (chartId === "fee_vs_noi") {
+    doc.text(suite.feeVsNoi.title, x, y);
+    simpleBars(
+      doc,
+      suite.feeVsNoi.bars.map((s) => ({ label: s.label, usd: s.usd })),
+      x,
+      y + 20,
+      w,
+      h,
+    );
+    doc.fillColor("#6B7280").font("Times-Roman").fontSize(8).text(suite.feeVsNoi.footnote, x, y + h + 8, { width: w });
+    return;
+  }
   if (chartId === "portfolio_heatmap") {
     doc.text(suite.heatmap.title, x, y);
     let rowY = y + 28;

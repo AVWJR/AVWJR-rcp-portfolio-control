@@ -8,7 +8,7 @@ Route: [`/deals/new`](/deals/new) · list: [`/deals`](/deals)
 
 | Mode | Status | Notes |
 | --- | --- | --- |
-| 1. Upload files | **Live** | Multi-file dropzone → intake draft → vault after SPE create. Max **10 MB** per file (same as vault). Larger OMs: note and add later on `/vault`. |
+| 1. Upload files | **Live** | Multi-file dropzone → intake draft → vault after SPE create. Accepts **CSV, XLSX/XLS, PDF, images**, and typical vault docs. Max **10 MB** per file (same as vault). Rent-roll / budget **XLSX** uses the first matching sheet (RentRoll / Budget / first sheet) then the existing CSV importers. Password-protected workbooks fail with a clear error. Larger OMs: note and add later on `/vault`. On Vercel, bytes persist in Neon `StoredBlob` (or Vercel Blob if configured) — not the ephemeral function disk. |
 | 2. Dropbox | **Hook + UI** | “Connect Dropbox” when `DROPBOX_ACCESS_TOKEN` is missing. List/download when the server token is set. OAuth app keys (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`) are reserved for a follow-on login. |
 | 3. Email attachment | **Hook + UI** | Always accept `.eml` / attachment uploads. Optional Gmail or Microsoft Graph fetch when `GMAIL_ACCESS_TOKEN` or `MICROSOFT_ACCESS_TOKEN` is set. |
 | 4. RCP mailbox auto-ingest | **Stub** | `DealFileSource = rcp_mailbox`. Set `RCP_INGEST_MAILBOX` when the inbox exists. **The mailbox address is not decided yet — do not hardcode one.** **Scan RCP inbox** is an honest no-op until mailbox + connector exist. |
@@ -43,6 +43,6 @@ Intake routes are rate-limited (40 / minute / IP). Tokens never go to the client
 
 - Choose the RCP ingest mailbox address and set `RCP_INGEST_MAILBOX`  
 - Dropbox / Gmail / Microsoft OAuth product polish  
-- Object-store replication for vault blobs on Vercel  
+- Optional Vercel Blob store (`BLOB_READ_WRITE_TOKEN`) if Neon `StoredBlob` is too large for OM packets  
 
-Sample CSVs: [`data/samples/rent-roll.csv`](../data/samples/rent-roll.csv), [`data/samples/budget.csv`](../data/samples/budget.csv).
+Sample files: [`data/samples/rent-roll.csv`](../data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](../data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](../data/samples/budget.csv).

@@ -1,24 +1,22 @@
 import { dollars } from "@rcp/ledger";
 import { DEFAULT_SCHEDULED_JOBS } from "@rcp/documents";
 import { MACRS_LIFE_HOOKS } from "@rcp/tax-bridge";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import type { PrismaClient } from "@prisma/client";
+import { putStoredFile } from "../src/lib/file-store";
 
-const VAULT_ROOT = join(process.cwd(), "data", "vault");
-
-function vaultText(entityCode: string, filename: string, body: string): { storagePath: string; byteSize: number } {
-  const rel = `${entityCode}/${filename}`;
-  const abs = join(VAULT_ROOT, rel);
-  mkdirSync(dirname(abs), { recursive: true });
-  writeFileSync(abs, body, "utf8");
-  return { storagePath: rel, byteSize: Buffer.byteLength(body) };
+async function vaultText(entityCode: string, filename: string, body: string): Promise<{ storagePath: string; byteSize: number }> {
+  const bytes = Buffer.from(body, "utf8");
+  const storagePath = await putStoredFile(`${entityCode}/${filename}`, bytes, "text/plain");
+  return { storagePath, byteSize: bytes.length };
 }
 
 export async function seedPhaseF(prisma: PrismaClient, byCode: Record<string, string>) {
   await prisma.reportJobRun.deleteMany();
   await prisma.reportJob.deleteMany();
+  await prisma.dealIntakeFile.deleteMany();
+  await prisma.dealIntake.deleteMany();
   await prisma.vaultDocument.deleteMany();
+  await prisma.storedBlob.deleteMany();
   await prisma.vendorPayment.deleteMany();
   await prisma.vendor.deleteMany();
   await prisma.partnerCapitalActivity.deleteMany();
@@ -233,32 +231,32 @@ export async function seedPhaseF(prisma: PrismaClient, byCode: Record<string, st
     ],
   });
 
-  const lease = vaultText(
+  const lease = await vaultText(
     "SPE-WBG",
     "wbg-form-lease-abstract.txt",
     "Willow Bend Gardens — form lease abstract (demo).\nNot a live PMS attachment.\n",
   );
-  const loan = vaultText(
+  const loan = await vaultText(
     "SPE-WBG",
     "wbg-first-mortgage-note.txt",
     "Willow Bend Gardens — first mortgage note abstract (demo).\nSee /debt for the loan file. Not a bank feed.\n",
   );
-  const k1 = vaultText(
+  const k1 = await vaultText(
     "SPE-WBG",
     "wbg-k1-placeholder.txt",
     "K-1 packet placeholder. Use /tax/k1 for the CPA capital export. Not a filed K-1.\n",
   );
-  const draw = vaultText(
+  const draw = await vaultText(
     "SPE-WBG",
     "wbg-capex-draw-memo.txt",
     "Value-add interior draw memo (demo). CIP stays on 1460 until placed in service.\n",
   );
-  const ins = vaultText(
+  const ins = await vaultText(
     "SPE-WBG",
     "wbg-insurance-binder.txt",
     "Property insurance binder placeholder. Premiums are book 5710.\n",
   );
-  const opcoK1 = vaultText(
+  const opcoK1 = await vaultText(
     "RCP-OPCO",
     "opco-k1-placeholder.txt",
     "OpCo K-1 packet placeholder. Capital rollforward at /tax/k1. Not a filed K-1.\n",

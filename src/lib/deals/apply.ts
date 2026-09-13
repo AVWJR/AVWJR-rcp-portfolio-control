@@ -7,6 +7,7 @@ import { createSpeDeal } from "./create-spe";
 import { promoteIntakeFilesToVault, readIntakeFileBytes } from "./files";
 import { getIntake, updateIntake } from "./intake";
 import type { DealGoal } from "./types";
+import { bytesToImportCsv } from "./workbook";
 
 export async function applyCreateEntity(intakeId: string) {
   const intake = await getIntake(intakeId);
@@ -62,7 +63,7 @@ export async function applyStructuredData(opts: {
         if (loaded) {
           const units = await importRentRollCsv({
             entityId: intake.entityId,
-            csv: loaded.bytes.toString("utf8"),
+            csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
             confirmReplace: opts.confirmReplace,
           });
           await prisma.dealIntakeFile.update({
@@ -72,7 +73,7 @@ export async function applyStructuredData(opts: {
           results.push({ kind: "rent_roll", imported: units.length });
         }
       } else {
-        results.push({ kind: "rent_roll", skipped: "No file classified as rent-roll CSV." });
+        results.push({ kind: "rent_roll", skipped: "No file classified as rent-roll CSV / XLSX." });
       }
     }
 
@@ -85,7 +86,7 @@ export async function applyStructuredData(opts: {
             entityId: intake.entityId,
             year: period.year,
             month: period.month,
-            csv: loaded.bytes.toString("utf8"),
+            csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
             source: "intake",
             confirmReplace: opts.confirmReplace,
           });
@@ -96,7 +97,7 @@ export async function applyStructuredData(opts: {
           results.push({ kind: "budget", imported: rows.length });
         }
       } else {
-        results.push({ kind: "budget", skipped: "No file classified as budget CSV." });
+        results.push({ kind: "budget", skipped: "No file classified as budget CSV / XLSX." });
       }
     }
 

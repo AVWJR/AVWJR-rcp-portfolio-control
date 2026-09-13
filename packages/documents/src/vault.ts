@@ -1,4 +1,4 @@
-/** Document vault kinds linked to a legal entity. Blobs live on local FS. */
+/** Document vault kinds linked to a legal entity. Blobs use the durable file store. */
 
 export const VAULT_STATUS = "ready" as const;
 
@@ -32,7 +32,7 @@ export function isVaultKind(value: string): value is VaultKind {
 }
 
 export const PHASE_F_VAULT_TODO =
-  "Phase F live: document vault stores metadata + file blobs at /vault (leases, loans, K-1s, draws, insurance).";
+  "Phase F live: document vault stores metadata + file blobs at /vault (leases, loans, K-1s, draws, insurance). On Vercel, blobs persist in Neon StoredBlob or Vercel Blob — not the ephemeral function filesystem.";
 
 export type VaultDocumentMeta = {
   id: string;

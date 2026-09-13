@@ -4,15 +4,17 @@ Phase E institutional packs. Every pack reprints the same period snapshot used b
 
 Source of truth in code: `@rcp/reporting` `PACK_CATALOG` and `@rcp/documents` `listReportPacks()`. Preview: `/narratives`. Export: `GET /api/packs/{id}?entity=&period=&format=pdf|pptx`.
 
-## Audiences (same snapshot, five tones)
+## Audiences (same snapshot, five briefs)
 
-| id | Audience | Emphasis |
-| --- | --- | --- |
-| `lp` | Limited Partner | Performance, CFADS as distributions proxy, risk, operating health |
-| `gp` | General Partner | Value creation, operator accountability, capital allocation |
-| `ic` | Investment Committee | Thesis tracking, risks, covenants, go / hold / fix |
-| `lender` | Lender | Collateral, DSCR / debt yield, reserves, covenant compliance |
-| `mgmt` | Management Committee | Operating actions, variance owners, maintenance / CapEx priorities |
+Each audience is a first-class `AudienceBrief`: **section outline + KPI strip + chart IDs**. Switching tabs on `/narratives` changes the body, chips, and infographics.
+
+| id | Audience | Emphasis | Charts |
+| --- | --- | --- | --- |
+| `lp` | Limited Partner | Period NOI / unit vs plan, physical + book occ, LTL, concentration, liquidity | NOI concentration; occupancy vs breakeven; budget bridge; covenant-fail strip |
+| `gp` | General Partner | Fee income below NOI, look-through contribution, liquidity | Concentration; heatmap; fee vs NOI; liquidity months |
+| `ic` | Investment Committee | Go / hold / fix, thesis vs actuals, concentration, CapEx/CIP | Concentration; budget bridge; CapEx vs reserves; coverage vs threshold; heatmap |
+| `lender` | Lender | DSCR / debt yield vs threshold, UPB, debt service, reserves, maturity | Coverage vs threshold; maturity wall; NOI/DSCR trends; occupancy vs breakeven |
+| `mgmt` | Management Committee | This-week actions, occupancy / LTL, controllable OpEx, CapEx vs R&M | OpEx composition; budget bridge; occupancy vs breakeven; CapEx vs reserves |
 
 Narratives regenerate when the navy header entity or period changes. They cite key figures with units (USD, %, x, months). They do not invent LTV, delinquency, T12 from one month, or actual investor distributions.
 
@@ -20,10 +22,10 @@ Narratives regenerate when the navy header entity or period changes. They cite k
 
 | id | Title | Audience | Cadence | Charts |
 | --- | --- | --- | --- | --- |
-| `monthly_investor` | Monthly Investor Pack | LP | monthly | GPR→NOI→BTCF waterfall; NOI/occ/OpEx/DSCR trends; concentration; budget bridge; BS composition |
-| `quarterly_lender` | Quarterly Lender Pack | Lender | quarterly | Maturity wall; CapEx vs reserves; trends; BS composition; heatmap |
-| `ic_memo` | IC Memo Pack | IC | as needed | Waterfall; budget bridge; concentration; heatmap; maturity wall |
-| `management_flash` | Management Flash | Management Committee | flash | OpEx composition; budget bridge; CapEx vs reserves; trends |
+| `monthly_investor` | Monthly Investor Pack | LP | monthly | From the LP brief |
+| `quarterly_lender` | Quarterly Lender Pack | Lender | quarterly | From the Lender brief |
+| `ic_memo` | IC Memo Pack | IC | as needed | From the IC brief |
+| `management_flash` | Management Flash | Management Committee | flash | From the Management brief |
 
 Each pack also includes a cover, KPI strip, audience narrative, and disclosures.
 
@@ -40,6 +42,10 @@ Each pack also includes a cover, KPI strip, audience narrative, and disclosures.
 | `actual_vs_budget_bridge` | Budget NOI → actual NOI |
 | `bs_composition` | Asset / liability / equity slices |
 | `portfolio_heatmap` | SPE × share / book occ / OpEx ratio / DSCR / gated LTV |
+| `coverage_vs_threshold` | DSCR and debt yield versus covenant thresholds |
+| `occupancy_breakeven` | Physical occupancy, book economic occupancy, breakeven |
+| `liquidity_runway` | Cash versus period OpEx (months of coverage) |
+| `fee_vs_noi` | AM / fee line versus period NOI (fees stay below NOI) |
 
 BTCF is a presentation identity: **period NOI − interest − principal**. AM fees stay below NOI and are excluded from BTCF. CFADS (Phase D) is the distributions proxy: **period NOI − PPE additions − reserve requirement**.
 

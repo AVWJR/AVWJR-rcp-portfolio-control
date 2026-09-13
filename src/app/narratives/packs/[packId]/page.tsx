@@ -63,7 +63,11 @@ export default async function PackPreviewPage({
               </Link>
             </p>
             <NarrativeView narrative={pack.narrative} qs={qs.toString()} />
-            <ChartSuiteView suite={serializeChartSuite(pack.charts)} />
+            <ChartSuiteView
+              suite={serializeChartSuite(pack.charts)}
+              visibleChartIds={pack.meta.charts}
+              audienceLabel={pack.narrative.audienceLabel}
+            />
           </div>
         );
       }}

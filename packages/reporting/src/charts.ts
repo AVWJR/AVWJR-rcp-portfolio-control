@@ -1,5 +1,5 @@
 import type { PeriodSnapshot } from "./snapshot-types";
-import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatUsd } from "./formatters";
+import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatMonthsCoverage, formatUsd } from "./formatters";
 
 export const CHART_IDS = [
   "waterfall_gpr_noi_btcf",
@@ -11,6 +11,10 @@ export const CHART_IDS = [
   "actual_vs_budget_bridge",
   "bs_composition",
   "portfolio_heatmap",
+  "coverage_vs_threshold",
+  "occupancy_breakeven",
+  "liquidity_runway",
+  "fee_vs_noi",
 ] as const;
 
 export type ChartId = (typeof CHART_IDS)[number];
@@ -25,6 +29,10 @@ export const CHART_TITLES: Record<ChartId, string> = {
   actual_vs_budget_bridge: "Actual vs budget NOI bridge",
   bs_composition: "Balance-sheet composition",
   portfolio_heatmap: "Portfolio heatmap",
+  coverage_vs_threshold: "DSCR / debt yield vs threshold",
+  occupancy_breakeven: "Occupancy vs breakeven",
+  liquidity_runway: "Liquidity months",
+  fee_vs_noi: "Fee income vs NOI",
 };
 
 export type WaterfallBar = {
@@ -86,6 +94,18 @@ export type ChartSuite = {
     footnote: string;
   };
   heatmap: { title: string; spec: HeatmapSpec };
+  coverageVsThreshold: {
+    title: string;
+    footnote: string;
+    rows: { key: string; label: string; actual: number; threshold: number; unit: string; pass: boolean | null }[];
+  };
+  occupancyBreakeven: {
+    title: string;
+    footnote: string;
+    rows: { key: string; label: string; pct: number | null }[];
+  };
+  liquidityRunway: { title: string; footnote: string; months: number | null; bars: NamedAmount[] };
+  feeVsNoi: { title: string; footnote: string; bars: NamedAmount[] };
 };
 
 function share(part: bigint, whole: bigint): number | null {
@@ -377,6 +397,71 @@ export function buildHeatmap(snap: PeriodSnapshot): ChartSuite["heatmap"] {
   };
 }
 
+export function buildCoverageVsThreshold(snap: PeriodSnapshot): ChartSuite["coverageVsThreshold"] {
+  return {
+    title: CHART_TITLES.coverage_vs_threshold,
+    footnote: "DSCR is period NOI ÷ (interest + principal). Debt yield is annualized period NOI ÷ UPB — not T12. LTV stays gated.",
+    rows: [
+      {
+        key: "dscr",
+        label: "DSCR",
+        actual: snap.dscrBps === null ? 0 : snap.dscrBps / 10_000,
+        threshold: (snap.dscrThresholdBps ?? 0) / 10_000,
+        unit: "x",
+        pass: snap.dscrPass,
+      },
+      {
+        key: "debt_yield",
+        label: "Debt yield",
+        actual: snap.debtYieldBps === null ? 0 : snap.debtYieldBps / 100,
+        threshold: (snap.debtYieldThresholdBps ?? 0) / 100,
+        unit: "%",
+        pass: snap.debtYieldPass,
+      },
+    ],
+  };
+}
+
+export function buildOccupancyBreakeven(snap: PeriodSnapshot): ChartSuite["occupancyBreakeven"] {
+  return {
+    title: CHART_TITLES.occupancy_breakeven,
+    footnote:
+      snap.physicalOccupancyBps === null
+        ? "Physical occupancy needs a rent roll. Book economic occupancy is EGI / GPR."
+        : `Physical occupancy ${formatBpsAsPercent(snap.physicalOccupancyBps)} vs breakeven ${formatBpsAsPercent(snap.breakevenOccupancyBps)}.`,
+    rows: [
+      { key: "phys", label: "Physical occ.", pct: snap.physicalOccupancyBps === null ? null : snap.physicalOccupancyBps / 100 },
+      { key: "book", label: "Book economic occ.", pct: snap.bookEconomicOccupancyBps === null ? null : snap.bookEconomicOccupancyBps / 100 },
+      { key: "be", label: "Breakeven", pct: snap.breakevenOccupancyBps === null ? null : snap.breakevenOccupancyBps / 100 },
+    ],
+  };
+}
+
+export function buildLiquidityRunway(snap: PeriodSnapshot): ChartSuite["liquidityRunway"] {
+  return {
+    title: CHART_TITLES.liquidity_runway,
+    footnote: `Cash ÷ period OpEx. Coverage is ${formatMonthsCoverage(snap.liquidityMonthsHundredths)}.`,
+    months: snap.liquidityMonthsHundredths === null ? null : snap.liquidityMonthsHundredths / 100,
+    bars: [
+      { key: "cash", label: "Total cash", usd: centsToUsdNumber(snap.cashTotalCents), cents: snap.cashTotalCents },
+      { key: "opex", label: "Period OpEx", usd: centsToUsdNumber(snap.opexCents), cents: snap.opexCents },
+      { key: "reserve", label: "Reserve cash", usd: centsToUsdNumber(snap.cashReserveCents), cents: snap.cashReserveCents },
+    ],
+  };
+}
+
+export function buildFeeVsNoi(snap: PeriodSnapshot): ChartSuite["feeVsNoi"] {
+  const fee = snap.feeIncomeCents ?? snap.amFeesCents;
+  return {
+    title: CHART_TITLES.fee_vs_noi,
+    footnote: "AM fees sit below NOI on the SPE. OpCo fee income is the sponsor line, not an in-NOI deduction.",
+    bars: [
+      { key: "noi", label: "Period NOI", usd: centsToUsdNumber(snap.noiCents), cents: snap.noiCents },
+      { key: "fee", label: "Fee / AM line", usd: centsToUsdNumber(fee), cents: fee },
+    ],
+  };
+}
+
 export function buildChartSuite(snap: PeriodSnapshot): ChartSuite {
   return {
     waterfall: buildGprNoiBtcfWaterfall(snap),
@@ -388,6 +473,10 @@ export function buildChartSuite(snap: PeriodSnapshot): ChartSuite {
     budgetBridge: buildBudgetBridge(snap),
     bsComposition: buildBsComposition(snap),
     heatmap: buildHeatmap(snap),
+    coverageVsThreshold: buildCoverageVsThreshold(snap),
+    occupancyBreakeven: buildOccupancyBreakeven(snap),
+    liquidityRunway: buildLiquidityRunway(snap),
+    feeVsNoi: buildFeeVsNoi(snap),
   };
 }
 
@@ -406,5 +495,14 @@ export function chartIdsPresent(suite: ChartSuite): ChartId[] {
   if (suite.budgetBridge.bars.length) ids.push("actual_vs_budget_bridge");
   if (suite.bsComposition.assets.length) ids.push("bs_composition");
   if (suite.heatmap.spec.cells.length) ids.push("portfolio_heatmap");
+  if (suite.coverageVsThreshold.rows.length) ids.push("coverage_vs_threshold");
+  if (suite.occupancyBreakeven.rows.length) ids.push("occupancy_breakeven");
+  if (suite.liquidityRunway.bars.length) ids.push("liquidity_runway");
+  if (suite.feeVsNoi.bars.length) ids.push("fee_vs_noi");
   return ids;
+}
+
+export function filterChartIds(ids: ChartId[], visible: ChartId[]): ChartId[] {
+  const allow = new Set(visible);
+  return ids.filter((id) => allow.has(id));
 }

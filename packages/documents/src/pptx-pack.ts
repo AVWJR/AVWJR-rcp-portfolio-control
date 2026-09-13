@@ -109,6 +109,34 @@ function chartData(pack: BuiltPack, chartId: string): { labels: string[]; values
       values: suite.bsComposition.assets.map((s) => s.usd),
     };
   }
+  if (chartId === "coverage_vs_threshold") {
+    return {
+      title: suite.coverageVsThreshold.title,
+      labels: suite.coverageVsThreshold.rows.map((r) => r.label),
+      values: suite.coverageVsThreshold.rows.map((r) => r.actual),
+    };
+  }
+  if (chartId === "occupancy_breakeven") {
+    return {
+      title: suite.occupancyBreakeven.title,
+      labels: suite.occupancyBreakeven.rows.map((r) => r.label),
+      values: suite.occupancyBreakeven.rows.map((r) => r.pct ?? 0),
+    };
+  }
+  if (chartId === "liquidity_runway") {
+    return {
+      title: suite.liquidityRunway.title,
+      labels: suite.liquidityRunway.bars.map((s) => s.label),
+      values: suite.liquidityRunway.bars.map((s) => s.usd),
+    };
+  }
+  if (chartId === "fee_vs_noi") {
+    return {
+      title: suite.feeVsNoi.title,
+      labels: suite.feeVsNoi.bars.map((s) => s.label),
+      values: suite.feeVsNoi.bars.map((s) => s.usd),
+    };
+  }
   if (chartId === "portfolio_heatmap") {
     return {
       title: suite.heatmap.title,

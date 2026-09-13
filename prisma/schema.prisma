@@ -482,6 +482,19 @@ model VaultDocument {
   @@index([entityId, kind])
 }
 
+/// Durable file bytes when the local filesystem is ephemeral (Vercel) and
+/// Vercel Blob is not configured. storagePath on vault/intake rows is `db:{id}`.
+model StoredBlob {
+  id        String   @id @default(cuid())
+  key       String
+  mimeType  String
+  byteSize  Int
+  bytes     Bytes
+  createdAt DateTime @default(now())
+
+  @@index([key])
+}
+
 /// Guided Add Deal session. Draft JSON-equivalent fields persist so refresh
 /// does not lose Principal progress. Files land in the vault after the SPE exists.
 model DealIntake {

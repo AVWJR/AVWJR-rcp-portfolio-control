@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
+import { FileStoreError } from "@/lib/file-store";
 import { listVaultDocuments, storeVaultDocument } from "@/lib/vault";
 import { isVaultKind } from "@rcp/documents";
 import { NextResponse } from "next/server";
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
     return NextResponse.json(serialize({ id: doc.id, title: doc.title, filename: doc.filename }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const status = error instanceof FileStoreError ? 503 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }
