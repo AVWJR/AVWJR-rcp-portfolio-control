@@ -4,7 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { prisma } from "./prisma";
 
 export const VAULT_ROOT = resolve(process.cwd(), "data", "vault");
-const MAX_BYTES = 10 * 1024 * 1024;
+export const VAULT_MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = VAULT_MAX_BYTES;
 
 function absPath(storagePath: string) {
   const abs = resolve(VAULT_ROOT, storagePath);

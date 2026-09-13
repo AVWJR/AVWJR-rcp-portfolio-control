@@ -349,6 +349,8 @@ export type SeedSummary = {
 };
 
 async function wipeDemoData() {
+  await prisma.dealIntakeFile.deleteMany();
+  await prisma.dealIntake.deleteMany();
   await prisma.reportJobRun.deleteMany();
   await prisma.reportJob.deleteMany();
   await prisma.vaultDocument.deleteMany();

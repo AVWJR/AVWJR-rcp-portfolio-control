@@ -6,7 +6,7 @@ Phase F replaces the Phase E `PHASE_F_VAULT_TODO` stub.
 
 Metadata in SQLite (`VaultDocument`) plus file blobs on the local filesystem under `data/vault/{entityCode}/`.
 
-Kinds: **lease**, **loan**, **k1**, **draw**, **insurance**, **other**. Each row is linked to a legal entity.
+Kinds: **lease**, **loan**, **k1**, **draw**, **insurance**, **rent_roll**, **budget**, **om_cim**, **other**. Each row is linked to a legal entity. Add Deal classifies intake files onto these kinds.
 
 ## UI / API
 

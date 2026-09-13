@@ -2,7 +2,17 @@
 
 export const VAULT_STATUS = "ready" as const;
 
-export const VAULT_KINDS = ["lease", "loan", "k1", "draw", "insurance", "other"] as const;
+export const VAULT_KINDS = [
+  "lease",
+  "loan",
+  "k1",
+  "draw",
+  "insurance",
+  "rent_roll",
+  "budget",
+  "om_cim",
+  "other",
+] as const;
 export type VaultKind = (typeof VAULT_KINDS)[number];
 
 export const VAULT_KIND_LABELS: Record<VaultKind, string> = {
@@ -11,6 +21,9 @@ export const VAULT_KIND_LABELS: Record<VaultKind, string> = {
   k1: "K-1 / capital packet",
   draw: "Draw / funding",
   insurance: "Insurance",
+  rent_roll: "Rent roll",
+  budget: "Budget",
+  om_cim: "OM / CIM",
   other: "Other",
 };
 

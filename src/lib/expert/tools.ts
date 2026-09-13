@@ -1,3 +1,4 @@
+import { getIntake, publicIntake } from "@/lib/deals/intake";
 import { buildDashboardForEntity, type LiveRatio } from "@/lib/dashboards";
 import { loadPortfolioDebt } from "@/lib/debt-view";
 import { reviewTreeIntercompany } from "@/lib/intercompany";
@@ -621,6 +622,13 @@ export async function getAnomalies(
   }
 
   return { entityCode, periodLabel, flags };
+}
+
+export async function getDealIntakeStatus(intakeId: string) {
+  if (!intakeId?.trim()) return { ok: false as const, error: "intakeId required" };
+  const intake = await getIntake(intakeId.trim());
+  if (!intake) return { ok: false as const, error: `Unknown intake ${intakeId}` };
+  return { ok: true as const, intake: publicIntake(intake) };
 }
 
 export { listNavTargets };

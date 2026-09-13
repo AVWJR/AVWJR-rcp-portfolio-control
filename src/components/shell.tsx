@@ -9,6 +9,7 @@ const NAV = [
   { href: "/narratives", label: "Narratives" },
   { href: "/", label: "Overview" },
   { href: "/reports/operating-statement", label: "Operating Statement" },
+  { href: "/deals", label: "Deals" },
   { href: "/properties", label: "Properties" },
   { href: "/debt", label: "Debt" },
   { href: "/capex", label: "CapEx" },
@@ -31,6 +32,7 @@ export function Shell({
   month,
   consolidated,
   pathname,
+  periodLabels,
 }: {
   children: ReactNode;
   entities: {
@@ -45,6 +47,7 @@ export function Shell({
   month: number;
   consolidated: boolean;
   pathname: string;
+  periodLabels?: string[];
 }) {
   const qs = (path: string) => {
     const params = new URLSearchParams({
@@ -88,6 +91,8 @@ export function Shell({
                       ? pathname.startsWith("/narratives")
                     : item.href === "/tax"
                       ? pathname.startsWith("/tax")
+                    : item.href === "/deals"
+                      ? pathname.startsWith("/deals")
                     : pathname === item.href;
               return (
                 <Link
@@ -111,6 +116,7 @@ export function Shell({
             month={month}
             consolidated={consolidated}
             pathname={pathname}
+            periodLabels={periodLabels}
           />
         </div>
       </header>

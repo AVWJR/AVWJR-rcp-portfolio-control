@@ -1,5 +1,6 @@
 import { PeriodBanner } from "@/components/period-banner";
 import { Shell } from "@/components/shell";
+import { listPeriodLabels } from "@/lib/deals/periods";
 import { listEntities } from "@/lib/queries";
 import { buildAllStatements } from "@/lib/reports-server";
 import type { ReactNode } from "react";
@@ -26,18 +27,22 @@ export async function loadReportContext(searchParams: ReportSearch) {
     throw new Error("No entities seeded. Run npm run db:reset");
   }
 
-  const statements = await buildAllStatements({
-    entityId: entity.id,
-    year,
-    month,
-    consolidated,
-  });
+  const [statements, periodLabels] = await Promise.all([
+    buildAllStatements({
+      entityId: entity.id,
+      year,
+      month,
+      consolidated,
+    }),
+    listPeriodLabels(),
+  ]);
 
   return {
     entities,
     entity,
     year,
     month,
+    periodLabels,
     consolidated: statements.consolidated,
     canConsolidate: statements.canConsolidate,
     statements,
@@ -79,6 +84,7 @@ export async function ReportShell({
       month={ctx.month}
       consolidated={ctx.consolidated}
       pathname={pathname}
+      periodLabels={ctx.periodLabels}
     >
       <PeriodBanner
         status={ctx.statements.period.status}
