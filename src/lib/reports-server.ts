@@ -5,6 +5,7 @@ import {
   buildTrialBalance,
 } from "@rcp/ledger";
 import { openPeriod } from "@/lib/deals/periods";
+import { isLiveSpe } from "./archive";
 import { buildOperatingPackage } from "./operating";
 import { consolidationEntityIds, loadPostedLines } from "./queries";
 import { prisma } from "./prisma";
@@ -30,7 +31,7 @@ export async function resolveReportScope(opts: {
     period = await openPeriod(entity.id, opts.year, opts.month);
   }
 
-  const canConsolidate = entity.type === "OPCO" && entity.children.some((c) => c.type === "SPE");
+  const canConsolidate = entity.type === "OPCO" && entity.children.some((c) => isLiveSpe(c));
   const consolidated = opts.consolidated && canConsolidate;
   const entityIds = consolidated ? await consolidationEntityIds(entity.id) : [entity.id];
 

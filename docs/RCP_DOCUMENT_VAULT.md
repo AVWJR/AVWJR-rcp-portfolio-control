@@ -16,7 +16,7 @@ Kinds: **lease**, **loan**, **k1**, **draw**, **insurance**, **rent_roll**, **bu
 
 ## UI / API
 
-- `/vault` — list for the header entity, upload, download
+- `/vault` — list for the header entity, upload, download. On a **live SPE**, Principal sees **Delete** (soft-archive the deal; books/vault stay). Removing a vault file is not deleting the deal. Restore is on gold nav **Deal Archive** (`/archive`), not under Deals.
 - `GET /api/vault?entity=SPE-WBG`
 - `POST /api/vault` small files: multipart (`entity`, `kind`, `title`, `notes`, `file`). Large files: JSON `{ entity, filename, blobUrl, mimeType, byteSize, kind, title, notes }` after client Blob upload
 - `POST /api/vault/blob` — same `@vercel/blob` `handleUpload` helper as Add Deal (`/api/deals/intake/blob`)

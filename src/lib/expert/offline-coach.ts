@@ -373,24 +373,22 @@ Are you asking about a number on this page, something missing for this entity, o
 
 function deleteDealCopy(ctx: ExpertClientContext): string {
   const list = link("/deals", ctx, "Deals");
-  const add = link("/deals/new", ctx, "Add Deal");
+  const archive = link("/archive", ctx, "Deal Archive");
   const vault = link("/vault", ctx, "Vault");
-  return `**This demo does not delete SPEs yet.** Soft-archive / Deal Archive is **not available on main yet** — do not look for an Archive button.
+  return `Click **Delete** on a live ${list} row (or on that SPE’s ${vault} when a deal is selected). Two-step confirm: read the impact, then type the SPE code.
 
-Nearest real path today:
-- Leave the SPE as-is. Open ${list} (gold nav **Deals**) to see SPEs and unfinished drafts. Created SPEs stay in the books.
-- On an Add Deal draft you can remove an uploaded **file** (red remove on that row). That does not delete the SPE or the draft.
-- ${vault} can delete a **document**. That is not deleting the deal.
-- Seeded demo SPEs (\`SPE-WBG\`, \`SPE-CVC\`, \`SPE-HCR\`) are meant to stay.
+That is a **soft-archive**, not a hard wipe. The SPE leaves live Deals and the OpCo combined roll-up. Books, ledgers, and vault documents stay. Find it under gold nav **Deal Archive** — ${archive} — not a tab under Deals. There is no Archive tab under Deals.
 
-If you meant to **onboard** a different property, open ${add}. I will not invent a delete or archive screen.`;
+From Deal Archive: study vault or books, then **Restore** with the same two-step confirm.
+
+Permanent demo SPEs (\`SPE-WBG\`, \`SPE-CVC\`, \`SPE-HCR\`) cannot be deleted. Removing a **vault document** is not deleting the deal. Partners cannot Delete or Restore.`;
 }
 
 function vaultCopy(ctx: ExpertClientContext): string {
   const vault = link("/vault", ctx, "Vault");
   return `Gold nav **Vault** — ${vault} — is the entity document store (OM, rent roll, loan, lease, insurance). Drop a file there, or send it through **Add Deal** and it is vaulted on ingest.
 
-You can delete a **vault document**. That does not delete the SPE. Files over ~3.5 MB on Vercel need \`BLOB_READ_WRITE_TOKEN\`. Not a bank or PMS feed.`;
+You can remove a **vault document**. That does not delete the SPE. **Delete** on a live SPE’s Vault (or the Deals row) is the deal action — a soft-archive to gold nav **Deal Archive**. Files over ~3.5 MB on Vercel need \`BLOB_READ_WRITE_TOKEN\`. Not a bank or PMS feed.`;
 }
 
 function narrativesCopy(ctx: ExpertClientContext): string {
@@ -416,9 +414,9 @@ function featureHowTo(q: string, ctx: ExpertClientContext): string {
     const t = targets[0];
     return `Open **${t.label}** — ${t.hint}. Gold nav or ${link(t.href, ctx, t.label)}. I will not invent a screen that is not in this app.`;
   }
-  return `I can walk every real screen in this app. Gold nav: Overview, Dashboard, Deals, Properties, Debt, CapEx, Close, Tax, Vault, Narratives, Scheduler.
+  return `I can walk every real screen in this app. Gold nav: Overview, Dashboard, Deals, Deal Archive, Properties, Debt, CapEx, Close, Tax, Vault, Narratives, Scheduler.
 
-There is no delete or archive on main yet. Name the screen or the job (add deal, vault a file, export a pack, close the period) and I will give the click path.`;
+Name the screen or the job (delete a deal, add deal, vault a file, export a pack, close the period) and I will give the click path.`;
 }
 
 function navHelp(text: string, ctx: ExpertClientContext): string {

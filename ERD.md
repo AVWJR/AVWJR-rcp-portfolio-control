@@ -38,6 +38,11 @@ erDiagram
     int ownershipBps "10000 = 100%"
     int unitCount "SPE only"
     enum strategy "VALUE_ADD_GARDEN | STABILIZED | LIGHT_REHAB"
+    enum lifecycleStatus "LIVE | ARCHIVED"
+    datetime archivedAt "soft-archive only"
+    string archivedBy
+    datetime restoredAt
+    string restoredBy
     string currency "USD"
     string locale "en-US"
     string timezone "America/New_York"
@@ -151,7 +156,7 @@ Roche Capital Partners HoldCo
     └── Harbor Court Residences LLC      (SPE, 84 units, light rehab, 100%)
 ```
 
-Wholly owned SPEs roll into OpCo as a **combined roll-up**. Intercompany `1310`/`2310` and AM fee `6310`/`7010` eliminate on that view. Occupancy KPIs come from `Unit`, never from the GL.
+Wholly owned **LIVE** SPEs roll into OpCo as a **combined roll-up**. `ARCHIVED` SPEs leave that roll-up and the live Deals list; books and vault stay for study on `/archive`. Intercompany `1310`/`2310` and AM fee `6310`/`7010` eliminate on that view. Occupancy KPIs come from `Unit`, never from the GL.
 
 ## Posting rule
 

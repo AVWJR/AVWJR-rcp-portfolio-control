@@ -28,6 +28,7 @@ export async function GET(request: Request) {
         units: spe._count.units,
         loans: spe._count.loans,
         vaultDocuments: spe._count.vaultDocuments,
+        lifecycleStatus: spe.lifecycleStatus,
       })),
     }),
   );
