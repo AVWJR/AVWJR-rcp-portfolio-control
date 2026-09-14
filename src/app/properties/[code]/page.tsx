@@ -5,6 +5,7 @@ import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import { RentRollTable } from "@/components/rent-roll-table";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { prisma } from "@/lib/prisma";
+import { parseCanonicalNotes } from "@/lib/rent-roll";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -19,6 +20,16 @@ export default async function PropertyDetailPage({
   const query = await searchParams;
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity || entity.type !== "SPE") notFound();
+
+  const canonical = await prisma.vaultDocument.findFirst({
+    where: { entityId: entity.id, filename: "rent-roll-canonical.xlsx" },
+    orderBy: { uploadedAt: "desc" },
+  });
+  const original = await prisma.vaultDocument.findFirst({
+    where: { entityId: entity.id, kind: "rent_roll", NOT: { filename: "rent-roll-canonical.xlsx" } },
+    orderBy: { uploadedAt: "desc" },
+  });
+  const dialect = parseCanonicalNotes(canonical?.notes ?? original?.notes);
 
   const merged: ReportSearch = { ...query, entity: code, view: undefined };
   return (
@@ -38,6 +49,13 @@ export default async function PropertyDetailPage({
                 {ctx.entity.unitCount} units · {ctx.entity.strategy?.replaceAll("_", " ")} · rent roll as-of
                 period close. Occupancy KPIs are gated as rent-roll sourced.
               </p>
+              {dialect?.dialectLabel ? (
+                <p className="mt-3 border border-gold-300 bg-cream-50 px-4 py-2 text-sm text-navy-900">
+                  Detected <span className="font-medium">{dialect.dialectLabel}</span> and normalized it.
+                  Labels and unmapped fields are on the Canonical / Meta sheets — nothing is dropped silently.
+                  Original workbook stays in Vault.
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-3 text-sm">
                 <Link className="text-navy-700 underline" href={`/dashboard/${code}?entity=${code}&period=${period}`}>
                   Property dashboard
@@ -48,6 +66,16 @@ export default async function PropertyDetailPage({
                 <Link className="text-navy-700 underline" href={`/api/rent-roll?entity=${code}&format=csv`}>
                   Download rent-roll CSV
                 </Link>
+                {canonical ? (
+                  <Link className="text-navy-700 underline" href={`/api/rent-roll?entity=${code}&format=xlsx`}>
+                    Download canonical XLSX
+                  </Link>
+                ) : null}
+                {original ? (
+                  <Link className="text-navy-700 underline" href={`/api/rent-roll?entity=${code}&format=original`}>
+                    Download original workbook
+                  </Link>
+                ) : null}
                 <Link
                   className="text-navy-700 underline"
                   href={`/api/budgets?entity=${code}&period=${period}&format=csv`}
@@ -74,7 +102,7 @@ export default async function PropertyDetailPage({
                 action="/api/rent-roll"
                 entity={code}
                 label="Replace rent-roll CSV / XLSX"
-                acceptHint="Broker headers (Unit, Unit Type, Beds, Market Rent, Lease Rent / Charges, Status) or the RCP template"
+                acceptHint="Yardi Lease Charges, redIQ, broker/Yardi-MRI flat rows, or the RCP canonical template"
               />
               <div className="mt-4">
                 <RentRollTable units={ctx.statements.units} />

@@ -117,5 +117,6 @@ describe("expert Add Deal knowledge", () => {
     expect(reply.content).toMatch(/could not map columns/i);
     expect(reply.content).toMatch(/Dashboard/);
     expect(reply.content).toMatch(/Keep the workbook as XLSX/i);
+    expect(reply.content).toMatch(/Lease Charges|dialect/i);
   });
 });

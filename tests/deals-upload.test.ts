@@ -23,6 +23,8 @@ import {
   harringtonYardiT12ExtWorkbook,
   unmappableWorkbook,
 } from "./fixtures/harrington-rent-roll";
+import { hamptonLeaseChargesWorkbook } from "./fixtures/hampton-lease-charges";
+import { CANONICAL_WORKBOOK_FILENAME } from "@/lib/rent-roll-workbook";
 import { resolveReportScope } from "@/lib/reports-server";
 
 const intakeIds: string[] = [];
@@ -585,5 +587,43 @@ describe("Add Deal intake upload", () => {
     });
     expect(scope.period.label).toBe("2019-11");
     expect(scope.period.status).toBe("OPEN");
+  });
+
+  it("auto-ingests a Hampton/Yardi Lease Charges workbook into canonical Units + vault template", async () => {
+    const intake = await createIntake({ sources: ["upload"], goal: "value_add" });
+    intakeIds.push(intake.id);
+    await storeIntakeFile({
+      intakeId: intake.id,
+      source: "upload",
+      filename: "RR_-_Hampton_Gardens_-_Lease_Charges.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: hamptonLeaseChargesWorkbook(),
+    });
+    const report = await autoIngestIntake(intake.id);
+    if (report.created.entityId) entityIds.push(report.created.entityId);
+    const rr = report.results.find((row) => row.kind === "rent_roll");
+    expect(rr?.imported).toBe(7);
+    expect(rr?.dialect).toBe("yardi_lease_charges");
+    expect(report.gaps.some((gap) => /Lease Charges/i.test(gap))).toBe(true);
+    const units = await prisma.unit.findMany({ where: { entityId: report.created.entityId! } });
+    expect(units).toHaveLength(7);
+    expect(units.filter((u) => u.status === "OCCUPIED")).toHaveLength(6);
+    const first = units.find((u) => u.unitCode === "171L725-1");
+    expect(first?.inPlaceRent).toBe(975_00n);
+    expect(first?.marketRent).toBe(1220_00n);
+    expect(first?.sqft).toBe(540);
+    const canonical = await prisma.vaultDocument.findFirst({
+      where: { entityId: report.created.entityId!, filename: CANONICAL_WORKBOOK_FILENAME },
+    });
+    expect(canonical).toBeTruthy();
+    const original = await prisma.vaultDocument.findFirst({
+      where: {
+        entityId: report.created.entityId!,
+        kind: "rent_roll",
+        NOT: { filename: CANONICAL_WORKBOOK_FILENAME },
+      },
+    });
+    expect(original?.byteSize).toBeGreaterThan(0);
+    expect(original?.filename).toMatch(/Hampton/i);
   });
 });

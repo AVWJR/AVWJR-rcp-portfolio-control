@@ -1,9 +1,8 @@
 import { inferAsOfDate } from "./infer";
-import { importRentRollCsv } from "@/lib/rent-roll";
+import { importRentRollSource } from "@/lib/rent-roll";
 import { prisma } from "@/lib/prisma";
 import { readVaultDocument } from "@/lib/vault";
 import { applyStructuredData } from "./apply";
-import { bytesToImportCsv, isSpreadsheetFilename } from "./workbook";
 
 export async function reapplyRentRollForEntity(entityCode: string) {
   const entity = await prisma.entity.findUnique({ where: { code: entityCode } });
@@ -31,11 +30,11 @@ export async function reapplyRentRollForEntity(entityCode: string) {
     if (!rr?.imported) {
       throw new Error(rr?.skipped ?? `${entity.code}: could not map rent-roll columns. Detected headers: (none)`);
     }
-    return { entityCode: entity.code, imported: rr.imported, source: intakeRr.filename, results: applied.results };
+    return { entityCode: entity.code, imported: rr.imported, source: intakeRr.filename, dialect: rr.dialect, dialectLabel: rr.dialectLabel, results: applied.results };
   }
 
   const vaulted = await prisma.vaultDocument.findFirst({
-    where: { entityId: entity.id, kind: "rent_roll" },
+    where: { entityId: entity.id, kind: "rent_roll", NOT: { filename: "rent-roll-canonical.xlsx" } },
     orderBy: { uploadedAt: "desc" },
   });
   if (!vaulted) {
@@ -45,20 +44,26 @@ export async function reapplyRentRollForEntity(entityCode: string) {
   if (!loaded) {
     throw new Error(`${vaulted.filename} metadata exists, but the stored bytes are missing.`);
   }
-  const csv =
-    isSpreadsheetFilename(loaded.doc.filename) || loaded.doc.mimeType.includes("spreadsheet")
-      ? bytesToImportCsv(loaded.doc.filename, loaded.doc.mimeType, loaded.bytes)
-      : loaded.bytes.toString("utf8");
   const asOf = inferAsOfDate(loaded.doc.filename);
-  const units = await importRentRollCsv({
+  const imported = await importRentRollSource({
     entityId: entity.id,
-    csv,
+    filename: loaded.doc.filename,
+    mimeType: loaded.doc.mimeType,
+    bytes: loaded.bytes,
     confirmReplace: true,
     asOfDate: asOf ? new Date(`${asOf}T16:00:00.000Z`) : undefined,
+    originalVaultDocumentId: loaded.doc.id,
   });
-  if (!units.length) {
+  if (!imported.units.length) {
     throw new Error(`${loaded.doc.filename}: could not map rent-roll columns. Detected headers: (none)`);
   }
-  await prisma.entity.update({ where: { id: entity.id }, data: { unitCount: units.length } });
-  return { entityCode: entity.code, imported: units.length, source: loaded.doc.filename, results: [{ kind: "rent_roll", imported: units.length }] };
+  await prisma.entity.update({ where: { id: entity.id }, data: { unitCount: imported.units.length } });
+  return {
+    entityCode: entity.code,
+    imported: imported.units.length,
+    source: loaded.doc.filename,
+    dialect: imported.dialect,
+    dialectLabel: imported.dialectLabel,
+    results: [{ kind: "rent_roll", imported: imported.units.length, dialect: imported.dialect, dialectLabel: imported.dialectLabel }],
+  };
 }

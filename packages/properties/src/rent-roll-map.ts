@@ -1,5 +1,5 @@
 import { bathsToTenths, isUnitStatus, type UnitSnapshot, type UnitStatus } from "./types";
-import { CsvParseError, parseUsdToCents, splitCsvLine } from "./csv";
+import { CsvParseError, parseUsdToCents, splitCsvLine } from "./csv-parse";
 
 export const RENT_ROLL_CANONICAL_FIELDS = [
   "unit",
@@ -58,7 +58,7 @@ const FIELD_ALIASES: Record<RentRollField | "beds_baths" | "building" | "residen
   beds: ["bedrooms", "bedroom", "beds", "bed", "bdrms", "bdrm", "br", "bd"],
   baths: ["bathrooms", "bathroom", "baths", "bath", "ba"],
   beds_baths: ["bd ba", "beds baths", "bed bath", "br ba", "bds bas", "bed/bath", "bd/ba"],
-  sqft: ["square footage", "square feet", "unit sf", "net sf", "netsf", "sq ft", "sqft", "sf", "nra", "nsa"],
+  sqft: ["square footage", "square feet", "unit sq ft", "unit sf", "net sf", "netsf", "sq ft", "sqft", "sf", "nra", "nsa"],
   status: [
     "occupancy status",
     "status occupancy",
@@ -289,7 +289,7 @@ export function looksLikeUnitCode(value: string): boolean {
   const v = value.trim();
   if (!v || looksLikeSummary(v, [v]) || looksLikeHeaderRepeat(v)) return false;
   if (/^[4-7]\d{3}$/.test(v)) return false;
-  return /^(?:[A-Za-z]{1,3}[-/]?)?\d{1,5}[A-Za-z]{0,2}$/.test(v) || /^\d{1,3}-\d{2,4}$/.test(v);
+  return /^(?:[A-Za-z]{1,3}[-/]?)?\d{1,5}[A-Za-z]{0,2}$/.test(v) || /^\d{1,3}-\d{2,4}$/.test(v) || /^[A-Za-z0-9]{3,14}-\d{1,4}$/.test(v);
 }
 
 function inferUnitColumnFromRows(rows: string[][]): number | null {
