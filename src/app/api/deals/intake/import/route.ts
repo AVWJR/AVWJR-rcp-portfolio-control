@@ -20,10 +20,11 @@ export async function POST(request: Request) {
       importBudget?: boolean;
       saveLoan?: boolean;
       entityCode?: string;
+      documentId?: string;
     };
     if (body.action === "reapply") {
       if (!body.entityCode) return NextResponse.json({ error: "entityCode required" }, { status: 400 });
-      const report = await reapplyRentRollForEntity(body.entityCode);
+      const report = await reapplyRentRollForEntity(body.entityCode, body.documentId);
       return NextResponse.json(report);
     }
     if (!body.intakeId) return NextResponse.json({ error: "intakeId required" }, { status: 400 });

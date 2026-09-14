@@ -348,13 +348,13 @@ export function rankSuggestedActions(
     });
   }
 
-  if (!viewer && (page.startsWith("/properties") || page.startsWith("/dashboard"))) {
+  if (!viewer && (page.startsWith("/properties") || page.startsWith("/dashboard") || page.startsWith("/vault"))) {
     actions.push({
       id: "act_reapply",
       kind: "confirm_mutation",
-      label: "Re-apply rent roll",
+      label: "Apply / Re-apply rent roll",
       href: dest(ctx.entityCode.startsWith("SPE-") ? `/properties/${ctx.entityCode}` : "/properties", ctx),
-      mutation: "Replace Unit rows from the vaulted rent-roll workbook for this SPE",
+      mutation: "Replace Unit rows from the vaulted rent-roll workbook for this SPE (Kind Other RR files included)",
     });
   }
 

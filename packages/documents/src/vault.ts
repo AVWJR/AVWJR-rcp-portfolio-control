@@ -41,9 +41,23 @@ export function looksLikeOmCimFilename(filename: string): boolean {
   return false;
 }
 
-/** Prefer om_cim when the filename is an OM / offering memo; otherwise keep the selected kind. */
+/**
+ * Rent-roll filenames even when Kind is Other.
+ * Matches `RR_-_Harrington_…`, `Hampton - RR 07.08.26.xlsx`, `*rent-roll*`, and lease-charges workbooks.
+ * Does not treat “Harrington” / T-12 operating statements as rent rolls.
+ */
+export function looksLikeRentRollFilename(filename: string): boolean {
+  const stem = filename.replace(/\.[A-Za-z0-9]+$/, "");
+  const tokens = stem.replace(/[._/-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!tokens) return false;
+  if (/\b(lease\s*charges|rent\s*rolls?|rentroll)\b/.test(tokens)) return true;
+  return /\brr\b/.test(tokens);
+}
+
+/** Prefer OM / CIM or rent-roll when the filename is decisive; otherwise keep the selected kind. */
 export function guessVaultKind(filename: string, selected?: string | null): VaultKind {
   if (looksLikeOmCimFilename(filename)) return "om_cim";
+  if (looksLikeRentRollFilename(filename)) return "rent_roll";
   if (selected && isVaultKind(selected)) return selected;
   return "other";
 }

@@ -7,6 +7,7 @@ import {
   type NormalizedRentRoll,
   type UnitSnapshot,
 } from "@rcp/properties";
+import { pickOriginalRentRollMeta } from "@/lib/deals/rent-roll-candidates";
 import { parseRentRollSource, type ParsedRentRollSource } from "@/lib/deals/workbook";
 import { deleteStoredFile, putStoredFile } from "@/lib/file-store";
 import { assertReplaceConfirmed } from "./import-guard";
@@ -189,7 +190,7 @@ export async function annotateOriginalRentRoll(opts: {
   const notes = `Original rent-roll audit copy (bytes unchanged). ${canonicalNotes(opts.normalized, opts.originalFilename)}`;
   await prisma.vaultDocument.update({
     where: { id: opts.vaultDocumentId },
-    data: { notes },
+    data: { notes, kind: "rent_roll" },
   });
 }
 
@@ -263,14 +264,11 @@ export async function loadCanonicalRentRollDocument(entityId: string) {
 }
 
 export async function loadOriginalRentRollDocument(entityId: string) {
-  return prisma.vaultDocument.findFirst({
-    where: {
-      entityId,
-      kind: "rent_roll",
-      NOT: { filename: CANONICAL_WORKBOOK_FILENAME },
-    },
+  const docs = await prisma.vaultDocument.findMany({
+    where: { entityId },
     orderBy: { uploadedAt: "desc" },
   });
+  return pickOriginalRentRollMeta(docs) ?? null;
 }
 
 export { parseRentRollCsv };

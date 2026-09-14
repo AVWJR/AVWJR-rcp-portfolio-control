@@ -27,6 +27,8 @@ describe("Add Deal filename inference", () => {
     expect(inferFileRole("RR_-_Harrington_-_12.31.19_-_Resi.xlsx", harringtonRediqRentRollWorkbook())).toBe(
       "rent_roll_csv",
     );
+    expect(classifyFromFilename("Hampton - RR 07.08.26.xlsx")).toBe("rent_roll_csv");
+    expect(classifyFromFilename("Hampton - June 2026 T-12 Operating Statement.xlsx")).toBe("t12_pl");
   });
 
   it("infers Life at Harrington Park and an SPE-HRP style code", () => {

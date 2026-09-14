@@ -95,7 +95,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     hints: [
       "Upload-first: drop OM / Yardi Lease Charges or redIQ XLSX / T12. Filenames infer SPE-HRP-style codes. Files go one at a time (32 MB each).",
       "On Vercel, files over ~3.5 MB need BLOB_READ_WRITE_TOKEN (Add Deal and /vault share Blob). A 5.5 MB Harrington OM is valid.",
-      "0 units is a failure: could not map columns + Detected headers. Re-apply rent roll on Properties / Dashboard. Writes need confirm.",
+      "0 units is a failure: could not map columns + Detected headers. Apply / Re-apply rent roll on Properties / Vault / Dashboard (Kind Other *RR* files count). Writes need confirm.",
     ],
   },
   {
