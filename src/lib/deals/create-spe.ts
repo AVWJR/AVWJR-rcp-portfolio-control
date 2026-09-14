@@ -1,3 +1,4 @@
+import { liveSpeWhere } from "@/lib/archive";
 import { createEntityWithCoa } from "@/lib/entities";
 import { prisma } from "@/lib/prisma";
 import { isValidSpeCode, normalizeSpeCode, suggestSpeCode } from "./codes";
@@ -105,7 +106,7 @@ export async function findReusableSpe(speName: string) {
   const want = dealNameMatchKey(speName);
   if (want.length < 4) return null;
   const spes = await prisma.entity.findMany({
-    where: { type: "SPE" },
+    where: liveSpeWhere(),
     select: { id: true, code: true, name: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });
@@ -114,7 +115,7 @@ export async function findReusableSpe(speName: string) {
 
 export async function listSpeDeals() {
   return prisma.entity.findMany({
-    where: { type: "SPE" },
+    where: liveSpeWhere(),
     include: { parent: true, _count: { select: { units: true, loans: true, vaultDocuments: true } } },
     orderBy: { code: "asc" },
   });

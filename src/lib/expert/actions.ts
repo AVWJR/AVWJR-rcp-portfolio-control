@@ -66,6 +66,7 @@ export function chromeAlias(label: string, href?: string): string {
   const n = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const path = (href ?? "").split("?")[0] || "";
   if (path === "/deals/new" || (/\badd\b/.test(n) && /\bdeal\b/.test(n))) return "add_deal";
+  if (path === "/archive" || (/\barchive\b/.test(n) && /\bdeal\b/.test(n))) return "deal_archive";
   if (path === "/deals" || (/\bdeals?\b/.test(n) && /\b(open|list)\b/.test(n))) return "deals_list";
   if (path) return `path:${path}`;
   return n;
@@ -137,9 +138,13 @@ function queryChips(q: string): ExpertChip[] | null {
       {
         id: "deals_list",
         label: "Open Deals list",
-        prompt: "Show me the Deals list click path. Do not invent a delete button.",
+        prompt: "Show me the Delete click path on Deals. Then where the SPE goes on Deal Archive.",
       },
-      ADD_DEAL_CHIP,
+      {
+        id: "deal_archive",
+        label: "Open Deal Archive",
+        prompt: "Where is Deal Archive, and how do I Restore a deleted SPE?",
+      },
     ];
   }
   if (/add (a )?new deal|new deal|add deal|onboard/.test(q)) {
@@ -217,10 +222,10 @@ export function rankSuggestedActions(
     ];
     if (!viewer) {
       dealActions.push({
-        id: "act_add_deal",
+        id: "act_archive",
         kind: "navigate",
-        label: "Open Add Deal",
-        href: dest("/deals/new", ctx),
+        label: "Open Deal Archive",
+        href: dest("/archive", ctx),
       });
     }
     return dealActions;
@@ -455,6 +460,7 @@ export function rankChips(ctx: ExpertClientContext, bundle: OfflineBundle, userT
 }
 
 export function pageProcessLead(ctx: ExpertClientContext): string {
+  if (ctx.pathname.startsWith("/archive")) return "Study the archived SPE, or **Restore** it back to live Deals.";
   if (ctx.pathname.startsWith("/deals")) return "When you are ready, open **Add Deal** and drop the OM or rent-roll workbook.";
   if (ctx.pathname.startsWith("/close")) return "Continue period close on **Close** — stay in order.";
   if (ctx.pathname.startsWith("/narratives")) return "Pick the audience, then export the matching pack.";

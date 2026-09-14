@@ -1,5 +1,8 @@
+import { ArchivedSpeBanner } from "@/components/archived-spe-banner";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
+import { SpeDeleteControl } from "@/components/spe-delete-control";
 import { currentAccessRole } from "@/lib/access-server";
+import { liveSpeWhere } from "@/lib/archive";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 
@@ -11,16 +14,33 @@ export default async function DealsPage({
   const params = await searchParams;
   return (
     <ReportShell searchParams={params} pathname="/deals">
-      {(ctx) => <DealIndex period={`${ctx.year}-${String(ctx.month).padStart(2, "0")}`} subtitle={reportSubtitle(ctx)} />}
+      {(ctx) => (
+        <DealIndex
+          period={`${ctx.year}-${String(ctx.month).padStart(2, "0")}`}
+          subtitle={reportSubtitle(ctx)}
+          viewingArchived={ctx.archived}
+          viewingCode={ctx.entity.code}
+        />
+      )}
     </ReportShell>
   );
 }
 
-async function DealIndex({ period, subtitle }: { period: string; subtitle: string }) {
+async function DealIndex({
+  period,
+  subtitle,
+  viewingArchived,
+  viewingCode,
+}: {
+  period: string;
+  subtitle: string;
+  viewingArchived: boolean;
+  viewingCode: string;
+}) {
   const role = await currentAccessRole();
   const [spes, drafts] = await Promise.all([
     prisma.entity.findMany({
-      where: { type: "SPE" },
+      where: liveSpeWhere(),
       include: { parent: true },
       orderBy: { code: "asc" },
     }),
@@ -38,8 +58,9 @@ async function DealIndex({ period, subtitle }: { period: string; subtitle: strin
           <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{subtitle}</p>
           <h1 className="font-display text-4xl text-navy-900">Deals</h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-700">
-            Property SPEs sit under OpCo. Add a new deal when you are onboarding a new SPE — not a new HoldCo
-            or a second OpCo.
+            Live property SPEs under OpCo only. Deleted deals are not listed here — study and restore
+            them from gold nav <strong>Deal Archive</strong>. Add a new deal when you are onboarding a
+            new SPE, not a new HoldCo or a second OpCo.
           </p>
         </div>
         {role === "principal" ? (
@@ -50,9 +71,11 @@ async function DealIndex({ period, subtitle }: { period: string; subtitle: strin
             Add Deal
           </Link>
         ) : (
-          <p className="text-sm text-ink-600">Partner view — Add Deal is off.</p>
+          <p className="text-sm text-ink-600">Partner view — Add Deal and Delete are off.</p>
         )}
       </div>
+
+      {viewingArchived ? <ArchivedSpeBanner code={viewingCode} period={period} /> : null}
 
       {drafts.length && role === "principal" ? (
         <div>
@@ -78,17 +101,33 @@ async function DealIndex({ period, subtitle }: { period: string; subtitle: strin
 
       <div className="grid gap-4 md:grid-cols-3">
         {spes.map((spe) => (
-          <Link
-            key={spe.code}
-            href={`/dashboard/${spe.code}?entity=${spe.code}&period=${period}`}
-            className="border border-cream-300 bg-white px-5 py-4 shadow-ledger hover:border-gold-500"
-          >
+          <article key={spe.code} className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
             <p className="text-[11px] uppercase tracking-[0.16em] text-gold-700">{spe.code}</p>
             <h2 className="font-display text-2xl text-navy-900">{spe.name}</h2>
             <p className="mt-1 text-sm text-ink-700">
-              Under {spe.parent?.code ?? "—"} · {spe.unitCount ?? "—"} units · {spe.strategy?.replaceAll("_", " ") ?? "strategy TBD"}
+              Under {spe.parent?.code ?? "—"} · {spe.unitCount ?? "—"} units ·{" "}
+              {spe.strategy?.replaceAll("_", " ") ?? "strategy TBD"}
             </p>
-          </Link>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Link
+                href={`/dashboard/${spe.code}?entity=${spe.code}&period=${period}`}
+                className="text-sm text-navy-800 underline"
+              >
+                Open dashboard
+              </Link>
+              <Link href={`/vault?entity=${spe.code}&period=${period}`} className="text-sm text-navy-800 underline">
+                Vault
+              </Link>
+              {role === "principal" ? (
+                <SpeDeleteControl
+                  code={spe.code}
+                  name={spe.name}
+                  afterHref={`/archive?period=${period}`}
+                  triggerLabel="Delete"
+                />
+              ) : null}
+            </div>
+          </article>
         ))}
       </div>
     </div>

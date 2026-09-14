@@ -1,8 +1,12 @@
+import { ArchivedSpeBanner } from "@/components/archived-spe-banner";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
+import { SpeDeleteControl } from "@/components/spe-delete-control";
 import { VaultUploadForm } from "@/components/vault-forms";
+import { currentAccessRole } from "@/lib/access-server";
 import { isBlobTokenConfigured, isOnVercel } from "@/lib/file-store";
 import { listVaultDocuments } from "@/lib/vault";
 import { VAULT_KIND_LABELS } from "@rcp/documents/vault";
+import Link from "next/link";
 
 export default async function VaultPage({
   searchParams,
@@ -16,18 +20,41 @@ export default async function VaultPage({
       {async (ctx) => {
         const period = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
         const docs = await listVaultDocuments(ctx.entity.id);
+        const role = await currentAccessRole();
+        const liveSpe = ctx.entity.type === "SPE" && !ctx.archived;
         return (
           <div className="space-y-8">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{reportSubtitle(ctx)}</p>
-              <h1 className="font-display text-4xl text-navy-900">Document vault</h1>
-              <p className="mt-2 max-w-3xl text-sm text-ink-700">
-                Metadata plus file blobs linked to a legal entity. Large files (OM PDFs over ~3.5 MB)
-                use the same Vercel Blob client-upload path as Add Deal. Seed covers leases, loans,
-                K-1 placeholders, draws, and insurance for SPE-WBG. Not a live PMS or bank attachment
-                store.
-              </p>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{reportSubtitle(ctx)}</p>
+                <h1 className="font-display text-4xl text-navy-900">Document vault</h1>
+                <p className="mt-2 max-w-3xl text-sm text-ink-700">
+                  Metadata plus file blobs linked to a legal entity. Large files (OM PDFs over ~3.5 MB)
+                  use the same Vercel Blob client-upload path as Add Deal. Seed covers leases, loans,
+                  K-1 placeholders, draws, and insurance for SPE-WBG. Not a live PMS or bank attachment
+                  store. Removing a vault file is not deleting the deal. Soft-archived SPEs stay here
+                  for study; restore is on gold nav{" "}
+                  <Link className="underline" href={`/archive?period=${period}`}>
+                    Deal Archive
+                  </Link>
+                  , not under Deals.
+                </p>
+              </div>
+              {role === "principal" && liveSpe ? (
+                <div className="space-y-2">
+                  <SpeDeleteControl
+                    code={ctx.entity.code}
+                    name={ctx.entity.name}
+                    afterHref={`/archive?period=${period}`}
+                    triggerLabel="Delete"
+                  />
+                  <p className="max-w-xs text-xs text-ink-500">
+                    Delete removes this SPE from live Deals. It does not remove a vault file.
+                  </p>
+                </div>
+              ) : null}
             </div>
+            {ctx.archived ? <ArchivedSpeBanner code={ctx.entity.code} period={period} /> : null}
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <section className="border border-cream-300 bg-white shadow-ledger">

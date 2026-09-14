@@ -55,7 +55,11 @@ Without a key, Expert still opens: gold **Offline coach — add key**, live comp
 
 ### Add Deal (new property SPE)
 
-Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deals** → **Add Deal**, or Overview → Add Deal. Route: [`/deals/new`](http://localhost:3000/deals/new) · SPE list: [`/deals`](http://localhost:3000/deals). Expert chip: **Add a new deal**.
+Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deals** → **Add Deal**, or Overview → Add Deal. Route: [`/deals/new`](http://localhost:3000/deals/new) · live SPE list: [`/deals`](http://localhost:3000/deals). Expert chip: **Add a new deal**.
+
+### Deal Archive (Delete is a soft-archive)
+
+**Deals stays live SPEs only.** Principal **Delete** on a live Deals row (or that SPE’s **Vault**) is a two-step confirm: impact (leaves OpCo roll-up; books/vault preserved), then type the SPE code. Study and **Restore** on gold nav **Deal Archive** ([`/archive`](http://localhost:3000/archive)) — not nested under Deals. Permanent demos `SPE-WBG`, `SPE-CVC`, `SPE-HCR` cannot be deleted. Partner viewers get 403. Spec: [docs/RCP_DEAL_ARCHIVE.md](./docs/RCP_DEAL_ARCHIVE.md).
 
 | Mode | This release |
 | --- | --- |
@@ -68,7 +72,7 @@ Drafts persist (`DealIntake`). **Upload-first:** drop files with no identity key
 
 Sample files: [`data/samples/rent-roll.csv`](./data/samples/rent-roll.csv), [`data/samples/rent-roll.xlsx`](./data/samples/rent-roll.xlsx), [`data/samples/budget.csv`](./data/samples/budget.csv), [`data/samples/budget.xlsx`](./data/samples/budget.xlsx). Spec: [docs/RCP_ADD_DEAL.md](./docs/RCP_ADD_DEAL.md).
 
-APIs: `POST /api/deals` · `POST /api/deals/intake` · `POST /api/deals/intake/files` · `POST /api/deals/intake/blob` · `POST /api/deals/intake/import` · `POST /api/deals/intake/from-dropbox` · `POST /api/deals/intake/from-email` · `POST /api/deals/intake/scan-mailbox`
+APIs: `POST /api/deals` · `POST /api/deals/{code}/delete` · `GET /api/archive` · `POST /api/archive/{code}/restore` · `POST /api/deals/intake` · `POST /api/deals/intake/files` · `POST /api/deals/intake/blob` · `POST /api/deals/intake/import` · `POST /api/deals/intake/from-dropbox` · `POST /api/deals/intake/from-email` · `POST /api/deals/intake/scan-mailbox`
 
 Sample: [http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1](http://localhost:3000/dashboard/SPE-WBG?entity=SPE-WBG&period=2026-08&expert=1)
 
