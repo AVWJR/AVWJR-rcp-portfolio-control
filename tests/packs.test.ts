@@ -1,25 +1,36 @@
 import { renderPdfPack, renderPptxPack } from "@rcp/documents";
 import {
   CHART_IDS,
+  LIVE_DECK_MAX_SLIDES,
+  LIVE_KPI_MAX,
+  LIVE_KPI_MIN,
+  LIVE_VISUAL_MAX,
   PACK_IDS,
+  PACK_SPINE,
   buildChartSuite,
   buildPack,
   chartIdsPresent,
+  liveSpineKinds,
 } from "@rcp/reporting";
 import { describe, expect, it } from "vitest";
 import { fixtureSnapshot } from "./fixtures/period-snapshot";
 
 describe("pack build smoke", () => {
-  it("builds every catalog pack with cover, charts, and narrative", () => {
+  it("builds every catalog pack with the executive spine", () => {
     const snap = fixtureSnapshot();
     for (const id of PACK_IDS) {
       const pack = buildPack(snap, id);
       expect(pack.slides[0]?.kind).toBe("cover");
-      expect(pack.slides.some((s) => s.kind === "chart")).toBe(true);
-      expect(pack.slides.some((s) => s.kind === "narrative")).toBe(true);
-      expect(pack.slides.some((s) => s.kind === "disclosures")).toBe(true);
+      expect(pack.slides.some((s) => s.kind === "kpis")).toBe(true);
+      expect(pack.slides.some((s) => s.kind === "thesis")).toBe(true);
+      expect(pack.slides.some((s) => s.kind === "visuals")).toBe(true);
+      expect(pack.slides.some((s) => s.kind === "risks")).toBe(true);
+      expect(pack.slides.some((s) => s.kind === "appendix")).toBe(true);
+      expect(pack.slides.at(-1)?.kind).toBe("appendix");
       expect(pack.filenameBase).toContain(id);
       expect(pack.filenameBase).toContain("SPE-WBG");
+      expect(pack.slides.length).toBeGreaterThanOrEqual(5);
+      expect(pack.slides.length).toBeLessThanOrEqual(LIVE_DECK_MAX_SLIDES);
     }
   });
 
@@ -55,8 +66,12 @@ describe("pack build smoke", () => {
     expect(investor.narrative.citations.map((c) => c.id)).not.toEqual(lender.narrative.citations.map((c) => c.id));
     const investorKpiSlide = investor.slides.find((s) => s.kind === "kpis");
     const lenderKpiSlide = lender.slides.find((s) => s.kind === "kpis");
-    const investorLabels = investor.slides.filter((s) => s.kind === "kpis").flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
-    const lenderLabels = lender.slides.filter((s) => s.kind === "kpis").flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
+    const investorLabels = investor.slides
+      .filter((s) => s.kind === "kpis")
+      .flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
+    const lenderLabels = lender.slides
+      .filter((s) => s.kind === "kpis")
+      .flatMap((s) => (s.kind === "kpis" ? s.kpis.map((k) => k.label) : []));
     expect(investorLabels).toContain("NOI / unit");
     expect(lenderLabels).toContain("DSCR");
     expect(investorLabels).not.toContain("DSCR");
@@ -68,13 +83,34 @@ describe("pack build smoke", () => {
     expect(lenderKpiSlide && lenderKpiSlide.kind === "kpis").toBe(true);
   });
 
-  it("keeps gated LTV language in pack disclosures", () => {
+  it("keeps gated LTV language in pack appendix disclosures", () => {
     const pack = buildPack(fixtureSnapshot(), "quarterly_lender");
-    const disclosures = pack.slides.find((s) => s.kind === "disclosures");
-    expect(disclosures && disclosures.kind === "disclosures").toBe(true);
-    if (disclosures && disclosures.kind === "disclosures") {
-      expect(disclosures.bullets.some((b) => /LTV gated/i.test(b))).toBe(true);
-      expect(disclosures.bullets.some((b) => /not a GAAP consolidation|Standalone SPE/i.test(b))).toBe(true);
+    const appendix = pack.slides.find((s) => s.kind === "appendix");
+    expect(appendix && appendix.kind === "appendix").toBe(true);
+    if (appendix && appendix.kind === "appendix") {
+      expect(appendix.bullets.some((b) => /LTV gated/i.test(b))).toBe(true);
+      expect(appendix.bullets.some((b) => /not a GAAP consolidation|Standalone SPE/i.test(b))).toBe(true);
+      expect(appendix.bullets.some((b) => /soft-archived SPEs/i.test(b))).toBe(true);
     }
+  });
+
+  it("uses one KPI strip of 3–5 tiles and 2–4 live visuals with a so-what", () => {
+    const investor = buildPack(fixtureSnapshot(), "monthly_investor");
+    expect(liveSpineKinds(investor.slides)).toEqual(PACK_SPINE);
+    const kpi = investor.slides.find((s) => s.kind === "kpis");
+    expect(kpi && kpi.kind === "kpis").toBe(true);
+    if (kpi && kpi.kind === "kpis") {
+      expect(kpi.kpis.length).toBeGreaterThanOrEqual(LIVE_KPI_MIN);
+      expect(kpi.kpis.length).toBeLessThanOrEqual(LIVE_KPI_MAX);
+    }
+    const visuals = investor.slides.filter((s) => s.kind === "visuals").flatMap((s) => (s.kind === "visuals" ? s.visuals : []));
+    expect(visuals.length).toBeGreaterThanOrEqual(2);
+    expect(visuals.length).toBeLessThanOrEqual(LIVE_VISUAL_MAX);
+    for (const visual of visuals) {
+      expect(visual.soWhat.trim().length).toBeGreaterThan(12);
+    }
+    const cover = investor.slides[0];
+    expect(cover && cover.kind === "cover" && cover.thesis.length).toBeGreaterThan(10);
+    expect(cover && cover.kind === "cover" && cover.proofValue.length).toBeGreaterThan(0);
   });
 });

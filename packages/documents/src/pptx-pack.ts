@@ -1,296 +1,622 @@
 import PptxGenJS from "pptxgenjs";
-import { RCP_COLORS, RCP_CONFIDENTIAL, RCP_NAME, RCP_PRODUCT } from "@rcp/rcp-brand";
-import type { BuiltPack, ChartSuite } from "@rcp/reporting";
+import { RCP_CONFIDENTIAL, RCP_NAME, RCP_PRODUCT } from "@rcp/rcp-brand";
+import type { BuiltPack, PackSlide } from "@rcp/reporting";
+import { hex, PACK_MARGIN_IN, PACK_PALETTE, PACK_SLIDE_IN } from "./pack-theme";
+import { toRenderableVisual, type RenderableVisual } from "./pack-visuals";
 
-const NAVY = RCP_COLORS.navy;
-const GOLD = RCP_COLORS.gold;
-const CREAM = RCP_COLORS.cream;
+const NAVY = hex(PACK_PALETTE.navy);
+const GOLD = hex(PACK_PALETTE.gold);
+const CREAM = hex(PACK_PALETTE.cream);
+const INK = hex(PACK_PALETTE.ink);
+const MUTED = hex(PACK_PALETTE.muted);
+const W = PACK_SLIDE_IN.w;
+const H = PACK_SLIDE_IN.h;
+const M = PACK_MARGIN_IN;
 
-function themeSlide(pres: PptxGenJS, pack: BuiltPack) {
+function addFooter(slide: ReturnType<PptxGenJS["addSlide"]>, pack: BuiltPack, page: number, total: number) {
+  slide.addShape("rect", { x: 0, y: H - 0.32, w: W, h: 0.32, fill: { color: NAVY } });
+  slide.addText(`${RCP_NAME}  ·  ${pack.entityCode}  ·  ${pack.period}  ·  ${RCP_CONFIDENTIAL}`, {
+    x: M,
+    y: H - 0.28,
+    w: 9.4,
+    h: 0.22,
+    fontSize: 9,
+    color: GOLD,
+    fontFace: "Calibri",
+    margin: 0,
+  });
+  slide.addText(`${page} / ${total}`, {
+    x: W - M - 1.2,
+    y: H - 0.28,
+    w: 1.2,
+    h: 0.22,
+    fontSize: 9,
+    color: GOLD,
+    align: "right",
+    fontFace: "Calibri",
+    margin: 0,
+  });
+}
+
+function addContentChrome(pres: PptxGenJS, pack: BuiltPack, title: string) {
   const slide = pres.addSlide();
-  slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 7.5, fill: { color: NAVY.replace("#", "") } });
-  slide.addText(RCP_NAME, { x: 0.6, y: 0.35, w: 8, h: 0.3, fontSize: 12, color: GOLD.replace("#", ""), fontFace: "Georgia" });
-  slide.addText(pack.meta.title, {
-    x: 0.6,
-    y: 2.4,
-    w: 12,
-    h: 0.8,
-    fontSize: 32,
-    color: CREAM.replace("#", ""),
+  slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: 0.12, h: H, fill: { color: GOLD } });
+  slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.42, fill: { color: NAVY } });
+  slide.addText(`${RCP_NAME}  ·  ${pack.meta.title}`, {
+    x: M,
+    y: 0.08,
+    w: W - M * 2,
+    h: 0.26,
+    fontSize: 11,
+    color: GOLD,
+    fontFace: "Georgia",
+    margin: 0,
+  });
+  slide.addText(title, {
+    x: M,
+    y: 0.52,
+    w: W - M * 2,
+    h: 0.36,
+    fontSize: 18,
+    color: NAVY,
     fontFace: "Georgia",
     bold: true,
-  });
-  slide.addText(`${pack.entityName}  ·  ${pack.period}  ·  ${pack.viewLabel}`, {
-    x: 0.6,
-    y: 3.3,
-    w: 12,
-    h: 0.4,
-    fontSize: 14,
-    color: GOLD.replace("#", ""),
-    fontFace: "Calibri",
-  });
-  slide.addText(`${RCP_PRODUCT}  ·  ${RCP_CONFIDENTIAL}`, {
-    x: 0.6,
-    y: 6.9,
-    w: 12,
-    h: 0.3,
-    fontSize: 10,
-    color: GOLD.replace("#", ""),
+    margin: 0,
   });
   return slide;
 }
 
-function addFooter(slide: ReturnType<PptxGenJS["addSlide"]>, pack: BuiltPack) {
-  slide.addText(`${RCP_NAME} · ${pack.entityCode} · ${pack.period} · ${RCP_CONFIDENTIAL}`, {
-    x: 0.5,
-    y: 7.1,
-    w: 12.3,
-    h: 0.25,
-    fontSize: 9,
-    color: "6B7280",
+function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlide, { kind: "cover" }>) {
+  const slide = pres.addSlide();
+  slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: W, h: H, fill: { color: NAVY } });
+  slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: 0.18, h: H, fill: { color: GOLD } });
+  slide.addText(RCP_NAME.toUpperCase(), {
+    x: 0.7,
+    y: 0.55,
+    w: 11.8,
+    h: 0.28,
+    fontSize: 12,
+    color: GOLD,
+    fontFace: "Calibri",
+    charSpacing: 3,
+    margin: 0,
+  });
+  slide.addText(slideSpec.title, {
+    x: 0.7,
+    y: 1.15,
+    w: 11.8,
+    h: 0.7,
+    fontSize: 32,
+    color: CREAM,
+    fontFace: "Georgia",
+    bold: true,
+    margin: 0,
+  });
+  slide.addText(slideSpec.subtitle, {
+    x: 0.7,
+    y: 1.88,
+    w: 11.8,
+    h: 0.32,
+    fontSize: 16,
+    color: GOLD,
+    fontFace: "Georgia",
+    margin: 0,
+  });
+  slide.addShape(pres.ShapeType.rect, { x: 0.7, y: 2.35, w: 2.2, h: 0.06, fill: { color: GOLD } });
+  slide.addText(slideSpec.thesis, {
+    x: 0.7,
+    y: 2.6,
+    w: 11.8,
+    h: 0.9,
+    fontSize: 18,
+    color: CREAM,
+    fontFace: "Georgia",
+    margin: 0,
+  });
+  slide.addShape(pres.ShapeType.rect, {
+    x: 0.7,
+    y: 3.55,
+    w: 5.9,
+    h: 2.15,
+    fill: { color: hex(PACK_PALETTE.navyDeep) },
+  });
+  slide.addText(slideSpec.proofLabel.toUpperCase(), {
+    x: 0.95,
+    y: 3.72,
+    w: 5.4,
+    h: 0.28,
+    fontSize: 12,
+    color: GOLD,
+    fontFace: "Calibri",
+    margin: 0,
+  });
+  slide.addText(slideSpec.proofValue, {
+    x: 0.95,
+    y: 4.05,
+    w: 5.4,
+    h: 1.3,
+    fontSize: 32,
+    color: CREAM,
+    fontFace: "Georgia",
+    bold: true,
+    valign: "middle",
+    margin: 0,
+  });
+  slideSpec.bullets.forEach((bullet, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = 6.9 + col * 3.0;
+    const y = 3.55 + row * 1.1;
+    slide.addShape(pres.ShapeType.rect, { x, y, w: 2.85, h: 0.98, fill: { color: hex(PACK_PALETTE.navyDeep) } });
+    slide.addText(bullet, {
+      x: x + 0.14,
+      y: y + 0.18,
+      w: 2.57,
+      h: 0.64,
+      fontSize: 12,
+      color: CREAM,
+      fontFace: "Calibri",
+      valign: "middle",
+      margin: 0,
+    });
+  });
+  slide.addText(`${slideSpec.audienceLabel}  ·  ${RCP_PRODUCT}  ·  ${RCP_CONFIDENTIAL}`, {
+    x: 0.7,
+    y: H - 0.55,
+    w: 11.8,
+    h: 0.28,
+    fontSize: 11,
+    color: GOLD,
+    fontFace: "Calibri",
+    margin: 0,
   });
 }
 
-function chartData(pack: BuiltPack, chartId: string): { labels: string[]; values: number[]; title: string } {
-  const suite: ChartSuite = pack.charts;
-  if (chartId === "waterfall_gpr_noi_btcf") {
-    return {
-      title: suite.waterfall.title,
-      labels: suite.waterfall.bars.map((b) => b.label),
-      values: suite.waterfall.bars.map((b) => (b.kind === "outflow" ? -b.valueUsd : b.valueUsd)),
-    };
+function drawKpis(slide: ReturnType<PptxGenJS["addSlide"]>, kpis: Extract<PackSlide, { kind: "kpis" }>["kpis"]) {
+  const n = Math.max(1, kpis.length);
+  const gap = 0.14;
+  const usable = W - M * 2;
+  const cardW = (usable - gap * (n - 1)) / n;
+  const cardH = 5.55;
+  const y = 1.02;
+  const footerH = 1.85;
+  kpis.forEach((k, i) => {
+    const x = M + i * (cardW + gap);
+    slide.addShape("rect", { x, y, w: cardW, h: cardH, fill: { color: CREAM } });
+    slide.addShape("rect", { x, y, w: cardW, h: 0.08, fill: { color: GOLD } });
+    slide.addText(k.label.toUpperCase(), {
+      x: x + 0.14,
+      y: y + 0.28,
+      w: cardW - 0.28,
+      h: 0.7,
+      fontSize: 11,
+      color: GOLD,
+      fontFace: "Calibri",
+      margin: 0,
+    });
+    slide.addText(k.value, {
+      x: x + 0.14,
+      y: y + 1.15,
+      w: cardW - 0.28,
+      h: 2.2,
+      fontSize: n > 4 ? 18 : 22,
+      color: NAVY,
+      fontFace: "Georgia",
+      bold: true,
+      valign: "middle",
+      margin: 0,
+    });
+    slide.addShape("rect", { x, y: y + cardH - footerH, w: cardW, h: footerH, fill: { color: NAVY } });
+    slide.addText("SO WHAT", {
+      x: x + 0.14,
+      y: y + cardH - footerH + 0.12,
+      w: cardW - 0.28,
+      h: 0.22,
+      fontSize: 9,
+      color: GOLD,
+      fontFace: "Calibri",
+      margin: 0,
+    });
+    slide.addText(k.soWhat ?? k.hint, {
+      x: x + 0.14,
+      y: y + cardH - footerH + 0.38,
+      w: cardW - 0.28,
+      h: footerH - 0.5,
+      fontSize: 12,
+      color: CREAM,
+      fontFace: "Calibri",
+      valign: "top",
+      margin: 0,
+    });
+  });
+}
+
+function toneFill(tone: "navy" | "gold" | "fail" | "pass" | "watch" | "neutral"): string {
+  if (tone === "fail") return hex(PACK_PALETTE.fail);
+  if (tone === "gold" || tone === "watch") return GOLD;
+  if (tone === "neutral") return hex(PACK_PALETTE.rule);
+  return NAVY;
+}
+
+function drawRenderable(
+  pres: PptxGenJS,
+  slide: ReturnType<PptxGenJS["addSlide"]>,
+  visual: RenderableVisual,
+  box: { x: number; y: number; w: number; h: number },
+) {
+  slide.addText(visual.title, {
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: 0.28,
+    fontSize: 13,
+    color: NAVY,
+    fontFace: "Georgia",
+    bold: true,
+    margin: 0,
+  });
+  slide.addText(visual.soWhat, {
+    x: box.x,
+    y: box.y + 0.28,
+    w: box.w,
+    h: 0.42,
+    fontSize: 11,
+    color: INK,
+    fontFace: "Calibri",
+    italic: true,
+    margin: 0,
+  });
+  const inner = { x: box.x, y: box.y + 0.78, w: box.w, h: box.h - 0.78 };
+
+  if (visual.mode === "bars") {
+    slide.addChart(pres.ChartType.bar, visual.series, {
+      x: inner.x,
+      y: inner.y,
+      w: inner.w,
+      h: inner.h,
+      barGrouping: visual.stacked ? "stacked" : "clustered",
+      showLegend: visual.series.length > 1,
+      legendPos: "b",
+      chartColors: visual.series.map((s) => hex(s.color)),
+      showValue: false,
+      valAxisHidden: false,
+      catAxisLabelFontSize: 9,
+      valAxisLabelFontSize: 9,
+    });
+    return;
   }
-  if (chartId === "actual_vs_budget_bridge") {
-    return {
-      title: suite.budgetBridge.title,
-      labels: suite.budgetBridge.bars.map((b) => b.label),
-      values: suite.budgetBridge.bars.map((b) => (b.kind === "outflow" ? -b.valueUsd : b.valueUsd)),
-    };
+  if (visual.mode === "pie") {
+    slide.addChart(pres.ChartType.pie, [
+      { name: visual.title, labels: visual.labels, values: visual.values },
+    ], {
+      x: inner.x,
+      y: inner.y,
+      w: inner.w,
+      h: inner.h,
+      showLegend: true,
+      legendPos: "b",
+      chartColors: visual.colors.map(hex),
+      showPercent: true,
+    });
+    return;
   }
-  if (chartId === "trends_noi_occupancy_opex_dscr") {
-    return {
-      title: suite.trends.title,
-      labels: suite.trends.points.map((p) => p.period),
-      values: suite.trends.points.map((p) => p.noiUsd),
-    };
+  if (visual.mode === "callout") {
+    slide.addShape("rect", { x: inner.x, y: inner.y, w: inner.w, h: inner.h, fill: { color: toneFill(visual.tone) } });
+    slide.addText(visual.kicker.toUpperCase(), {
+      x: inner.x + 0.25,
+      y: inner.y + 0.25,
+      w: inner.w - 0.5,
+      h: 0.3,
+      fontSize: 12,
+      color: GOLD,
+      fontFace: "Calibri",
+      margin: 0,
+    });
+    slide.addText(visual.value, {
+      x: inner.x + 0.25,
+      y: inner.y + 0.7,
+      w: inner.w - 0.5,
+      h: 1.1,
+      fontSize: 32,
+      color: CREAM,
+      fontFace: "Georgia",
+      bold: true,
+      margin: 0,
+    });
+    slide.addText(visual.detail, {
+      x: inner.x + 0.25,
+      y: inner.y + 2.0,
+      w: inner.w - 0.5,
+      h: Math.max(0.6, inner.h - 2.2),
+      fontSize: 13,
+      color: CREAM,
+      fontFace: "Calibri",
+      margin: 0,
+    });
+    return;
   }
-  if (chartId === "opex_composition") {
-    return {
-      title: suite.opexComposition.title,
-      labels: suite.opexComposition.slices.map((s) => s.label),
-      values: suite.opexComposition.slices.map((s) => s.usd),
-    };
+  if (visual.mode === "status") {
+    const n = visual.items.length || 1;
+    const gap = 0.1;
+    const itemH = (inner.h - gap * (n - 1)) / n;
+    visual.items.forEach((item, i) => {
+      const y = inner.y + i * (itemH + gap);
+      slide.addShape("rect", { x: inner.x, y, w: 0.1, h: itemH, fill: { color: toneFill(item.tone) } });
+      slide.addText(item.label, {
+        x: inner.x + 0.25,
+        y,
+        w: inner.w * 0.32,
+        h: itemH,
+        fontSize: 12,
+        color: NAVY,
+        bold: true,
+        valign: "middle",
+        margin: 0,
+      });
+      slide.addText(item.value, {
+        x: inner.x + inner.w * 0.34,
+        y,
+        w: inner.w * 0.64,
+        h: itemH,
+        fontSize: 12,
+        color: INK,
+        valign: "middle",
+        margin: 0,
+      });
+    });
+    return;
   }
-  if (chartId === "capex_vs_reserves") {
-    return {
-      title: suite.capexVsReserves.title,
-      labels: suite.capexVsReserves.bars.map((s) => s.label),
-      values: suite.capexVsReserves.bars.map((s) => s.usd),
-    };
-  }
-  if (chartId === "debt_maturity_wall") {
-    return {
-      title: suite.maturityWall.title,
-      labels: suite.maturityWall.bars.map((s) => s.label),
-      values: suite.maturityWall.bars.map((s) => s.usd),
-    };
-  }
-  if (chartId === "portfolio_concentration") {
-    return {
-      title: suite.concentration.title,
-      labels: suite.concentration.slices.map((s) => s.label),
-      values: suite.concentration.slices.map((s) => s.usd),
-    };
-  }
-  if (chartId === "bs_composition") {
-    return {
-      title: suite.bsComposition.title,
-      labels: suite.bsComposition.assets.map((s) => s.label),
-      values: suite.bsComposition.assets.map((s) => s.usd),
-    };
-  }
-  if (chartId === "coverage_vs_threshold") {
-    return {
-      title: suite.coverageVsThreshold.title,
-      labels: suite.coverageVsThreshold.rows.map((r) => r.label),
-      values: suite.coverageVsThreshold.rows.map((r) => r.actual),
-    };
-  }
-  if (chartId === "occupancy_breakeven") {
-    return {
-      title: suite.occupancyBreakeven.title,
-      labels: suite.occupancyBreakeven.rows.map((r) => r.label),
-      values: suite.occupancyBreakeven.rows.map((r) => r.pct ?? 0),
-    };
-  }
-  if (chartId === "liquidity_runway") {
-    return {
-      title: suite.liquidityRunway.title,
-      labels: suite.liquidityRunway.bars.map((s) => s.label),
-      values: suite.liquidityRunway.bars.map((s) => s.usd),
-    };
-  }
-  if (chartId === "fee_vs_noi") {
-    return {
-      title: suite.feeVsNoi.title,
-      labels: suite.feeVsNoi.bars.map((s) => s.label),
-      values: suite.feeVsNoi.bars.map((s) => s.usd),
-    };
-  }
-  if (chartId === "upb_stack") {
-    return {
-      title: suite.upbStack.title,
-      labels: suite.upbStack.bars.map((s) => s.label),
-      values: suite.upbStack.bars.map((s) => s.usd),
-    };
-  }
-  if (chartId === "covenant_watchlist") {
-    return {
-      title: suite.covenantWatchlist.title,
-      labels: suite.covenantWatchlist.rows.map((r) => r.label),
-      values: suite.covenantWatchlist.rows.map((r) => (r.tone === "fail" ? 1 : 0)),
-    };
-  }
-  if (chartId === "t12_status") {
-    return {
-      title: suite.t12Status.title,
-      labels: ["Months"],
-      values: [suite.t12Status.monthsAvailable],
-    };
-  }
-  if (chartId === "decision_posture") {
-    return {
-      title: suite.decisionPosture.title,
-      labels: [suite.decisionPosture.action],
-      values: [suite.decisionPosture.action === "GO" ? 3 : suite.decisionPosture.action === "HOLD" ? 2 : 1],
-    };
-  }
-  if (chartId === "close_control") {
-    return {
-      title: suite.closeControl.title,
-      labels: suite.closeControl.rows.map((r) => r.label),
-      values: suite.closeControl.rows.map((_, i) => i + 1),
-    };
-  }
-  if (chartId === "portfolio_heatmap") {
-    return {
-      title: suite.heatmap.title,
-      labels: suite.heatmap.spec.rows.map((r) => r.label),
-      values: suite.heatmap.spec.rows.map((r) => {
-        const cell = suite.heatmap.spec.cells.find((c) => c.rowKey === r.key && c.colKey === "noi");
-        const n = Number(String(cell?.display ?? "0").replace(/[^0-9.-]/g, ""));
-        return Number.isFinite(n) ? n : 0;
-      }),
-    };
-  }
-  return { title: chartId, labels: ["n/a"], values: [0] };
+  const rows = [visual.headers, ...visual.rows];
+  slide.addTable(
+    rows.map((row, ri) =>
+      row.map((cell) => ({
+        text: cell,
+        options: {
+          fill: { color: ri === 0 ? NAVY : ri % 2 === 0 ? CREAM : "FFFFFF" },
+          color: ri === 0 ? CREAM : INK,
+          fontSize: 10,
+          fontFace: "Calibri",
+          bold: ri === 0,
+          margin: 4,
+        },
+      })),
+    ),
+    { x: inner.x, y: inner.y, w: inner.w, h: inner.h, border: [
+      { pt: 0.4, color: hex(PACK_PALETTE.rule) },
+      { pt: 0.4, color: hex(PACK_PALETTE.rule) },
+      { pt: 0.4, color: hex(PACK_PALETTE.rule) },
+      { pt: 0.4, color: hex(PACK_PALETTE.rule) },
+    ], colW: visual.headers.map(() => inner.w / visual.headers.length) },
+  );
+}
+
+function drawVisuals(
+  pres: PptxGenJS,
+  pack: BuiltPack,
+  slide: ReturnType<PptxGenJS["addSlide"]>,
+  visuals: Extract<PackSlide, { kind: "visuals" }>["visuals"],
+) {
+  const n = visuals.length || 1;
+  const gap = 0.22;
+  const usable = W - M * 2;
+  const colW = (usable - gap * (n - 1)) / n;
+  const y = 1.0;
+  const h = 5.85;
+  visuals.forEach((visual, i) => {
+    const x = M + i * (colW + gap);
+    drawRenderable(pres, slide, toRenderableVisual(pack, visual), { x, y, w: colW, h });
+  });
+}
+
+function drawThesis(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackSlide, { kind: "thesis" }>) {
+  slide.addText(spec.insight, {
+    x: M,
+    y: 1.0,
+    w: 8.05,
+    h: 1.15,
+    fontSize: 22,
+    color: NAVY,
+    fontFace: "Georgia",
+    bold: true,
+    valign: "top",
+    margin: 0,
+  });
+  const bullets = spec.bullets.slice(0, 4);
+  const cols = 2;
+  const rows = Math.ceil(bullets.length / cols) || 1;
+  const gap = 0.14;
+  const gridW = 8.05;
+  const gridH = 4.55;
+  const cardW = (gridW - gap) / cols;
+  const cardH = (gridH - gap * (rows - 1)) / rows;
+  bullets.forEach((b, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = M + col * (cardW + gap);
+    const y = 2.28 + row * (cardH + gap);
+    slide.addShape("rect", { x, y, w: cardW, h: cardH, fill: { color: CREAM } });
+    slide.addShape("rect", { x, y, w: 0.08, h: cardH, fill: { color: GOLD } });
+    slide.addText(b, {
+      x: x + 0.24,
+      y: y + 0.16,
+      w: cardW - 0.38,
+      h: cardH - 0.32,
+      fontSize: 14,
+      color: INK,
+      fontFace: "Calibri",
+      valign: "middle",
+      margin: 0,
+    });
+  });
+  slide.addShape("rect", { x: 9.05, y: 1.0, w: 3.78, h: 5.85, fill: { color: NAVY } });
+  slide.addText("PROOF", {
+    x: 9.25,
+    y: 1.22,
+    w: 3.38,
+    h: 0.28,
+    fontSize: 11,
+    color: GOLD,
+    fontFace: "Calibri",
+    margin: 0,
+  });
+  slide.addText(spec.proof, {
+    x: 9.25,
+    y: 1.7,
+    w: 3.38,
+    h: 4.8,
+    fontSize: 22,
+    color: CREAM,
+    fontFace: "Georgia",
+    bold: true,
+    valign: "middle",
+    margin: 0,
+  });
+}
+
+function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackSlide, { kind: "risks" }>) {
+  const n = spec.items.length || 1;
+  const gap = 0.18;
+  const usable = W - M * 2;
+  const cardW = (usable - gap * (n - 1)) / n;
+  spec.items.forEach((item, i) => {
+    const x = M + i * (cardW + gap);
+    slide.addShape("rect", { x, y: 1.02, w: cardW, h: 3.58, fill: { color: CREAM } });
+    slide.addShape("rect", { x, y: 1.02, w: cardW, h: 0.08, fill: { color: GOLD } });
+    slide.addText(item.heading, {
+      x: x + 0.22,
+      y: 1.22,
+      w: cardW - 0.44,
+      h: 0.4,
+      fontSize: 16,
+      color: NAVY,
+      fontFace: "Georgia",
+      bold: true,
+      margin: 0,
+    });
+    slide.addText(item.body, {
+      x: x + 0.22,
+      y: 1.68,
+      w: cardW - 0.44,
+      h: 1.85,
+      fontSize: 14,
+      color: INK,
+      fontFace: "Calibri",
+      margin: 0,
+    });
+    slide.addShape("rect", { x, y: 3.7, w: cardW, h: 0.9, fill: { color: NAVY } });
+    slide.addText(item.proof, {
+      x: x + 0.22,
+      y: 3.86,
+      w: cardW - 0.44,
+      h: 0.58,
+      fontSize: 14,
+      color: CREAM,
+      fontFace: "Georgia",
+      bold: true,
+      valign: "middle",
+      margin: 0,
+    });
+  });
+  slide.addShape("rect", { x: M, y: 4.78, w: W - M * 2, h: 2.05, fill: { color: NAVY } });
+  slide.addText("THE ASK", {
+    x: M + 0.28,
+    y: 4.94,
+    w: W - M * 2 - 0.56,
+    h: 0.28,
+    fontSize: 11,
+    color: GOLD,
+    fontFace: "Calibri",
+    margin: 0,
+  });
+  slide.addText(spec.ask, {
+    x: M + 0.28,
+    y: 5.28,
+    w: W - M * 2 - 0.56,
+    h: 1.3,
+    fontSize: 16,
+    color: CREAM,
+    fontFace: "Georgia",
+    margin: 0,
+  });
+}
+
+function drawAppendix(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackSlide, { kind: "appendix" }>) {
+  const leftW = 6.2;
+  slide.addShape("rect", { x: M, y: 0.98, w: leftW, h: 5.85, fill: { color: CREAM } });
+  slide.addText("Disclosures", {
+    x: M + 0.18,
+    y: 1.1,
+    w: leftW - 0.36,
+    h: 0.28,
+    fontSize: 14,
+    color: NAVY,
+    fontFace: "Georgia",
+    bold: true,
+    margin: 0,
+  });
+  slide.addText(
+    spec.bullets.map((b) => ({ text: b, options: { bullet: false, breakLine: true } })),
+    {
+      x: M + 0.18,
+      y: 1.44,
+      w: leftW - 0.36,
+      h: 5.2,
+      fontSize: 11,
+      color: INK,
+      fontFace: "Calibri",
+      paraSpaceAfter: 8,
+      valign: "top",
+    },
+  );
+  const rightX = 7.05;
+  const rightW = 5.78;
+  slide.addShape("rect", { x: rightX, y: 0.98, w: rightW, h: 5.85, fill: { color: CREAM } });
+  slide.addText("Remaining KPIs", {
+    x: rightX + 0.18,
+    y: 1.1,
+    w: rightW - 0.36,
+    h: 0.28,
+    fontSize: 14,
+    color: NAVY,
+    fontFace: "Georgia",
+    bold: true,
+    margin: 0,
+  });
+  const shown = spec.extraKpis.slice(0, 10);
+  shown.forEach((k, i) => {
+    const y = 1.46 + i * 0.32;
+    slide.addText(k.label, { x: rightX + 0.18, y, w: 2.5, h: 0.3, fontSize: 11, color: MUTED, fontFace: "Calibri", margin: 0 });
+    slide.addText(k.value, { x: rightX + 2.7, y, w: 2.85, h: 0.3, fontSize: 11, color: NAVY, fontFace: "Calibri", bold: true, margin: 0 });
+  });
+  spec.callouts.slice(0, 2).forEach((c, i) => {
+    const y = 4.7 + i * 0.95;
+    slide.addText(c.title, { x: rightX + 0.18, y, w: rightW - 0.36, h: 0.24, fontSize: 12, color: NAVY, fontFace: "Georgia", bold: true, margin: 0 });
+    slide.addText(c.soWhat, { x: rightX + 0.18, y: y + 0.24, w: rightW - 0.36, h: 0.62, fontSize: 11, color: INK, fontFace: "Calibri", margin: 0 });
+  });
 }
 
 export async function renderPptxPack(pack: BuiltPack): Promise<Buffer> {
   const pres = new PptxGenJS();
-  pres.defineLayout({ name: "RCP_WIDE", width: 13.33, height: 7.5 });
+  pres.defineLayout({ name: "RCP_WIDE", width: PACK_SLIDE_IN.w, height: PACK_SLIDE_IN.h });
   pres.layout = "RCP_WIDE";
   pres.author = RCP_NAME;
   pres.title = pack.generatedLabel;
   pres.subject = pack.meta.description;
 
-  for (const slideSpec of pack.slides) {
+  const total = pack.slides.length;
+  pack.slides.forEach((slideSpec, i) => {
     if (slideSpec.kind === "cover") {
-      themeSlide(pres, pack);
-      continue;
+      drawCover(pres, pack, slideSpec);
+      return;
     }
-    const slide = pres.addSlide();
-    slide.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.55, fill: { color: NAVY.replace("#", "") } });
-    slide.addText(`${RCP_NAME}  ·  ${pack.meta.title}`, {
-      x: 0.4,
-      y: 0.12,
-      w: 12.5,
-      h: 0.32,
-      fontSize: 12,
-      color: GOLD.replace("#", ""),
-      fontFace: "Georgia",
-    });
-    slide.addText(slideSpec.title, {
-      x: 0.5,
-      y: 0.7,
-      w: 12.3,
-      h: 0.4,
-      fontSize: 20,
-      color: NAVY.replace("#", ""),
-      fontFace: "Georgia",
-      bold: true,
-    });
-
-    if (slideSpec.kind === "kpis") {
-      slideSpec.kpis.forEach((k, i) => {
-        const col = i % 3;
-        const row = Math.floor(i / 3);
-        const x = 0.5 + col * 4.2;
-        const y = 1.3 + row * 2.2;
-        slide.addShape(pres.ShapeType.rect, {
-          x,
-          y,
-          w: 3.95,
-          h: 1.9,
-          fill: { color: "FFFFFF" },
-          line: { color: "E2D8C4", width: 1 },
-        });
-        slide.addText(k.label.toUpperCase(), { x: x + 0.2, y: y + 0.2, w: 3.5, h: 0.3, fontSize: 10, color: "8A6F3A" });
-        slide.addText(k.value, {
-          x: x + 0.2,
-          y: y + 0.55,
-          w: 3.5,
-          h: 0.55,
-          fontSize: 20,
-          color: NAVY.replace("#", ""),
-          bold: true,
-        });
-        slide.addText(k.hint, { x: x + 0.2, y: y + 1.25, w: 3.5, h: 0.4, fontSize: 11, color: "6B7280" });
-      });
-    } else if (slideSpec.kind === "chart") {
-      const data = chartData(pack, slideSpec.chartId);
-      slide.addChart(pres.ChartType.bar, [
-        {
-          name: data.title,
-          labels: data.labels,
-          values: data.values,
-        },
-      ], {
-        x: 0.5,
-        y: 1.2,
-        w: 12.3,
-        h: 5.5,
-        barGrouping: "clustered",
-        showLegend: false,
-        chartColors: [NAVY.replace("#", ""), GOLD.replace("#", "")],
-      });
-    } else if (slideSpec.kind === "narrative") {
-      const blocks = slideSpec.narrative.sections.map((s) => ({
-        text: `${s.heading}\n${s.body}`,
-        options: { fontSize: 12, color: "1A1F26", breakLine: true },
-      }));
-      slide.addText(blocks, { x: 0.5, y: 1.2, w: 12.3, h: 5.4, valign: "top" });
-      if (slideSpec.narrative.recommendation) {
-        slide.addText(`${slideSpec.narrative.recommendation.action}: ${slideSpec.narrative.recommendation.rationale}`, {
-          x: 0.5,
-          y: 6.55,
-          w: 12.3,
-          h: 0.4,
-          fontSize: 12,
-          bold: true,
-          color: NAVY.replace("#", ""),
-        });
-      }
-    } else if (slideSpec.kind === "disclosures") {
-      slide.addText(slideSpec.bullets.map((b) => ({ text: b, options: { bullet: true, fontSize: 13, color: "1A1F26" } })), {
-        x: 0.5,
-        y: 1.2,
-        w: 12.3,
-        h: 5.5,
-      });
-    }
-    addFooter(slide, pack);
-  }
+    const slide = addContentChrome(pres, pack, slideSpec.title);
+    if (slideSpec.kind === "kpis") drawKpis(slide, slideSpec.kpis);
+    else if (slideSpec.kind === "thesis") drawThesis(slide, slideSpec);
+    else if (slideSpec.kind === "visuals") drawVisuals(pres, pack, slide, slideSpec.visuals);
+    else if (slideSpec.kind === "risks") drawRisks(slide, slideSpec);
+    else drawAppendix(slide, slideSpec);
+    addFooter(slide, pack, i + 1, total);
+  });
 
   const out = await pres.write({ outputType: "nodebuffer" });
   return Buffer.isBuffer(out) ? out : Buffer.from(out as ArrayBuffer);

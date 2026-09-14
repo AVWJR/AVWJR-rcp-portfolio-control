@@ -41,7 +41,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
   {
     test: /^\/narratives\/packs\/[^/]+$/,
     title: "Report pack preview",
-    hints: ["Export PDF or PPTX. Same snapshot as Narratives. LTV stays gated."],
+    hints: ["Export PDF or PPTX. Same executive spine for every audience. Soft-archived SPEs stay out. LTV stays gated."],
   },
   {
     test: /^\/narratives$/,

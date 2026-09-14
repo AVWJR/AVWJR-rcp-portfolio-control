@@ -1,9 +1,12 @@
 import { AUDIENCE_BRIEFS } from "./audience-briefs";
 import { buildChartSuite, CHART_IDS, CHART_TITLES, type ChartId, type ChartSuite } from "./charts";
-import { buildAllNarratives, buildNarrative, type AudienceNarrative, type NarrativeCitation } from "./narratives";
+import { buildAllNarratives, buildNarrative, type AudienceNarrative } from "./narratives";
+import {
+  buildPackSlides,
+  type PackKpi,
+  type PackSlide,
+} from "./pack-spine";
 import type { AudienceId, PeriodSnapshot } from "./snapshot-types";
-import { AUDIENCE_LABELS } from "./snapshot-types";
-import { formatUsd, periodLabel } from "./formatters";
 
 export const PACK_IDS = ["monthly_investor", "quarterly_lender", "ic_memo", "management_flash"] as const;
 export type PackId = (typeof PACK_IDS)[number];
@@ -52,15 +55,6 @@ export const PACK_CATALOG: PackMeta[] = [
   },
 ];
 
-export type PackKpi = { label: string; value: string; hint: string };
-
-export type PackSlide =
-  | { kind: "cover"; title: string; subtitle: string; bullets: string[] }
-  | { kind: "kpis"; title: string; kpis: PackKpi[] }
-  | { kind: "chart"; title: string; chartId: ChartId }
-  | { kind: "narrative"; title: string; narrative: AudienceNarrative }
-  | { kind: "disclosures"; title: string; bullets: string[] };
-
 export type BuiltPack = {
   meta: PackMeta;
   entityCode: string;
@@ -82,68 +76,19 @@ export function isPackId(value: string): value is PackId {
   return (PACK_IDS as readonly string[]).includes(value);
 }
 
-function kpi(label: string, value: string, hint: string): PackKpi {
-  return { label, value, hint };
-}
-
-function commonDisclosures(snap: PeriodSnapshot): string[] {
-  return [
-    snap.entityCode === "SPE-WBG" || snap.entityCode === "RCP-OPCO"
-      ? `Seed / demo disclaimer: ${snap.entityCode} demo months. T12 incomplete is not annualized.`
-      : `Book basis · USD · en-US · America/New_York · integer cents. Period ${snap.period}.`,
-    `Book basis · USD · en-US · America/New_York · integer cents. Period ${snap.period}.`,
-    snap.t12Complete
-      ? `T12 NOI ${formatUsd(snap.t12NoiCents)}.`
-      : `T12 is incomplete (${snap.t12MonthsAvailable}/12 months, ${formatUsd(snap.t12NoiCents)}) and is not annualized.`,
-    "AM fees sit below NOI.",
-    snap.rollupIsNotGaap
-      ? "OpCo multi-SPE view is a combined roll-up (IC 1310/2310 and AM 6310/7010 eliminated) — not a GAAP consolidation."
-      : "Standalone SPE presentation.",
-    `LTV gated: ${snap.ltvReason}`,
-    `Delinquency not available: ${snap.delinquencyReason}`,
-    "CFADS is a distributions proxy, not a posted investor distribution. No promote waterfall.",
-    "No live PMS or bank feed. Charts reprint the same period snapshot as the narratives.",
-  ];
-}
-
-function coverBullets(snap: PeriodSnapshot, audience: AudienceId): string[] {
-  return [
-    `${snap.entityName} · ${snap.entityCode}`,
-    periodLabel(snap.period),
-    snap.viewLabel,
-    `Audience: ${AUDIENCE_LABELS[audience]}`,
-    `Period NOI ${formatUsd(snap.noiCents)}`,
-  ];
-}
-
-function kpisFromCitations(citations: NarrativeCitation[]): PackKpi[] {
-  return citations.map((c) =>
-    kpi(c.label, c.value, `${c.unit} · ${c.source}${c.noiDefinition ? ` · ${c.noiDefinition}` : ""}`),
-  );
-}
-
 export function buildPack(snap: PeriodSnapshot, packId: PackId): BuiltPack {
   const meta = getPackMeta(packId);
   if (!meta) throw new Error(`Unknown pack ${packId}`);
   const charts = buildChartSuite(snap);
   const narrative = buildNarrative(snap, meta.audience);
-  const sharedKpis = kpisFromCitations(narrative.sharedCitations);
-  const specificKpis = kpisFromCitations(narrative.specificCitations);
-  const slides: PackSlide[] = [
-    {
-      kind: "cover",
-      title: meta.title,
-      subtitle: `${snap.entityName} · ${periodLabel(snap.period)}`,
-      bullets: coverBullets(snap, meta.audience),
-    },
-    ...(sharedKpis.length
-      ? [{ kind: "kpis" as const, title: "Shared snapshot (3+ audiences)", kpis: sharedKpis }]
-      : []),
-    { kind: "kpis", title: `${AUDIENCE_LABELS[meta.audience]} KPIs`, kpis: specificKpis },
-    ...meta.charts.map((chartId) => ({ kind: "chart" as const, title: CHART_TITLES[chartId], chartId })),
-    { kind: "narrative", title: `${AUDIENCE_LABELS[meta.audience]} narrative`, narrative },
-    { kind: "disclosures", title: "Disclosures", bullets: commonDisclosures(snap) },
-  ];
+  const slides = buildPackSlides({
+    snap,
+    audience: meta.audience,
+    packTitle: meta.title,
+    chartIds: meta.charts,
+    narrative,
+    charts,
+  });
   return {
     meta,
     entityCode: snap.entityCode,
