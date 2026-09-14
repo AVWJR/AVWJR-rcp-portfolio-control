@@ -202,14 +202,14 @@ function drawKpis(slide: ReturnType<PptxGenJS["addSlide"]>, kpis: Extract<PackSl
     });
     slide.addText(k.value, {
       x: x + 0.2,
-      y: y + 0.58,
+      y: y + 0.62,
       w: cardW - 0.4,
-      h: creamH - 0.7,
+      h: creamH - 0.74,
       fontSize: PACK_TYPE.pptx.kpiValue,
       color: NAVY,
       fontFace: "Georgia",
       bold: true,
-      valign: "middle",
+      valign: "bottom",
       margin: 0,
     });
     slide.addShape("rect", { x, y: y + creamH, w: cardW, h: footerH, fill: { color: NAVY } });
@@ -438,7 +438,7 @@ function drawThesis(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pack
   const gap = 0.16;
   const gridW = 8.05;
   const cardW = (gridW - gap) / cols;
-  const cardH = 1.85;
+  const cardH = 1.28;
   bullets.forEach((b, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
@@ -458,11 +458,11 @@ function drawThesis(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pack
       margin: 0,
     });
   });
-  const proof = compactHeroRect({ x: 9.05, y: 1.08, w: 3.78, h: 5.7 }, 4.05);
+  const proof = { x: 9.05, y: 1.08, w: 3.78, h: 2.05 };
   slide.addShape("rect", { x: proof.x, y: proof.y, w: proof.w, h: proof.h, fill: { color: NAVY } });
   slide.addText("PROOF", {
     x: proof.x + 0.22,
-    y: proof.y + 0.28,
+    y: proof.y + 0.22,
     w: proof.w - 0.44,
     h: 0.3,
     fontSize: PACK_TYPE.pptx.thesisProofLabel,
@@ -472,9 +472,9 @@ function drawThesis(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pack
   });
   slide.addText(spec.proof, {
     x: proof.x + 0.22,
-    y: proof.y + 0.7,
+    y: proof.y + 0.58,
     w: proof.w - 0.44,
-    h: proof.h - 1.0,
+    h: proof.h - 0.82,
     fontSize: PACK_TYPE.pptx.thesisProof,
     color: CREAM,
     fontFace: "Georgia",
@@ -491,11 +491,11 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
   const cardW = (usable - gap * (n - 1)) / n;
   spec.items.forEach((item, i) => {
     const x = M + i * (cardW + gap);
-    slide.addShape("rect", { x, y: 1.02, w: cardW, h: 3.58, fill: { color: CREAM } });
+    slide.addShape("rect", { x, y: 1.02, w: cardW, h: 2.72, fill: { color: CREAM } });
     slide.addShape("rect", { x, y: 1.02, w: cardW, h: 0.08, fill: { color: GOLD } });
     slide.addText(item.heading, {
       x: x + 0.22,
-      y: 1.22,
+      y: 1.18,
       w: cardW - 0.44,
       h: 0.4,
       fontSize: PACK_TYPE.pptx.riskHeading,
@@ -506,18 +506,18 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
     });
     slide.addText(item.body, {
       x: x + 0.22,
-      y: 1.68,
+      y: 1.58,
       w: cardW - 0.44,
-      h: 1.85,
+      h: 1.22,
       fontSize: PACK_TYPE.pptx.riskBody,
       color: INK,
       fontFace: "Calibri",
       margin: 0,
     });
-    slide.addShape("rect", { x, y: 3.7, w: cardW, h: 0.9, fill: { color: NAVY } });
+    slide.addShape("rect", { x, y: 2.86, w: cardW, h: 0.88, fill: { color: NAVY } });
     slide.addText(item.proof, {
       x: x + 0.22,
-      y: 3.86,
+      y: 3.0,
       w: cardW - 0.44,
       h: 0.58,
       fontSize: PACK_TYPE.pptx.riskBody,
@@ -528,10 +528,10 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
       margin: 0,
     });
   });
-  slide.addShape("rect", { x: M, y: 4.78, w: W - M * 2, h: 2.05, fill: { color: NAVY } });
+  slide.addShape("rect", { x: M, y: 4.05, w: W - M * 2, h: 1.72, fill: { color: NAVY } });
   slide.addText("THE ASK", {
     x: M + 0.28,
-    y: 4.94,
+    y: 4.22,
     w: W - M * 2 - 0.56,
     h: 0.28,
     fontSize: PACK_TYPE.pptx.askKicker,
@@ -541,9 +541,9 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
   });
   slide.addText(spec.ask, {
     x: M + 0.28,
-    y: 5.28,
+    y: 4.52,
     w: W - M * 2 - 0.56,
-    h: 1.3,
+    h: 1.05,
     fontSize: PACK_TYPE.pptx.ask,
     color: CREAM,
     fontFace: "Georgia",

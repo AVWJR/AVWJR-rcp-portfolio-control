@@ -253,7 +253,7 @@ function drawKpis(doc: PDFKit.PDFDocument, slide: Extract<PackSlide, { kind: "kp
     doc.fillColor(PACK_PALETTE.gold).font("Times-Roman").fontSize(PACK_TYPE.pdf.kpiLabel).text(k.label.toUpperCase(), x + 14, y + 14, {
       width: cardW - 28,
     });
-    doc.fillColor(PACK_PALETTE.navy).font("Times-Bold").fontSize(PACK_TYPE.pdf.kpiValue).text(k.value, x + 14, y + creamH / 2 - 4, {
+    doc.fillColor(PACK_PALETTE.navy).font("Times-Bold").fontSize(PACK_TYPE.pdf.kpiValue).text(k.value, x + 14, y + creamH - 40, {
       width: cardW - 28,
     });
     doc.rect(x, y + creamH, cardW, footerH).fill(PACK_PALETTE.navy);
@@ -274,7 +274,7 @@ function drawThesis(doc: PDFKit.PDFDocument, slide: Extract<PackSlide, { kind: "
   const gap = 12;
   const gridW = 540;
   const cardW = (gridW - gap) / cols;
-  const cardH = 128;
+  const cardH = 92;
   bullets.forEach((b, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
@@ -284,10 +284,10 @@ function drawThesis(doc: PDFKit.PDFDocument, slide: Extract<PackSlide, { kind: "
     doc.rect(x, y, 5, cardH).fill(PACK_PALETTE.gold);
     doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.thesisBullet).text(b, x + 16, y + 18, { width: cardW - 28 });
   });
-  const proof = compactHeroRect({ x: W - M - 230, y: 72, w: 230, h: H - 72 - 40 }, 300);
+  const proof = { x: W - M - 230, y: 72, w: 230, h: 148 };
   doc.rect(proof.x, proof.y, proof.w, proof.h).fill(PACK_PALETTE.navy);
-  doc.fillColor(PACK_PALETTE.gold).font("Times-Roman").fontSize(PACK_TYPE.pdf.thesisProofLabel).text("PROOF", proof.x + 16, proof.y + 20, { width: proof.w - 32 });
-  doc.fillColor(PACK_PALETTE.cream).font("Times-Bold").fontSize(PACK_TYPE.pdf.thesisProof).text(slide.proof, proof.x + 16, proof.y + 52, { width: proof.w - 32 });
+  doc.fillColor(PACK_PALETTE.gold).font("Times-Roman").fontSize(PACK_TYPE.pdf.thesisProofLabel).text("PROOF", proof.x + 16, proof.y + 18, { width: proof.w - 32 });
+  doc.fillColor(PACK_PALETTE.cream).font("Times-Bold").fontSize(PACK_TYPE.pdf.thesisProof).text(slide.proof, proof.x + 16, proof.y + 48, { width: proof.w - 32 });
 }
 
 function drawVisuals(doc: PDFKit.PDFDocument, pack: BuiltPack, slide: Extract<PackSlide, { kind: "visuals" }>) {
@@ -309,7 +309,7 @@ function drawRisks(doc: PDFKit.PDFDocument, slide: Extract<PackSlide, { kind: "r
   const usable = W - M * 2;
   const cardW = (usable - gap * (n - 1)) / n;
   const y = 76;
-  const cardH = 248;
+  const cardH = 196;
   slide.items.forEach((item, i) => {
     const x = M + i * (cardW + gap);
     doc.rect(x, y, cardW, cardH).fill(PACK_PALETTE.cream);
@@ -319,9 +319,9 @@ function drawRisks(doc: PDFKit.PDFDocument, slide: Extract<PackSlide, { kind: "r
     doc.rect(x, y + cardH - 52, cardW, 52).fill(PACK_PALETTE.navy);
     doc.fillColor(PACK_PALETTE.cream).font("Times-Bold").fontSize(PACK_TYPE.pdf.riskBody).text(item.proof, x + 14, y + cardH - 36, { width: cardW - 28 });
   });
-  doc.rect(M, 344, W - M * 2, 152).fill(PACK_PALETTE.navy);
-  doc.fillColor(PACK_PALETTE.gold).font("Times-Roman").fontSize(PACK_TYPE.pdf.askKicker).text("THE ASK", M + 18, 360, { width: W - M * 2 - 36 });
-  doc.fillColor(PACK_PALETTE.cream).font("Times-Bold").fontSize(PACK_TYPE.pdf.ask).text(slide.ask, M + 18, 386, { width: W - M * 2 - 36 });
+  doc.rect(M, 292, W - M * 2, 118).fill(PACK_PALETTE.navy);
+  doc.fillColor(PACK_PALETTE.gold).font("Times-Roman").fontSize(PACK_TYPE.pdf.askKicker).text("THE ASK", M + 18, 308, { width: W - M * 2 - 36 });
+  doc.fillColor(PACK_PALETTE.cream).font("Times-Bold").fontSize(PACK_TYPE.pdf.ask).text(slide.ask, M + 18, 332, { width: W - M * 2 - 36 });
 }
 
 function drawAppendix(doc: PDFKit.PDFDocument, slide: Extract<PackSlide, { kind: "appendix" }>) {
