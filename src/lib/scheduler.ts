@@ -38,6 +38,9 @@ export async function runScheduledPack(opts: {
   const entity = await prisma.entity.findUnique({ where: { code: opts.entityCode } });
   if (!entity) throw new Error(`Unknown entity ${opts.entityCode}`);
   if (entity.type === "HOLDCO") throw new Error("HoldCo has no operating pack");
+  if (entity.type === "SPE" && entity.lifecycleStatus === "ARCHIVED") {
+    throw new Error("Archived SPE is not in live financial packs. Restore from Deal Archive.");
+  }
 
   const def = DEFAULT_SCHEDULED_JOBS.find((j) => j.packId === packId && j.entityCode === opts.entityCode);
   const job = await prisma.reportJob.upsert({

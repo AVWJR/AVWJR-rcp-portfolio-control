@@ -9,6 +9,7 @@ export {
 } from "./catalog";
 export { renderPdfPack } from "./pdf-pack";
 export { renderPptxPack } from "./pptx-pack";
+export { PACK_SLIDE_IN, PACK_MARGIN_IN, PACK_SLIDE_PT, PACK_MARGIN_PT } from "./pack-theme";
 export {
   guessVaultKind,
   isVaultKind,

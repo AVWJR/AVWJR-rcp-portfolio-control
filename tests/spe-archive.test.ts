@@ -122,6 +122,19 @@ describe("SPE Delete persistence", () => {
     expect(rollupIds).not.toContain(entity.id);
     expect((await listArchivedSpes()).some((row) => row.code === code)).toBe(true);
 
+    const { loadPeriodSnapshot } = await import("@/lib/period-snapshot");
+    const { buildPack } = await import("@rcp/reporting");
+    const opcoSnap = await loadPeriodSnapshot({
+      entityId: opco.id,
+      entityType: "OPCO",
+      year: 2026,
+      month: 8,
+    });
+    const investor = buildPack(opcoSnap, "monthly_investor");
+    const concLabels = investor.charts.concentration.slices.map((s) => s.label);
+    expect(concLabels).not.toContain(code);
+    expect(investor.slides.some((s) => JSON.stringify(s).includes(code))).toBe(false);
+
     expect(await prisma.vaultDocument.count({ where: { entityId: entity.id } })).toBe(1);
     expect(await prisma.account.count({ where: { entityId: entity.id } })).toBe(accountCount);
 

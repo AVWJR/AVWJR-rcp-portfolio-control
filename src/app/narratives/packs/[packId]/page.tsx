@@ -31,6 +31,21 @@ export default async function PackPreviewPage({
             </div>
           );
         }
+        if (ctx.archived) {
+          return (
+            <div className="max-w-2xl">
+              <h1 className="font-display text-4xl text-navy-900">Not a live pack</h1>
+              <p className="mt-2 text-sm text-ink-700">
+                Soft-archived SPEs stay out of live financial packs. Restore from Deal Archive to export again.
+              </p>
+              <p className="mt-3 text-sm">
+                <Link className="text-navy-700 underline" href="/archive">
+                  Deal Archive
+                </Link>
+              </p>
+            </div>
+          );
+        }
         const period = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
         const snap = await loadPeriodSnapshot({
           entityId: ctx.entity.id,

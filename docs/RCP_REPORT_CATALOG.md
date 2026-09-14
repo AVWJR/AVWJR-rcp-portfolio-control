@@ -27,7 +27,7 @@ Narratives regenerate when the navy header entity or period changes. They cite k
 | `ic_memo` | IC Memo Pack | IC | as needed | From the IC brief |
 | `management_flash` | Management Flash | Management Committee | flash | From the Management brief |
 
-Each pack also includes a cover, shared KPI strip (3+ audiences only), audience-specific KPIs, audience narrative, and disclosures.
+Each pack uses the same executive spine, skinned for the audience: **cover → 3–5 KPI strip → narrative thesis → 2–4 insight visuals → risks/asks → appendix**. Dense tables and remaining KPIs sit in the appendix. Live decks are capped; extra chart-of-accounts detail stays out of the spine.
 
 ## Chart ids
 
@@ -60,8 +60,8 @@ Occupancy trend is book economic occupancy because the rent roll is a point-in-t
 
 | Format | MIME | Notes |
 | --- | --- | --- |
-| PDF | `application/pdf` | Letter, RCP navy/gold vector charts, narrative pages |
-| PPTX | Office Open XML | Widescreen 13.33×7.5, native Office charts, PPT-compatible |
+| PDF | `application/pdf` | 16:9 widescreen (matches PPTX), ~0.5" margins, RCP navy/gold vector charts, so-what line on every visual |
+| PPTX | Office Open XML | Widescreen 13.33×7.5 (16:9), native Office charts, PPT-compatible |
 
 UI: Export PDF / Export PPTX on `/narratives` and `/narratives/packs/[id]`.
 

@@ -237,7 +237,7 @@ function packFlow(kind: "lp" | "lender", ctx: ExpertClientContext, bundle: Offli
   const extra =
     kind === "lender"
       ? "Lender pack emphasizes DSCR, debt yield, reserves, and the maturity wall. **LTV stays gated** — say that to the lender package rather than inventing a ratio."
-      : "Investor pack uses period NOI, CFADS (distributions proxy), occupancy from the rent roll, and the GPR→NOI→BTCF waterfall. AM fees stay below NOI.";
+      : "Investor pack uses period NOI, CFADS (distributions proxy), occupancy from the rent roll, and a concentration / occupancy visual — not a CoA dump. AM fees stay below NOI.";
   const gaps = !isErr(bundle.completeness)
     ? missingItems(bundle.completeness.items)
         .slice(0, 4)
@@ -392,7 +392,7 @@ You can remove a **vault document**. That does not delete the SPE. **Delete** on
 }
 
 function narrativesCopy(ctx: ExpertClientContext): string {
-  return `Gold nav **Narratives** — ${link("/narratives", ctx, "Narratives")} — five audience tones (LP / GP / IC / Lender / Mgmt) from the **same** period snapshot. Pick the audience, then export PDF / PPTX from the matching pack.
+  return `Gold nav **Narratives** — ${link("/narratives", ctx, "Narratives")} — five audience tones (LP / GP / IC / Lender / Mgmt) from the **same** period snapshot. Pick the audience, then export PDF / PPTX from the matching pack (cover → KPI strip → thesis → insight visuals → risks → appendix). Soft-archived SPEs stay out of live packs.
 
 It does not invent covenants or LTV. Scheduler (${link("/scheduler", ctx, "Scheduler")}) writes pack files; it does not email.`;
 }

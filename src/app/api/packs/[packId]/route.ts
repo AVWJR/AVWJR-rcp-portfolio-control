@@ -1,3 +1,4 @@
+import { isArchivedSpe } from "@/lib/archive";
 import { buildEntityPack, exportPackBuffer, parsePackId } from "@/lib/pack-export";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -18,6 +19,12 @@ export async function GET(request: Request, ctx: { params: Promise<{ packId: str
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
   if (entity.type === "HOLDCO") {
     return NextResponse.json({ error: "HoldCo has no operating pack" }, { status: 400 });
+  }
+  if (isArchivedSpe(entity)) {
+    return NextResponse.json(
+      { error: "Archived SPE is not in live financial packs. Restore from Deal Archive." },
+      { status: 409 },
+    );
   }
   const pack = await buildEntityPack({
     entityId: entity.id,
