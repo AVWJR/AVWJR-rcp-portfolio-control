@@ -144,7 +144,8 @@ export function VaultUploadForm({
       <p className="text-[11px] uppercase tracking-[0.16em] text-gold-700">Upload</p>
       <p className="text-xs text-ink-600">
         Files over ~3.5 MB use Vercel Blob (same path as Add Deal) so they do not hit the function body limit.
-        OM / offering-memo filenames store as OM / CIM.
+        OM / offering-memo filenames store as OM / CIM. Filenames with RR, rent roll, or lease charges
+        store as Rent roll even if Kind was left on Other.
       </p>
       <input type="hidden" name="period" value={period} />
       <label className="block text-sm text-ink-700">

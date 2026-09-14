@@ -1,9 +1,10 @@
-import { looksLikeOmCimFilename } from "@rcp/documents";
+import { looksLikeOmCimFilename, looksLikeRentRollFilename } from "@rcp/documents";
 import { looksLikeRentRollHeaders, parseCsvRows, resolveRentRollHeader } from "@rcp/properties";
 import { read, utils } from "xlsx";
 import { suggestSpeCode } from "./codes";
 import { isDealFileClass, type DealFileClass } from "./types";
 import { cleanFilenameForIdentity, isUntitledDealName, suggestIdentityFromFilenames } from "./upload-client";
+import { scoreRentRollBytes } from "./rent-roll-candidates";
 import { isSpreadsheetFilename } from "./workbook";
 
 export type InferredFileRole = DealFileClass;
@@ -36,6 +37,7 @@ export function classifyFromFilename(filename: string): DealFileClass {
       return row.role;
     }
   }
+  if (tabular && looksLikeRentRollFilename(filename)) return "rent_roll_csv";
   if (tabular && /rent|unit|roll/.test(lower)) return "rent_roll_csv";
   if (tabular && /budget/.test(lower)) return "budget_csv";
   if (/loan|note|mortgage|deed/.test(lower)) return "loan_doc";
@@ -49,6 +51,8 @@ export function classifyFromFilename(filename: string): DealFileClass {
 
 export function sniffWorkbookRole(bytes: Buffer, filename: string): DealFileClass | null {
   try {
+    const scored = scoreRentRollBytes(bytes, filename);
+    if (scored.dialectScore >= 18) return "rent_roll_csv";
     const workbook = read(bytes, { type: "buffer", raw: false });
     const names = workbook.SheetNames.join(" ");
     const preferred =

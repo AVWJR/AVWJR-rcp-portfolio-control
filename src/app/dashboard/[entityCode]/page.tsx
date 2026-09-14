@@ -98,7 +98,7 @@ function PropertyView({
           </Link>
         </div>
       </div>
-      {dash.unitCount === 0 ? <ReapplyRentRollButton entityCode={dash.entityCode} /> : null}
+      {dash.unitCount === 0 ? <ReapplyRentRollButton entityCode={dash.entityCode} hasUnits={false} /> : null}
       <BrokerOverlayStrip overlay={dash.brokerOverlay} />
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} />
     </div>

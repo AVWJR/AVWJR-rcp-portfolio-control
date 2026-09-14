@@ -22,6 +22,7 @@ export {
   guessVaultKind,
   isVaultKind,
   looksLikeOmCimFilename,
+  looksLikeRentRollFilename,
   PHASE_F_VAULT_TODO,
   safeVaultFilename,
   VAULT_KIND_LABELS,

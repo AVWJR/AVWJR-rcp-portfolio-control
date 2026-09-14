@@ -7,6 +7,7 @@ import {
   guessVaultKind,
   isVaultKind,
   looksLikeOmCimFilename,
+  looksLikeRentRollFilename,
   safeVaultFilename,
 } from "@rcp/documents";
 import { describe, expect, it } from "vitest";
@@ -38,6 +39,18 @@ describe("document vault", () => {
     expect(guessVaultKind("Life_at_Harrington_Park_OM_….pdf", "other")).toBe("om_cim");
     expect(guessVaultKind("lease-abstract.pdf", "lease")).toBe("lease");
     expect(guessVaultKind("notes.txt", "other")).toBe("other");
+  });
+
+  it("treats *RR* / lease-charges filenames as rent rolls even when Kind is Other", () => {
+    expect(looksLikeRentRollFilename("Hampton - RR 07.08.26.xlsx")).toBe(true);
+    expect(looksLikeRentRollFilename("Hampton – RR 07.08.26.xlsx")).toBe(true);
+    expect(looksLikeRentRollFilename("RR_-_Harrington_-_12.31.19_-_Resi.xlsx")).toBe(true);
+    expect(looksLikeRentRollFilename("willow-rent-roll.csv")).toBe(true);
+    expect(looksLikeRentRollFilename("Hampton_Gardens_Lease_Charges.xlsx")).toBe(true);
+    expect(looksLikeRentRollFilename("Hampton - June 2026 T-12 Operating Statement.xlsx")).toBe(false);
+    expect(looksLikeRentRollFilename("Harrington_Park_notes.xlsx")).toBe(false);
+    expect(guessVaultKind("Hampton - RR 07.08.26.xlsx", "other")).toBe("rent_roll");
+    expect(guessVaultKind("Hampton - June 2026 T-12 Operating Statement.xlsx", "other")).toBe("other");
   });
 });
 

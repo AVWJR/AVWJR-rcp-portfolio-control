@@ -1,11 +1,13 @@
 import { ArchivedSpeBanner } from "@/components/archived-spe-banner";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
+import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import { SpeDeleteControl } from "@/components/spe-delete-control";
 import { VaultUploadForm } from "@/components/vault-forms";
 import { currentAccessRole } from "@/lib/access-server";
+import { isCanonicalRentRollFilename } from "@/lib/deals/rent-roll-candidates";
 import { isBlobTokenConfigured, isOnVercel } from "@/lib/file-store";
 import { listVaultDocuments } from "@/lib/vault";
-import { VAULT_KIND_LABELS } from "@rcp/documents/vault";
+import { looksLikeRentRollFilename, VAULT_KIND_LABELS } from "@rcp/documents/vault";
 import Link from "next/link";
 
 export default async function VaultPage({
@@ -55,6 +57,11 @@ export default async function VaultPage({
               ) : null}
             </div>
             {ctx.archived ? <ArchivedSpeBanner code={ctx.entity.code} period={period} /> : null}
+            {liveSpe && role !== "viewer" ? (
+              <div className="max-w-xl">
+                <ReapplyRentRollButton entityCode={ctx.entity.code} hasUnits={(ctx.entity.unitCount ?? 0) > 0} />
+              </div>
+            ) : null}
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <section className="border border-cream-300 bg-white shadow-ledger">
@@ -72,6 +79,7 @@ export default async function VaultPage({
                           <th className="px-4 py-2 text-left">File</th>
                           <th className="px-4 py-2 text-right">Bytes</th>
                           <th className="px-4 py-2 text-left">Download</th>
+                          {liveSpe && role !== "viewer" ? <th className="px-4 py-2 text-left">Apply</th> : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -86,6 +94,18 @@ export default async function VaultPage({
                                 Download
                               </a>
                             </td>
+                            {liveSpe && role !== "viewer" ? (
+                              <td className="px-4 py-1.5">
+                                {!isCanonicalRentRollFilename(doc.filename) &&
+                                (doc.kind === "rent_roll" || looksLikeRentRollFilename(doc.filename)) ? (
+                                  <ReapplyRentRollButton
+                                    entityCode={ctx.entity.code}
+                                    documentId={doc.id}
+                                    compact
+                                  />
+                                ) : null}
+                              </td>
+                            ) : null}
                           </tr>
                         ))}
                       </tbody>
