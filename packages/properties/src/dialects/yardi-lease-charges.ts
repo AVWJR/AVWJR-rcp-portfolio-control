@@ -353,7 +353,8 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
     throw new CsvParseError(1, couldNotMapColumnsMessage((rows[0] ?? []).filter(Boolean), ["unit", "charge code"]));
   }
   const { map, used: mappedCols } = mapLeaseChargeHeaders(found.headers);
-  if (map.unit == null) {
+  const unitCol = map.unit;
+  if (unitCol == null) {
     throw new CsvParseError(found.index + 1, couldNotMapColumnsMessage(found.headers.filter(Boolean), ["unit"]));
   }
 
@@ -417,7 +418,7 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
         flush();
         section = looksLikeSectionPhrase(rawUnit) ? rawUnit : row.map((c) => c.trim()).filter(Boolean).join(" ");
       } else {
-        unmapped.push({ row: line, header: found.headers[map.unit] || "Unit", value: rawUnit, reason: "header_label_row" });
+        unmapped.push({ row: line, header: found.headers[unitCol] || "Unit", value: rawUnit, reason: "header_label_row" });
       }
       return;
     }
