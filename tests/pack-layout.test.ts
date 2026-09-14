@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { renderPdfPack, renderPptxPack, PACK_SLIDE_IN } from "@rcp/documents";
+import { compactHeroRect, kpiTileRects, renderPdfPack, renderPptxPack, PACK_SLIDE_IN, PACK_TYPE } from "@rcp/documents";
 import { LIVE_DECK_MAX_SLIDES, buildPack } from "@rcp/reporting";
 import { describe, expect, it } from "vitest";
 import { fixtureSnapshot } from "./fixtures/period-snapshot";
@@ -60,5 +60,50 @@ describe("LP Monthly pack layout constraints", () => {
     expect(pack.slides.at(-1)?.kind).toBe("appendix");
     const lastCoverOrChromeOnly = pack.slides.slice(pack.slides.findIndex((s) => s.kind === "appendix") + 1);
     expect(lastCoverOrChromeOnly).toHaveLength(0);
+  });
+});
+
+describe("pack type scale and compact tiles", () => {
+  it("keeps KPI values and so-what in a boardroom-readable range", () => {
+    expect(PACK_TYPE.pptx.kpiValue).toBeGreaterThanOrEqual(26);
+    expect(PACK_TYPE.pptx.kpiSoWhat).toBeGreaterThanOrEqual(14);
+    expect(PACK_TYPE.pptx.chartAxis).toBeGreaterThanOrEqual(13);
+    expect(PACK_TYPE.pptx.calloutValue).toBeGreaterThanOrEqual(48);
+    expect(PACK_TYPE.pptx.chromeTitle).toBeGreaterThanOrEqual(22);
+    expect(PACK_TYPE.pdf.kpiValue).toBeGreaterThanOrEqual(22);
+    expect(PACK_TYPE.pdf.kpiSoWhat).toBeGreaterThanOrEqual(12);
+    expect(PACK_TYPE.pdf.chartLabel).toBeGreaterThanOrEqual(12);
+    expect(PACK_TYPE.pdf.calloutValue).toBeGreaterThanOrEqual(40);
+  });
+
+  it("lays five KPI tiles in a compact 3+2 grid instead of full-height columns", () => {
+    const tiles = kpiTileRects(5, {
+      originX: 0.5,
+      originY: 1.08,
+      usableW: 12.333,
+      gap: 0.18,
+      rowGap: 0.2,
+      cardH: 2.62,
+    });
+    expect(tiles).toHaveLength(5);
+    expect(tiles[0]!.y).toBeCloseTo(1.08, 5);
+    expect(tiles[3]!.y).toBeCloseTo(1.08 + 2.62 + 0.2, 5);
+    expect(tiles[0]!.w).toBeCloseTo(tiles[3]!.w, 5);
+    expect(tiles[3]!.x).toBeGreaterThan(tiles[0]!.x);
+    const row1Right = tiles[2]!.x + tiles[2]!.w;
+    const row2Right = tiles[4]!.x + tiles[4]!.w;
+    expect(tiles[3]!.x - tiles[0]!.x).toBeCloseTo(row1Right - row2Right, 5);
+    const gridH = tiles[3]!.y + tiles[3]!.h - tiles[0]!.y;
+    expect(gridH).toBeLessThan(5.6);
+    expect(tiles[0]!.h).toBeLessThan(3.2);
+  });
+
+  it("centers a compact hero inside a tall column instead of filling it", () => {
+    const inner = { x: 0.5, y: 1.1, w: 6.0, h: 5.5 };
+    const hero = compactHeroRect(inner, 3.35);
+    expect(hero.h).toBeCloseTo(3.35, 5);
+    expect(hero.y).toBeGreaterThan(inner.y);
+    expect(hero.y + hero.h).toBeLessThan(inner.y + inner.h);
+    expect(hero.w).toBe(inner.w);
   });
 });

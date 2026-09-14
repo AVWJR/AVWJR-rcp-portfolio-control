@@ -1,7 +1,7 @@
 import PptxGenJS from "pptxgenjs";
 import { RCP_CONFIDENTIAL, RCP_NAME, RCP_PRODUCT } from "@rcp/rcp-brand";
 import type { BuiltPack, PackSlide } from "@rcp/reporting";
-import { hex, PACK_MARGIN_IN, PACK_PALETTE, PACK_SLIDE_IN } from "./pack-theme";
+import { compactHeroRect, hex, kpiTileRects, PACK_MARGIN_IN, PACK_PALETTE, PACK_SLIDE_IN, PACK_TYPE } from "./pack-theme";
 import { toRenderableVisual, type RenderableVisual } from "./pack-visuals";
 
 const NAVY = hex(PACK_PALETTE.navy);
@@ -20,7 +20,7 @@ function addFooter(slide: ReturnType<PptxGenJS["addSlide"]>, pack: BuiltPack, pa
     y: H - 0.28,
     w: 9.4,
     h: 0.22,
-    fontSize: 9,
+    fontSize: PACK_TYPE.pptx.footer,
     color: GOLD,
     fontFace: "Calibri",
     margin: 0,
@@ -30,7 +30,7 @@ function addFooter(slide: ReturnType<PptxGenJS["addSlide"]>, pack: BuiltPack, pa
     y: H - 0.28,
     w: 1.2,
     h: 0.22,
-    fontSize: 9,
+    fontSize: PACK_TYPE.pptx.footer,
     color: GOLD,
     align: "right",
     fontFace: "Calibri",
@@ -47,17 +47,17 @@ function addContentChrome(pres: PptxGenJS, pack: BuiltPack, title: string) {
     y: 0.08,
     w: W - M * 2,
     h: 0.26,
-    fontSize: 11,
+    fontSize: PACK_TYPE.pptx.chromeKicker,
     color: GOLD,
     fontFace: "Georgia",
     margin: 0,
   });
   slide.addText(title, {
     x: M,
-    y: 0.52,
+    y: 0.5,
     w: W - M * 2,
-    h: 0.36,
-    fontSize: 18,
+    h: 0.42,
+    fontSize: PACK_TYPE.pptx.chromeTitle,
     color: NAVY,
     fontFace: "Georgia",
     bold: true,
@@ -75,7 +75,7 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
     y: 0.55,
     w: 11.8,
     h: 0.28,
-    fontSize: 12,
+    fontSize: PACK_TYPE.pptx.coverKicker,
     color: GOLD,
     fontFace: "Calibri",
     charSpacing: 3,
@@ -86,7 +86,7 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
     y: 1.15,
     w: 11.8,
     h: 0.7,
-    fontSize: 32,
+    fontSize: PACK_TYPE.pptx.coverTitle,
     color: CREAM,
     fontFace: "Georgia",
     bold: true,
@@ -96,8 +96,8 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
     x: 0.7,
     y: 1.88,
     w: 11.8,
-    h: 0.32,
-    fontSize: 16,
+    h: 0.36,
+    fontSize: PACK_TYPE.pptx.coverSubtitle,
     color: GOLD,
     fontFace: "Georgia",
     margin: 0,
@@ -108,7 +108,7 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
     y: 2.6,
     w: 11.8,
     h: 0.9,
-    fontSize: 18,
+    fontSize: PACK_TYPE.pptx.coverThesis,
     color: CREAM,
     fontFace: "Georgia",
     margin: 0,
@@ -125,7 +125,7 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
     y: 3.72,
     w: 5.4,
     h: 0.28,
-    fontSize: 12,
+    fontSize: PACK_TYPE.pptx.coverProofLabel,
     color: GOLD,
     fontFace: "Calibri",
     margin: 0,
@@ -135,7 +135,7 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
     y: 4.05,
     w: 5.4,
     h: 1.3,
-    fontSize: 32,
+    fontSize: PACK_TYPE.pptx.coverProof,
     color: CREAM,
     fontFace: "Georgia",
     bold: true,
@@ -153,7 +153,7 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
       y: y + 0.18,
       w: 2.57,
       h: 0.64,
-      fontSize: 12,
+      fontSize: PACK_TYPE.pptx.coverChip,
       color: CREAM,
       fontFace: "Calibri",
       valign: "middle",
@@ -165,7 +165,7 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
     y: H - 0.55,
     w: 11.8,
     h: 0.28,
-    fontSize: 11,
+    fontSize: PACK_TYPE.pptx.footer,
     color: GOLD,
     fontFace: "Calibri",
     margin: 0,
@@ -174,55 +174,61 @@ function drawCover(pres: PptxGenJS, pack: BuiltPack, slideSpec: Extract<PackSlid
 
 function drawKpis(slide: ReturnType<PptxGenJS["addSlide"]>, kpis: Extract<PackSlide, { kind: "kpis" }>["kpis"]) {
   const n = Math.max(1, kpis.length);
-  const gap = 0.14;
-  const usable = W - M * 2;
-  const cardW = (usable - gap * (n - 1)) / n;
-  const cardH = 5.55;
-  const y = 1.02;
-  const footerH = 1.85;
+  const twoRow = n >= 5;
+  const tiles = kpiTileRects(n, {
+    originX: M,
+    originY: 1.08,
+    usableW: W - M * 2,
+    gap: 0.18,
+    rowGap: 0.2,
+    cardH: twoRow ? 2.62 : 3.12,
+  });
   kpis.forEach((k, i) => {
-    const x = M + i * (cardW + gap);
+    const tile = tiles[i]!;
+    const { x, y, w: cardW, h: cardH } = tile;
+    const footerH = cardH * 0.46;
+    const creamH = cardH - footerH;
     slide.addShape("rect", { x, y, w: cardW, h: cardH, fill: { color: CREAM } });
-    slide.addShape("rect", { x, y, w: cardW, h: 0.08, fill: { color: GOLD } });
+    slide.addShape("rect", { x, y, w: cardW, h: 0.07, fill: { color: GOLD } });
     slide.addText(k.label.toUpperCase(), {
-      x: x + 0.14,
-      y: y + 0.28,
-      w: cardW - 0.28,
-      h: 0.7,
-      fontSize: 11,
+      x: x + 0.2,
+      y: y + 0.18,
+      w: cardW - 0.4,
+      h: 0.42,
+      fontSize: PACK_TYPE.pptx.kpiLabel,
       color: GOLD,
       fontFace: "Calibri",
       margin: 0,
     });
     slide.addText(k.value, {
-      x: x + 0.14,
-      y: y + 1.15,
-      w: cardW - 0.28,
-      h: 2.2,
-      fontSize: n > 4 ? 18 : 22,
+      x: x + 0.2,
+      y: y + 0.58,
+      w: cardW - 0.4,
+      h: creamH - 0.7,
+      fontSize: PACK_TYPE.pptx.kpiValue,
       color: NAVY,
       fontFace: "Georgia",
       bold: true,
       valign: "middle",
       margin: 0,
     });
-    slide.addShape("rect", { x, y: y + cardH - footerH, w: cardW, h: footerH, fill: { color: NAVY } });
+    slide.addShape("rect", { x, y: y + creamH, w: cardW, h: footerH, fill: { color: NAVY } });
     slide.addText("SO WHAT", {
-      x: x + 0.14,
-      y: y + cardH - footerH + 0.12,
-      w: cardW - 0.28,
+      x: x + 0.2,
+      y: y + creamH + 0.1,
+      w: cardW - 0.4,
       h: 0.22,
-      fontSize: 9,
+      fontSize: PACK_TYPE.pptx.kpiSoWhatKicker,
       color: GOLD,
       fontFace: "Calibri",
       margin: 0,
     });
     slide.addText(k.soWhat ?? k.hint, {
-      x: x + 0.14,
-      y: y + cardH - footerH + 0.38,
-      w: cardW - 0.28,
-      h: footerH - 0.5,
-      fontSize: 12,
+      x: x + 0.2,
+      y: y + creamH + 0.34,
+      w: cardW - 0.4,
+      h: footerH - 0.46,
+      fontSize: PACK_TYPE.pptx.kpiSoWhat,
       color: CREAM,
       fontFace: "Calibri",
       valign: "top",
@@ -248,8 +254,8 @@ function drawRenderable(
     x: box.x,
     y: box.y,
     w: box.w,
-    h: 0.28,
-    fontSize: 13,
+    h: 0.36,
+    fontSize: PACK_TYPE.pptx.visualTitle,
     color: NAVY,
     fontFace: "Georgia",
     bold: true,
@@ -257,16 +263,18 @@ function drawRenderable(
   });
   slide.addText(visual.soWhat, {
     x: box.x,
-    y: box.y + 0.28,
+    y: box.y + 0.38,
     w: box.w,
-    h: 0.42,
-    fontSize: 11,
+    h: 0.58,
+    fontSize: PACK_TYPE.pptx.visualSoWhat,
     color: INK,
     fontFace: "Calibri",
     italic: true,
     margin: 0,
   });
-  const inner = { x: box.x, y: box.y + 0.78, w: box.w, h: box.h - 0.78 };
+  const headerH = 1.08;
+  const bottomPad = 0.16;
+  const inner = { x: box.x, y: box.y + headerH, w: box.w, h: box.h - headerH - bottomPad };
 
   if (visual.mode === "bars") {
     slide.addChart(pres.ChartType.bar, visual.series, {
@@ -275,13 +283,14 @@ function drawRenderable(
       w: inner.w,
       h: inner.h,
       barGrouping: visual.stacked ? "stacked" : "clustered",
-      showLegend: visual.series.length > 1,
+      showLegend: Boolean(visual.stacked && visual.series.length > 1),
       legendPos: "b",
+      legendFontSize: PACK_TYPE.pptx.chartAxis,
       chartColors: visual.series.map((s) => hex(s.color)),
       showValue: false,
       valAxisHidden: false,
-      catAxisLabelFontSize: 9,
-      valAxisLabelFontSize: 9,
+      catAxisLabelFontSize: PACK_TYPE.pptx.chartAxis,
+      valAxisLabelFontSize: PACK_TYPE.pptx.chartAxis,
     });
     return;
   }
@@ -294,41 +303,44 @@ function drawRenderable(
       w: inner.w,
       h: inner.h,
       showLegend: true,
-      legendPos: "b",
+      legendPos: "r",
+      legendFontSize: PACK_TYPE.pptx.chartAxis,
       chartColors: visual.colors.map(hex),
       showPercent: true,
     });
     return;
   }
   if (visual.mode === "callout") {
-    slide.addShape("rect", { x: inner.x, y: inner.y, w: inner.w, h: inner.h, fill: { color: toneFill(visual.tone) } });
+    const hero = compactHeroRect(inner, 3.35);
+    slide.addShape("rect", { x: hero.x, y: hero.y, w: hero.w, h: hero.h, fill: { color: toneFill(visual.tone) } });
     slide.addText(visual.kicker.toUpperCase(), {
-      x: inner.x + 0.25,
-      y: inner.y + 0.25,
-      w: inner.w - 0.5,
-      h: 0.3,
-      fontSize: 12,
+      x: hero.x + 0.32,
+      y: hero.y + 0.32,
+      w: hero.w - 0.64,
+      h: 0.36,
+      fontSize: PACK_TYPE.pptx.calloutKicker,
       color: GOLD,
       fontFace: "Calibri",
       margin: 0,
     });
     slide.addText(visual.value, {
-      x: inner.x + 0.25,
-      y: inner.y + 0.7,
-      w: inner.w - 0.5,
-      h: 1.1,
-      fontSize: 32,
+      x: hero.x + 0.32,
+      y: hero.y + 0.78,
+      w: hero.w - 0.64,
+      h: 1.15,
+      fontSize: PACK_TYPE.pptx.calloutValue,
       color: CREAM,
       fontFace: "Georgia",
       bold: true,
+      valign: "middle",
       margin: 0,
     });
     slide.addText(visual.detail, {
-      x: inner.x + 0.25,
-      y: inner.y + 2.0,
-      w: inner.w - 0.5,
-      h: Math.max(0.6, inner.h - 2.2),
-      fontSize: 13,
+      x: hero.x + 0.32,
+      y: hero.y + 2.05,
+      w: hero.w - 0.64,
+      h: hero.h - 2.28,
+      fontSize: PACK_TYPE.pptx.calloutDetail,
       color: CREAM,
       fontFace: "Calibri",
       margin: 0,
@@ -337,8 +349,8 @@ function drawRenderable(
   }
   if (visual.mode === "status") {
     const n = visual.items.length || 1;
-    const gap = 0.1;
-    const itemH = (inner.h - gap * (n - 1)) / n;
+    const gap = 0.12;
+    const itemH = Math.min(0.72, (inner.h - gap * (n - 1)) / n);
     visual.items.forEach((item, i) => {
       const y = inner.y + i * (itemH + gap);
       slide.addShape("rect", { x: inner.x, y, w: 0.1, h: itemH, fill: { color: toneFill(item.tone) } });
@@ -347,7 +359,7 @@ function drawRenderable(
         y,
         w: inner.w * 0.32,
         h: itemH,
-        fontSize: 12,
+        fontSize: 14,
         color: NAVY,
         bold: true,
         valign: "middle",
@@ -358,7 +370,7 @@ function drawRenderable(
         y,
         w: inner.w * 0.64,
         h: itemH,
-        fontSize: 12,
+        fontSize: 14,
         color: INK,
         valign: "middle",
         margin: 0,
@@ -374,14 +386,14 @@ function drawRenderable(
         options: {
           fill: { color: ri === 0 ? NAVY : ri % 2 === 0 ? CREAM : "FFFFFF" },
           color: ri === 0 ? CREAM : INK,
-          fontSize: 10,
+          fontSize: 12,
           fontFace: "Calibri",
           bold: ri === 0,
-          margin: 4,
+          margin: 6,
         },
       })),
     ),
-    { x: inner.x, y: inner.y, w: inner.w, h: inner.h, border: [
+    { x: inner.x, y: inner.y, w: inner.w, h: Math.min(inner.h, 0.42 * rows.length + 0.2), border: [
       { pt: 0.4, color: hex(PACK_PALETTE.rule) },
       { pt: 0.4, color: hex(PACK_PALETTE.rule) },
       { pt: 0.4, color: hex(PACK_PALETTE.rule) },
@@ -397,11 +409,11 @@ function drawVisuals(
   visuals: Extract<PackSlide, { kind: "visuals" }>["visuals"],
 ) {
   const n = visuals.length || 1;
-  const gap = 0.22;
+  const gap = 0.28;
   const usable = W - M * 2;
   const colW = (usable - gap * (n - 1)) / n;
-  const y = 1.0;
-  const h = 5.85;
+  const y = 1.08;
+  const h = 5.72;
   visuals.forEach((visual, i) => {
     const x = M + i * (colW + gap);
     drawRenderable(pres, slide, toRenderableVisual(pack, visual), { x, y, w: colW, h });
@@ -411,10 +423,10 @@ function drawVisuals(
 function drawThesis(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackSlide, { kind: "thesis" }>) {
   slide.addText(spec.insight, {
     x: M,
-    y: 1.0,
+    y: 1.08,
     w: 8.05,
-    h: 1.15,
-    fontSize: 22,
+    h: 1.2,
+    fontSize: PACK_TYPE.pptx.thesisInsight,
     color: NAVY,
     fontFace: "Georgia",
     bold: true,
@@ -423,17 +435,15 @@ function drawThesis(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pack
   });
   const bullets = spec.bullets.slice(0, 4);
   const cols = 2;
-  const rows = Math.ceil(bullets.length / cols) || 1;
-  const gap = 0.14;
+  const gap = 0.16;
   const gridW = 8.05;
-  const gridH = 4.55;
   const cardW = (gridW - gap) / cols;
-  const cardH = (gridH - gap * (rows - 1)) / rows;
+  const cardH = 1.85;
   bullets.forEach((b, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
     const x = M + col * (cardW + gap);
-    const y = 2.28 + row * (cardH + gap);
+    const y = 2.42 + row * (cardH + gap);
     slide.addShape("rect", { x, y, w: cardW, h: cardH, fill: { color: CREAM } });
     slide.addShape("rect", { x, y, w: 0.08, h: cardH, fill: { color: GOLD } });
     slide.addText(b, {
@@ -441,30 +451,31 @@ function drawThesis(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pack
       y: y + 0.16,
       w: cardW - 0.38,
       h: cardH - 0.32,
-      fontSize: 14,
+      fontSize: PACK_TYPE.pptx.thesisBullet,
       color: INK,
       fontFace: "Calibri",
       valign: "middle",
       margin: 0,
     });
   });
-  slide.addShape("rect", { x: 9.05, y: 1.0, w: 3.78, h: 5.85, fill: { color: NAVY } });
+  const proof = compactHeroRect({ x: 9.05, y: 1.08, w: 3.78, h: 5.7 }, 4.05);
+  slide.addShape("rect", { x: proof.x, y: proof.y, w: proof.w, h: proof.h, fill: { color: NAVY } });
   slide.addText("PROOF", {
-    x: 9.25,
-    y: 1.22,
-    w: 3.38,
-    h: 0.28,
-    fontSize: 11,
+    x: proof.x + 0.22,
+    y: proof.y + 0.28,
+    w: proof.w - 0.44,
+    h: 0.3,
+    fontSize: PACK_TYPE.pptx.thesisProofLabel,
     color: GOLD,
     fontFace: "Calibri",
     margin: 0,
   });
   slide.addText(spec.proof, {
-    x: 9.25,
-    y: 1.7,
-    w: 3.38,
-    h: 4.8,
-    fontSize: 22,
+    x: proof.x + 0.22,
+    y: proof.y + 0.7,
+    w: proof.w - 0.44,
+    h: proof.h - 1.0,
+    fontSize: PACK_TYPE.pptx.thesisProof,
     color: CREAM,
     fontFace: "Georgia",
     bold: true,
@@ -487,7 +498,7 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
       y: 1.22,
       w: cardW - 0.44,
       h: 0.4,
-      fontSize: 16,
+      fontSize: PACK_TYPE.pptx.riskHeading,
       color: NAVY,
       fontFace: "Georgia",
       bold: true,
@@ -498,7 +509,7 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
       y: 1.68,
       w: cardW - 0.44,
       h: 1.85,
-      fontSize: 14,
+      fontSize: PACK_TYPE.pptx.riskBody,
       color: INK,
       fontFace: "Calibri",
       margin: 0,
@@ -509,7 +520,7 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
       y: 3.86,
       w: cardW - 0.44,
       h: 0.58,
-      fontSize: 14,
+      fontSize: PACK_TYPE.pptx.riskBody,
       color: CREAM,
       fontFace: "Georgia",
       bold: true,
@@ -523,7 +534,7 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
     y: 4.94,
     w: W - M * 2 - 0.56,
     h: 0.28,
-    fontSize: 11,
+    fontSize: PACK_TYPE.pptx.askKicker,
     color: GOLD,
     fontFace: "Calibri",
     margin: 0,
@@ -533,7 +544,7 @@ function drawRisks(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<PackS
     y: 5.28,
     w: W - M * 2 - 0.56,
     h: 1.3,
-    fontSize: 16,
+    fontSize: PACK_TYPE.pptx.ask,
     color: CREAM,
     fontFace: "Georgia",
     margin: 0,
@@ -547,8 +558,8 @@ function drawAppendix(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pa
     x: M + 0.18,
     y: 1.1,
     w: leftW - 0.36,
-    h: 0.28,
-    fontSize: 14,
+    h: 0.32,
+    fontSize: PACK_TYPE.pptx.appendixTitle,
     color: NAVY,
     fontFace: "Georgia",
     bold: true,
@@ -558,10 +569,10 @@ function drawAppendix(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pa
     spec.bullets.map((b) => ({ text: b, options: { bullet: false, breakLine: true } })),
     {
       x: M + 0.18,
-      y: 1.44,
+      y: 1.48,
       w: leftW - 0.36,
-      h: 5.2,
-      fontSize: 11,
+      h: 5.15,
+      fontSize: PACK_TYPE.pptx.appendixBody,
       color: INK,
       fontFace: "Calibri",
       paraSpaceAfter: 8,
@@ -575,8 +586,8 @@ function drawAppendix(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pa
     x: rightX + 0.18,
     y: 1.1,
     w: rightW - 0.36,
-    h: 0.28,
-    fontSize: 14,
+    h: 0.32,
+    fontSize: PACK_TYPE.pptx.appendixTitle,
     color: NAVY,
     fontFace: "Georgia",
     bold: true,
@@ -584,14 +595,14 @@ function drawAppendix(slide: ReturnType<PptxGenJS["addSlide"]>, spec: Extract<Pa
   });
   const shown = spec.extraKpis.slice(0, 10);
   shown.forEach((k, i) => {
-    const y = 1.46 + i * 0.32;
-    slide.addText(k.label, { x: rightX + 0.18, y, w: 2.5, h: 0.3, fontSize: 11, color: MUTED, fontFace: "Calibri", margin: 0 });
-    slide.addText(k.value, { x: rightX + 2.7, y, w: 2.85, h: 0.3, fontSize: 11, color: NAVY, fontFace: "Calibri", bold: true, margin: 0 });
+    const y = 1.5 + i * 0.34;
+    slide.addText(k.label, { x: rightX + 0.18, y, w: 2.5, h: 0.32, fontSize: PACK_TYPE.pptx.appendixBody, color: MUTED, fontFace: "Calibri", margin: 0 });
+    slide.addText(k.value, { x: rightX + 2.7, y, w: 2.85, h: 0.32, fontSize: PACK_TYPE.pptx.appendixBody, color: NAVY, fontFace: "Calibri", bold: true, margin: 0 });
   });
   spec.callouts.slice(0, 2).forEach((c, i) => {
     const y = 4.7 + i * 0.95;
-    slide.addText(c.title, { x: rightX + 0.18, y, w: rightW - 0.36, h: 0.24, fontSize: 12, color: NAVY, fontFace: "Georgia", bold: true, margin: 0 });
-    slide.addText(c.soWhat, { x: rightX + 0.18, y: y + 0.24, w: rightW - 0.36, h: 0.62, fontSize: 11, color: INK, fontFace: "Calibri", margin: 0 });
+    slide.addText(c.title, { x: rightX + 0.18, y, w: rightW - 0.36, h: 0.28, fontSize: 14, color: NAVY, fontFace: "Georgia", bold: true, margin: 0 });
+    slide.addText(c.soWhat, { x: rightX + 0.18, y: y + 0.28, w: rightW - 0.36, h: 0.58, fontSize: PACK_TYPE.pptx.appendixBody, color: INK, fontFace: "Calibri", margin: 0 });
   });
 }
 
