@@ -1,7 +1,7 @@
 /** Shared matchers so offline coach and chips agree on clear how-to questions. */
 
 export function isDeleteDealQuery(q: string): boolean {
-  return /(delete|remove|undo|get rid of|kill|archive|hide)\b.{0,40}\b(deal|spe|propert|intake|draft)\b|\b(deal|spe|propert)\b.{0,20}\b(delete|remove|archive|hide)\b/i.test(
+  return /(delete|remove|undo|get rid of|kill|archive|hide|restore)\b.{0,40}\b(deal|spe|propert|intake|draft)\b|\b(deal|spe|propert)\b.{0,20}\b(delete|remove|archive|hide|restore)\b|deal archive|archived deals?/i.test(
     q,
   );
 }

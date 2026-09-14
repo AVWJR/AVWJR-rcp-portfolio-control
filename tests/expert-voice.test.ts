@@ -128,7 +128,8 @@ describe("expert coach voice", () => {
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/Do not recite related acronyms/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/Do not spray flags on open/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/clarifying question/i);
-    expect(EXPERT_SYSTEM_PROMPT).toMatch(/does not delete SPEs/i);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/Deal Archive/i);
+    expect(EXPERT_SYSTEM_PROMPT).toMatch(/soft-archive/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/master of every page/i);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/1–3/);
     expect(EXPERT_SYSTEM_PROMPT).toMatch(/spacexai\/grok-4\.6/);
@@ -181,10 +182,12 @@ describe("expert coach voice", () => {
   it("answers a clear delete-deal how-to without the vague clarifier", () => {
     const ctx = readExpertContext("/dashboard/SPE-HCR", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
     const reply = answerOffline("I need to delete a deal. How?", ctx, flagHeavyBundle);
-    expect(reply.content).toMatch(/does not delete SPEs yet/i);
-    expect(reply.content).toMatch(/not available on main yet|not available yet/i);
+    expect(reply.content).toMatch(/\*\*Delete\*\*/);
+    expect(reply.content).toMatch(/Deal Archive/);
+    expect(reply.content).toMatch(/soft-archive|not a hard wipe/i);
     expect(reply.content).toMatch(/Deals/);
-    expect(reply.content).not.toMatch(/\]\(\/archive|href=.*archive/i);
+    expect(reply.content).toMatch(/\]\(\/archive/);
+    expect(reply.content).not.toMatch(/does not delete SPEs yet/i);
     expect(reply.content).not.toMatch(/number on this page/i);
     expect(reply.content).not.toMatch(/something missing/i);
     expect(reply.content).not.toMatch(/covenant watch/i);

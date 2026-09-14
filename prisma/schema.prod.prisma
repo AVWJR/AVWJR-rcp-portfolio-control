@@ -87,6 +87,13 @@ enum DealIntakeStatus {
   FAILED
 }
 
+/// Soft-archive only. LIVE SPEs appear on Deals and in OpCo rollup. ARCHIVED SPEs
+/// keep books and vault for study on /archive — never a hard wipe.
+enum EntityLifecycle {
+  LIVE
+  ARCHIVED
+}
+
 enum UnitStatus {
   OCCUPIED
   VACANT
@@ -106,9 +113,14 @@ model Entity {
   strategy     SpeStrategy?
   currency     String       @default("USD")
   locale       String       @default("en-US")
-  timezone     String       @default("America/New_York")
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  timezone         String          @default("America/New_York")
+  lifecycleStatus  EntityLifecycle @default(LIVE)
+  archivedAt       DateTime?
+  archivedBy       String?
+  restoredAt       DateTime?
+  restoredBy       String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   accounts         Account[]
   periods          Period[]

@@ -1,11 +1,19 @@
 import type { PostedLine } from "@rcp/ledger";
+import { isArchivedSpe, liveSpeChildren } from "./archive";
 import { prisma } from "./prisma";
 
-export async function listEntities() {
-  return prisma.entity.findMany({
+export async function listEntities(opts?: { includeArchived?: boolean }) {
+  const rows = await prisma.entity.findMany({
     orderBy: [{ type: "asc" }, { code: "asc" }],
     include: { parent: true, children: true },
   });
+  if (opts?.includeArchived) return rows;
+  return rows
+    .filter((entity) => !isArchivedSpe(entity))
+    .map((entity) => ({
+      ...entity,
+      children: liveSpeChildren(entity.children),
+    }));
 }
 
 export async function getEntityByCode(code: string) {
@@ -61,8 +69,8 @@ export async function loadPostedLines(opts: {
 export async function consolidationEntityIds(entityId: string): Promise<string[]> {
   const kids = await prisma.entity.findMany({
     where: { parentId: entityId },
-    select: { id: true, type: true },
+    select: { id: true, type: true, lifecycleStatus: true },
   });
-  const speIds = kids.filter((k) => k.type === "SPE").map((k) => k.id);
+  const speIds = kids.filter((k) => k.type === "SPE" && k.lifecycleStatus !== "ARCHIVED").map((k) => k.id);
   return [entityId, ...speIds];
 }

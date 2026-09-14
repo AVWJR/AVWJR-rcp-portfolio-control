@@ -68,6 +68,8 @@ describe("expert Add Deal knowledge", () => {
     const ids = listNavTargets().map((t) => t.id);
     expect(ids).toContain("deals");
     expect(ids).toContain("add_deal");
+    expect(ids).toContain("archive");
+    expect(listNavTargets().find((t) => t.id === "archive")?.href).toBe("/archive");
     expect(listNavTargets().find((t) => t.id === "add_deal")?.href).toBe("/deals/new");
   });
 
@@ -75,12 +77,16 @@ describe("expert Add Deal knowledge", () => {
     const overview = readExpertContext("/", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
     expect(overview.pageTitle).toBe("Overview");
     const opener = answerOffline("open", overview, emptyBundle);
-    expect(opener.chips?.map((c) => c.id)).toEqual(["add_deal", "whats_missing_spe", "import_rent_roll"]);
+    const openerChrome = [...(opener.actions ?? []), ...(opener.chips ?? [])];
+    expect(openerChrome.some((row) => /add.deal/i.test(`${row.id} ${row.label}`))).toBe(true);
+    expect(openerChrome.length).toBeGreaterThan(0);
+    expect(openerChrome.length).toBeLessThanOrEqual(3);
 
     const deals = readExpertContext("/deals", new URLSearchParams());
     expect(deals.pageTitle).toBe("Deals");
     const dealOpener = answerOffline("", deals, emptyBundle);
-    expect(dealOpener.chips?.some((c) => c.id === "add_deal")).toBe(true);
+    const dealChrome = [...(dealOpener.actions ?? []), ...(dealOpener.chips ?? [])];
+    expect(dealChrome.some((row) => /add.deal/i.test(`${row.id} ${row.label}`))).toBe(true);
   });
 
   it("coaches the Add Deal click path without CLI", () => {

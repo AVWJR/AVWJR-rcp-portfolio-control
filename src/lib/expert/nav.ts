@@ -102,8 +102,16 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     test: /^\/deals$/,
     title: "Deals",
     hints: [
-      "SPE list plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
-      "Click Add Deal or resume a draft. The entity switcher updates after you create the SPE.",
+      "Live SPE list plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
+      "Delete on a row is a two-step soft-archive. Deleted SPEs are not here — gold nav Deal Archive.",
+    ],
+  },
+  {
+    test: /^\/archive$/,
+    title: "Deal Archive",
+    hints: [
+      "Soft-archived SPEs for study. Restore is a two-step confirm from this page.",
+      "Not a tab under Deals. Books and vault stay intact. Not a hard wipe.",
     ],
   },
   {
@@ -145,7 +153,10 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
   {
     test: /^\/vault$/,
     title: "Document vault",
-    hints: ["Metadata + files by entity (leases, loans, K-1s, draws, insurance). Not a bank or PMS feed."],
+    hints: [
+      "Metadata + files by entity (leases, loans, K-1s, draws, insurance). Not a bank or PMS feed.",
+      "Delete on a live SPE removes the deal from live Deals (soft-archive). Removing a file is not deleting the SPE.",
+    ],
   },
   {
     test: /^\/scheduler$/,
@@ -178,8 +189,9 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "is", href: "/reports/income-statement", label: "Income Statement", hint: "Book P/L" },
   { id: "bs", href: "/reports/balance-sheet", label: "Balance Sheet", hint: "A = L + E" },
   { id: "cf", href: "/reports/cash-flow", label: "Cash Flow", hint: "Indirect; ties to BS" },
-  { id: "deals", href: "/deals", label: "Deals", hint: "SPE list and Add Deal drafts" },
+  { id: "deals", href: "/deals", label: "Deals", hint: "Live SPE list and Add Deal drafts" },
   { id: "add_deal", href: "/deals/new", label: "Add Deal", hint: "Guided SPE intake" },
+  { id: "archive", href: "/archive", label: "Deal Archive", hint: "Deleted SPEs for study — not under Deals" },
   { id: "properties", href: "/properties", label: "Properties", hint: "SPE list / rent roll" },
   { id: "debt", href: "/debt", label: "Debt", hint: "Loan file and covenants" },
   { id: "capex", href: "/capex", label: "CapEx", hint: "CIP and R&M" },

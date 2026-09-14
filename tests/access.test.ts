@@ -35,8 +35,12 @@ describe("partner viewer access", () => {
   it("blocks Add Deal and seed paths and mutating APIs for viewers", () => {
     expect(isViewerBlockedPath("/deals/new")).toBe(true);
     expect(isViewerBlockedPath("/admin/seed")).toBe(true);
+    expect(isViewerBlockedPath("/archive")).toBe(true);
     expect(isViewerBlockedPath("/dashboard/SPE-WBG")).toBe(false);
     expect(isViewerBlockedPath("/narratives")).toBe(false);
+    expect(viewerForbiddenApi("/api/deals/SPE-WBG/delete", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/archive", "GET")).toBe(true);
+    expect(viewerForbiddenApi("/api/archive/SPE-WBG/restore", "POST")).toBe(true);
     expect(viewerForbiddenApi("/api/deals/intake/files", "POST")).toBe(true);
     expect(viewerForbiddenApi("/api/deals/intake/blob", "POST")).toBe(true);
     expect(viewerForbiddenApi("/api/deals/intake/import", "POST")).toBe(true);
