@@ -1,6 +1,7 @@
 import { CsvParseError } from "../csv-parse";
 import {
   emptyRentRollMeta,
+  type CanonicalCharge,
   type CanonicalUnit,
   type DialectDetectHit,
   type DialectParseOpts,
@@ -116,13 +117,13 @@ export function parseFlatTabular(rows: string[][], opts: DialectParseOpts = {}):
     if (resident && !parseRentRollStatus(resident)) {
       extras.resident_name = extras.resident_name || resident;
     }
-    const charges =
+    const charges: CanonicalCharge[] =
       snapshot.inPlaceRent !== 0n
         ? [
             {
               unitCode: snapshot.unitCode,
               chargeCode: "in_place_rent",
-              chargeClass: "rent" as const,
+              chargeClass: "rent",
               amountCents: snapshot.inPlaceRent,
               sourceRow: sourceRows.get(snapshot.unitCode)?.[0] ?? 0,
               extras: {},

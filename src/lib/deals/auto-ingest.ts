@@ -15,7 +15,14 @@ export type AutoIngestReport = {
     state: string | null;
   };
   created: { entityId: string | null; entityCode: string | null; entityName: string | null };
-  results: { kind: string; imported?: number; skipped?: string }[];
+  results: {
+    kind: string;
+    imported?: number;
+    skipped?: string;
+    loanId?: string;
+    dialect?: string;
+    dialectLabel?: string;
+  }[];
   gaps: string[];
   intake: ReturnType<typeof publicIntake> | null;
 };
