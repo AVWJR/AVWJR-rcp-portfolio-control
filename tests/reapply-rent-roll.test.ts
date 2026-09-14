@@ -86,6 +86,20 @@ describe("re-apply vaulted rent roll when Kind is Other", () => {
     expect(canonical).toBeTruthy();
   });
 
+  it("maps Kind Other when the vault title has RR even if the filename does not", async () => {
+    const entity = await newSpe("Hampton Title");
+    await vaultAsOther({
+      entityId: entity.id,
+      filename: "Hampton Gardens.xlsx",
+      title: "Hampton - RR 07.08.26.xlsx",
+      bytes: hamptonLeaseChargesWorkbook(),
+    });
+    const report = await reapplyRentRollForEntity(entity.code);
+    expect(report.imported).toBe(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
+    expect(report.dialect).toBe("yardi_lease_charges");
+    expect(await prisma.unit.count({ where: { entityId: entity.id } })).toBe(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
+  });
+
   it("still re-applies a kind=rent_roll redIQ workbook", async () => {
     const entity = await newSpe("Harrington Court");
     await storeVaultDocument({

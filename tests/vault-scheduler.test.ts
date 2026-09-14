@@ -43,6 +43,7 @@ describe("document vault", () => {
 
   it("treats *RR* / lease-charges filenames as rent rolls even when Kind is Other", () => {
     expect(looksLikeRentRollFilename("Hampton - RR 07.08.26.xlsx")).toBe(true);
+    expect(looksLikeRentRollFilename("Hampton – RR 07.08.26.xlsx")).toBe(true);
     expect(looksLikeRentRollFilename("RR_-_Harrington_-_12.31.19_-_Resi.xlsx")).toBe(true);
     expect(looksLikeRentRollFilename("willow-rent-roll.csv")).toBe(true);
     expect(looksLikeRentRollFilename("Hampton_Gardens_Lease_Charges.xlsx")).toBe(true);

@@ -48,7 +48,12 @@ export function looksLikeOmCimFilename(filename: string): boolean {
  */
 export function looksLikeRentRollFilename(filename: string): boolean {
   const stem = filename.replace(/\.[A-Za-z0-9]+$/, "");
-  const tokens = stem.replace(/[._/-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  const tokens = stem
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[._/-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
   if (!tokens) return false;
   if (/\b(lease\s*charges|rent\s*rolls?|rentroll)\b/.test(tokens)) return true;
   return /\brr\b/.test(tokens);

@@ -103,6 +103,6 @@ export async function reapplyRentRollForEntity(entityCode: string, documentId?: 
   }
 
   throw new Error(
-    `${entity.code} has no vaulted rent-roll file to re-apply. Upload the RR xlsx on Add Deal or Properties.`,
+    `${entity.code} has no vaulted rent-roll file to re-apply (Kind Other *RR* / lease-charges workbooks count). Upload the RR xlsx on Add Deal or Properties, or use Import.`,
   );
 }

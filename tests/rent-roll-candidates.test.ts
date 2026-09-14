@@ -32,6 +32,20 @@ describe("vault rent-roll candidate ranking", () => {
     expect(rr.total).toBeGreaterThan(os.total);
   });
 
+  it("treats a Kind Other title *RR* as a candidate even if the stored filename is generic", () => {
+    const ranked = rankVaultRentRollCandidate({
+      id: "titled",
+      filename: "upload.xlsx",
+      title: "Hampton - RR 07.08.26.xlsx",
+      kind: "other",
+      mimeType: XLSX,
+      bytes: hamptonLeaseChargesWorkbook(),
+    });
+    expect(ranked.filenameHits).toBe(true);
+    expect(ranked.kindHits).toBe(false);
+    expect(isViableRentRollCandidate(ranked)).toBe(true);
+  });
+
   it("still ranks a kind=rent_roll redIQ workbook as viable", () => {
     const ranked = rankVaultRentRollCandidate({
       id: "redi",

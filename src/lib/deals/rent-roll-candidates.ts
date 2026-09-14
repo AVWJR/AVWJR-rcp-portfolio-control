@@ -85,10 +85,12 @@ export function rankVaultRentRollCandidate(opts: {
   id: string;
   filename: string;
   kind: string;
+  title?: string | null;
   mimeType?: string | null;
   bytes?: Buffer | null;
 }): RankedRentRollCandidate {
-  const filenameHits = looksLikeRentRollFilename(opts.filename);
+  const filenameHits =
+    looksLikeRentRollFilename(opts.filename) || looksLikeRentRollFilename(opts.title ?? "");
   const kindHits = opts.kind === "rent_roll";
   let dialectScore = 0;
   let dialect: string | undefined;
@@ -136,8 +138,10 @@ export async function pickVaultRentRollForEntity(opts: {
     const doc = docs.find((row) => row.id === opts.documentId);
     if (!doc) return null;
     if (isCanonicalRentRollFilename(doc.filename)) return null;
-    const loaded = await readVaultDocument(doc.id);
-    if (!loaded) return null;
+    const loaded = await readVaultDocumentSafe(doc.id);
+    if (!loaded) {
+      throw new Error(`${doc.filename} metadata exists, but the stored bytes are missing.`);
+    }
     return {
       id: doc.id,
       filename: doc.filename,
@@ -148,6 +152,7 @@ export async function pickVaultRentRollForEntity(opts: {
         id: doc.id,
         filename: doc.filename,
         kind: doc.kind,
+        title: doc.title,
         mimeType: doc.mimeType,
         bytes: loaded.bytes,
       }),
@@ -155,19 +160,26 @@ export async function pickVaultRentRollForEntity(opts: {
   }
 
   let best: PickedVaultRentRoll | null = null;
+  let unreadableRr: string | null = null;
   for (const doc of docs) {
     if (isCanonicalRentRollFilename(doc.filename)) continue;
     const tabular = looksLikeTabularRentRollSource(doc.filename, doc.mimeType);
-    if (!tabular && doc.kind !== "rent_roll") continue;
-    const loaded = tabular ? await readVaultDocument(doc.id) : null;
+    const nameHits = looksLikeRentRollFilename(doc.filename) || looksLikeRentRollFilename(doc.title);
+    if (!tabular && doc.kind !== "rent_roll" && !nameHits) continue;
+    const loaded = tabular || nameHits || doc.kind === "rent_roll" ? await readVaultDocumentSafe(doc.id) : null;
     const ranked = rankVaultRentRollCandidate({
       id: doc.id,
       filename: doc.filename,
       kind: doc.kind,
+      title: doc.title,
       mimeType: doc.mimeType,
       bytes: loaded?.bytes ?? null,
     });
-    if (!isViableRentRollCandidate(ranked) || !loaded) continue;
+    if (!isViableRentRollCandidate(ranked)) continue;
+    if (!loaded) {
+      if (ranked.filenameHits && !unreadableRr) unreadableRr = doc.filename;
+      continue;
+    }
     if (!best || betterCandidate(ranked, best.ranked) === ranked) {
       best = {
         id: doc.id,
@@ -179,13 +191,26 @@ export async function pickVaultRentRollForEntity(opts: {
       };
     }
   }
+  if (!best && unreadableRr) {
+    throw new Error(`${unreadableRr} metadata exists, but the stored bytes are missing.`);
+  }
   return best;
 }
 
-export function pickOriginalRentRollMeta<T extends { filename: string; kind: string }>(docs: T[]): T | undefined {
+async function readVaultDocumentSafe(id: string) {
+  try {
+    return await readVaultDocument(id);
+  } catch {
+    return null;
+  }
+}
+
+export function pickOriginalRentRollMeta<T extends { filename: string; kind: string; title?: string | null }>(
+  docs: T[],
+): T | undefined {
   const live = docs.filter((doc) => !isCanonicalRentRollFilename(doc.filename));
   return (
     live.find((doc) => doc.kind === "rent_roll") ??
-    live.find((doc) => looksLikeRentRollFilename(doc.filename))
+    live.find((doc) => looksLikeRentRollFilename(doc.filename) || looksLikeRentRollFilename(doc.title ?? ""))
   );
 }
