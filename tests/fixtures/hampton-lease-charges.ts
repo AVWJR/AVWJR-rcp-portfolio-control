@@ -1,9 +1,9 @@
 import { utils, write } from "xlsx";
 
 /** Nested Yardi/PMS “Rent Roll with Lease Charges” (Hampton Gardens layout). */
-export const HAMPTON_LEASE_CHARGES_UNIT_COUNT = 7;
-export const HAMPTON_LEASE_CHARGES_OCCUPIED = 6;
-export const HAMPTON_LEASE_CHARGES_CHARGE_TOTAL_CENTS = 1010_20n + 1271_89n + 995_91n + 1309_95n + 1008_95n + 1010_20n;
+export const HAMPTON_LEASE_CHARGES_UNIT_COUNT = 8;
+export const HAMPTON_LEASE_CHARGES_OCCUPIED = 7;
+export const HAMPTON_LEASE_CHARGES_CHARGE_TOTAL_CENTS = 1010_20n + 1271_89n + 995_91n + 1309_95n + 1010_20n + 1008_95n + 1010_20n;
 
 export function hamptonLeaseChargesRows(): string[][] {
   return [
@@ -32,7 +32,9 @@ export function hamptonLeaseChargesRows(): string[][] {
       "Make Ready",
     ],
     ["", "", "Sq Ft", "", "", "", "Code", "", "Deposit", "Deposit", "", "Expiration", "", "", ""],
-    ["Current/Notice/Vacant Residents"],
+    // Real Yardi files put zeros / section totals on the same row as the banner.
+    ["Charge Code", "", "0", "", "", "0.00", "Charge Code", "0.00", "0.00", "0.00", "", "", "", "0.00"],
+    ["Current/Notice/Vacant Residents", "", "0", "", "", "329227.00", "", "518504.19", "0.00", "0.00", "", "", "", "0.00"],
     [
       "171L725-1",
       "1P/V",
@@ -110,7 +112,26 @@ export function hamptonLeaseChargesRows(): string[][] {
     ["", "", "", "", "", "", "r-laundr", "9.95"],
     ["", "", "", "", "", "", "r-cable", "50.00"],
     ["", "", "", "", "", "", "Total", "1309.95"],
-    ["Notice Residents"],
+    [
+      "FYL725-1",
+      "1PW",
+      "540",
+      "16901111",
+      "Ada Cole",
+      "1220.00",
+      "r-rent",
+      "975.00",
+      "95.00",
+      "0.00",
+      "5/4/2026",
+      "8/3/2027",
+      "",
+      "0.00",
+    ],
+    ["", "", "", "", "", "", "r-laundr", "9.95"],
+    ["", "", "", "", "", "", "r-cable", "25.25"],
+    ["", "", "", "", "", "", "Total", "1010.20"],
+    ["Notice Residents", "", "0", "", "", "2605.00", "", "1884.00", "0.00", "0.00", "", "", "", "0.00"],
     [
       "171L721-1",
       "2S/V",
@@ -150,7 +171,7 @@ export function hamptonLeaseChargesRows(): string[][] {
     ["", "", "", "", "", "", "r-laundr", "9.95"],
     ["", "", "", "", "", "", "r-cable", "25.25"],
     ["", "", "", "", "", "", "Total", "1010.20"],
-    ["Vacant Residents"],
+    ["Vacant Residents", "", "0", "", "", "1220.00", "", "0.00", "0.00", "0.00", "", "", "", "0.00"],
     ["171L730-1", "1P/V", "540", "", "VACANT", "1220.00", "", "", "95.00", "0.00", "", "", "", "0.00"],
   ];
 }
