@@ -41,13 +41,14 @@ export function CsvImportForm({
     body.set("confirmReplace", "true");
     if (period) body.set("period", period);
     const res = await fetch(action, { method: "POST", body });
-    const json = (await res.json()) as { error?: string; imported?: number };
+    const json = (await res.json()) as { error?: string; imported?: number; dialectLabel?: string; coach?: string };
     setBusy(false);
     if (!res.ok) {
       setMessage(json.error ?? "Import failed");
       return;
     }
-    setMessage(`Imported ${json.imported ?? 0} rows (full replace)`);
+    const dialect = json.dialectLabel ? ` · ${json.dialectLabel}` : "";
+    setMessage(`Imported ${json.imported ?? 0} rows (full replace)${dialect}`);
     form.reset();
     setConfirmReplace(false);
     router.refresh();
@@ -77,7 +78,7 @@ export function CsvImportForm({
         disabled={busy}
         className="bg-navy-900 px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] text-cream-100 disabled:opacity-50"
       >
-        {busy ? "Importing…" : "Import CSV"}
+        {busy ? "Importing…" : "Import"}
       </button>
       <p className="text-xs text-ink-500">{acceptHint}</p>
       {message ? <p className="w-full text-xs text-navy-800">{message}</p> : null}

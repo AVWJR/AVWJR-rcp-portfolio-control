@@ -1,10 +1,14 @@
 import { utils, read, type WorkBook, type WorkSheet } from "xlsx";
 import {
   couldNotMapColumnsMessage,
+  detectRentRollDialect,
+  findLeaseChargesHeader,
   findRentRollHeader,
   looksLikeRentRollHeaders,
+  normalizeRentRollSheets,
+  parseCsvLines,
   parseT12WorkbookRows,
-  scoreRentRollHeaderRow,
+  type NormalizedRentRoll,
   type T12WorkbookParse,
 } from "@rcp/properties";
 
@@ -100,6 +104,7 @@ function sheetRows(sheet: WorkSheet): string[][] {
 function sheetNameScore(name: string): number {
   const lower = name.trim().toLowerCase();
   if (lower === "rent roll" || lower === "rentroll") return 24;
+  if (/lease charges/.test(lower)) return 18;
   if (lower === "source data" || lower === "sourcedata") return 4;
   if (/^(floor plan|floorplan|about|sheet\d+|cover)$/.test(lower)) return -12;
   if (/cover|instr|toc|summary|index|check|about/.test(lower)) return -8;
@@ -108,27 +113,84 @@ function sheetNameScore(name: string): number {
   return 0;
 }
 
+export function workbookSheets(workbook: WorkBook): { name: string; rows: string[][] }[] {
+  return workbook.SheetNames.flatMap((name) => {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) return [];
+    return [{ name, rows: sheetRows(sheet) }];
+  });
+}
+
 export function selectRentRollSheet(workbook: WorkBook): { name: string; rows: string[][]; headerRow: number; headers: string[]; score: number } | null {
   let best: { name: string; rows: string[][]; headerRow: number; headers: string[]; score: number } | null = null;
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    if (!sheet) continue;
-    const rows = sheetRows(sheet);
+  for (const { name, rows } of workbookSheets(workbook)) {
     const found = findRentRollHeader(rows);
-    const headerScore = found?.score ?? 0;
+    const lease = findLeaseChargesHeader(rows);
+    const dialect = detectRentRollDialect(rows);
+    const headerScore = Math.max(found?.score ?? 0, dialect?.score ?? 0);
     const score = sheetNameScore(name) + headerScore;
+    const headerRow = lease?.index ?? found?.index ?? -1;
+    const headers = lease?.headers ?? found?.headers ?? [];
     if (!best || score > best.score) {
-      best = {
-        name,
-        rows,
-        headerRow: found?.index ?? -1,
-        headers: found?.headers ?? [],
-        score,
-      };
+      best = { name, rows, headerRow, headers, score };
     }
   }
-  if (!best || best.headerRow < 0 || best.score < 8) return null;
+  if (!best || best.score < 8) return null;
+  if (best.headerRow < 0 && !detectRentRollDialect(best.rows)) return null;
   return best;
+}
+
+export type ParsedRentRollSource = {
+  normalized: NormalizedRentRoll;
+  originalSheets: { name: string; rows: string[][] }[];
+  selectedSheet: string;
+  originalBytes: Buffer;
+  filename: string;
+};
+
+export function parseRentRollSource(opts: {
+  filename: string;
+  mimeType?: string;
+  bytes: Buffer;
+  lenient?: boolean;
+}): ParsedRentRollSource {
+  const filename = opts.filename;
+  const mime = opts.mimeType ?? "";
+  if (isSpreadsheetFilename(filename) || (SPREADSHEET_MIME_TYPES as readonly string[]).includes(mime)) {
+    assertReadableWorkbook(opts.bytes, filename);
+    const workbook = read(opts.bytes, { type: "buffer", cellDates: true, raw: false });
+    const sheets = workbookSheets(workbook);
+    if (!sheets.length) {
+      throw new Error(`${filename} has no worksheets. ${couldNotMapColumnsMessage([])}.`);
+    }
+    try {
+      const parsed = normalizeRentRollSheets(sheets, { sourceFilename: filename, lenient: opts.lenient });
+      parsed.normalized.meta.sourceFilename = filename;
+      return {
+        normalized: parsed.normalized,
+        originalSheets: sheets,
+        selectedSheet: parsed.selectedSheet,
+        originalBytes: opts.bytes,
+        filename,
+      };
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      throw new Error(/could not map columns/i.test(raw) ? raw : `${filename}: ${raw}`);
+    }
+  }
+  const rows = parseCsvLines(opts.bytes.toString("utf8"));
+  const parsed = normalizeRentRollSheets([{ name: "CSV", rows }], {
+    sourceFilename: filename,
+    lenient: opts.lenient,
+  });
+  parsed.normalized.meta.sourceFilename = filename;
+  return {
+    normalized: parsed.normalized,
+    originalSheets: [{ name: "CSV", rows }],
+    selectedSheet: parsed.selectedSheet,
+    originalBytes: opts.bytes,
+    filename,
+  };
 }
 
 function rowsToCsv(headers: string[], body: string[][]): string {

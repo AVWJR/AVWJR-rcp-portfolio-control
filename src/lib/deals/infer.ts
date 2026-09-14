@@ -62,7 +62,8 @@ export function sniffWorkbookRole(bytes: Buffer, filename: string): DealFileClas
     const hay = `${filename} ${names} ${csv}`.toLowerCase();
     if (
       looksLikeRentRollHeaders(headers) ||
-      (/unit/.test(hay) && /rent/.test(hay) && /status|occ|leased/.test(hay))
+      (/unit/.test(hay) && /rent/.test(hay) && /status|occ|leased/.test(hay)) ||
+      (/lease charges/.test(hay) && /charge code|r-rent|r-laundr/.test(hay))
     ) {
       return "rent_roll_csv";
     }

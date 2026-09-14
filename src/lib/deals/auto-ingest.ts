@@ -90,8 +90,11 @@ export async function autoIngestIntake(intakeId: string): Promise<AutoIngestRepo
     throw new Error(message);
   }
   if (rr?.imported) {
+    const dialectBit = rr.dialectLabel
+      ? ` Detected ${rr.dialectLabel} and normalized it. Original workbook is in Vault; the Canonical template is also vaulted.`
+      : "";
     gaps.push(
-      `Rent roll wrote ${rr.imported} Unit rows. Open Properties / Dashboard for ${uniqueCode}. GL $0 is expected until T12/P&L is mapped — occupancy comes from the rent roll, not the GL.`,
+      `Rent roll wrote ${rr.imported} Unit rows.${dialectBit} Open Properties / Dashboard for ${uniqueCode}. GL $0 is expected until T12/P&L is mapped — occupancy comes from the rent roll, not the GL.`,
     );
   } else {
     gaps.unshift(

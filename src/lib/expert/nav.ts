@@ -86,14 +86,14 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     title: "Property rent roll",
     hints: [
       "Unit master: status, market vs in-place rent, concessions. Occupancy is not derived from GL 4020.",
-      "CSV import replaces the SPE rent roll after you confirm.",
+      "CSV / XLSX import replaces the SPE rent roll after you confirm. Dialects: Yardi Lease Charges, redIQ, broker flat, RCP template.",
     ],
   },
   {
     test: /^\/deals\/new$/,
     title: "Add Deal",
     hints: [
-      "Upload-first: drop OM / redIQ or Yardi XLSX / T12. Filenames infer SPE-HRP-style codes. Files go one at a time (32 MB each).",
+      "Upload-first: drop OM / Yardi Lease Charges or redIQ XLSX / T12. Filenames infer SPE-HRP-style codes. Files go one at a time (32 MB each).",
       "On Vercel, files over ~3.5 MB need BLOB_READ_WRITE_TOKEN (Add Deal and /vault share Blob). A 5.5 MB Harrington OM is valid.",
       "0 units is a failure: could not map columns + Detected headers. Re-apply rent roll on Properties / Dashboard. Writes need confirm.",
     ],

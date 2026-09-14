@@ -2,7 +2,7 @@ import { importBudgetCsv, replaceBudget } from "@/lib/budgets";
 import { ReplaceRequiresConfirmError } from "@/lib/import-guard";
 import { prisma } from "@/lib/prisma";
 import { classifyFromFilename, inferAsOfDate } from "./infer";
-import { importRentRollCsv } from "@/lib/rent-roll";
+import { importRentRollSource } from "@/lib/rent-roll";
 import { parsePeriodLabel } from "@/lib/expert/period";
 import { createSpeDeal } from "./create-spe";
 import { promoteIntakeFilesToVault, readIntakeFileBytes } from "./files";
@@ -19,7 +19,7 @@ function coachStructuredImportError(filename: string, error: unknown): never {
   }
   if (/missing required column|unit_id|account_code|no rows we can read|file is empty/i.test(raw)) {
     throw new Error(
-      `${filename} is stored, but columns do not match the importer (${raw}). Broker rent-roll headers (UnitID, Unit No., OccStatus, MktRent, InPlaceRent, NetSF) are accepted. If this still fails, ask Expert — do not invent rows.`,
+      `${filename} is stored, but columns do not match the importer (${raw}). Supported dialects: Yardi Lease Charges, redIQ machine headers (UnitID, OccStatus, MktRent, InPlaceRent, NetSF), broker/Yardi-MRI flat rows, and the RCP canonical CSV. If this still fails, ask Expert — do not invent rows.`,
     );
   }
   throw error instanceof Error ? error : new Error(raw);
@@ -70,7 +70,7 @@ export async function applyStructuredData(opts: {
     throw new Error("Create the SPE first, then apply rent-roll, budget, or loan data.");
   }
 
-  const results: { kind: string; imported?: number; skipped?: string; loanId?: string }[] = [];
+  const results: { kind: string; imported?: number; skipped?: string; loanId?: string; dialect?: string; dialectLabel?: string }[] = [];
   const period = parsePeriodLabel(intake.targetPeriod ?? "2026-08") ?? { year: 2026, month: 8 };
 
   try {
@@ -86,16 +86,19 @@ export async function applyStructuredData(opts: {
             skipped: `${csvFile.filename}: could not map columns: stored bytes missing. Detected headers: (none)`,
           });
         } else {
-          let units;
+          let imported;
           try {
             const asOf = inferAsOfDate(loaded.file.filename);
-            units = await importRentRollCsv({
+            imported = await importRentRollSource({
               entityId: intake.entityId,
-              csv: bytesToImportCsv(loaded.file.filename, loaded.file.mimeType, loaded.bytes),
+              filename: loaded.file.filename,
+              mimeType: loaded.file.mimeType,
+              bytes: loaded.bytes,
               confirmReplace: opts.confirmReplace,
               asOfDate: asOf ? new Date(`${asOf}T16:00:00.000Z`) : undefined,
+              originalVaultDocumentId: loaded.file.vaultDocumentId,
             });
-            if (!units.length) {
+            if (!imported.units.length) {
               throw new Error(`could not map columns: unit rows. Detected headers: (none)`);
             }
           } catch (error) {
@@ -110,21 +113,26 @@ export async function applyStructuredData(opts: {
                 data: { status: "needs_mapping", lastError: message.slice(0, 500) },
               });
               results.push({ kind: "rent_roll", skipped });
-              units = undefined;
+              imported = undefined;
             } else {
               coachStructuredImportError(loaded.file.filename, error);
             }
           }
-          if (units) {
+          if (imported) {
           await prisma.dealIntakeFile.update({
             where: { id: csvFile.id },
             data: { status: "imported", lastError: null },
           });
           await prisma.entity.update({
             where: { id: intake.entityId },
-            data: { unitCount: units.length },
+            data: { unitCount: imported.units.length },
           });
-          results.push({ kind: "rent_roll", imported: units.length });
+          results.push({
+            kind: "rent_roll",
+            imported: imported.units.length,
+            dialect: imported.dialect,
+            dialectLabel: imported.dialectLabel,
+          });
           }
         }
       } else {

@@ -42,8 +42,8 @@ export function ReapplyRentRollButton({ entityCode }: { entityCode: string }) {
         {busy ? "Re-applying…" : "Re-apply rent roll"}
       </button>
       <p className="mt-2 text-xs text-ink-600">
-        Reads the vaulted broker RR xlsx for this SPE and writes Unit rows again (full replace). Use this
-        on SPE-HRP* deals that ingested as vault-only.
+        Reads the vaulted rent-roll workbook for this SPE, detects the dialect, and writes Unit rows
+        from the canonical model (full replace). Original bytes stay in Vault.
       </p>
       {message ? <p className="mt-2 text-xs text-navy-800">{message}</p> : null}
     </div>
