@@ -1,8 +1,11 @@
 import { read } from "xlsx";
 import { describe, expect, it } from "vitest";
 import {
+  looksLikeChargeCodeToken,
+  looksLikeChargeSummaryBanner,
   looksLikeNonUnitLabel,
   looksLikeUnitCode,
+  canonicalChargeSheetRows,
   canonicalUnitSheetRows,
   detectRentRollDialect,
   metaSheetRows,
@@ -14,6 +17,7 @@ import { buildCanonicalRentRollWorkbook } from "@/lib/rent-roll-workbook";
 import {
   HAMPTON_LEASE_CHARGES_CHARGE_TOTAL_CENTS,
   HAMPTON_LEASE_CHARGES_OCCUPIED,
+  HAMPTON_LEASE_CHARGES_SUMMARY_JUNK,
   HAMPTON_LEASE_CHARGES_UNIT_COUNT,
   hamptonLeaseChargesRows,
   hamptonLeaseChargesWorkbook,
@@ -120,6 +124,42 @@ describe("rent-roll dialects", () => {
     expect(normalized.unmapped.some((row) => row.reason === "header_label_row" && row.value === "Charge Code")).toBe(
       true,
     );
+  });
+
+  it("stops at Summary of Charges by Charge Code and never starts units from r-* charge tokens", () => {
+    expect(looksLikeChargeSummaryBanner("Summary of Charges by Charge Code")).toBe(true);
+    expect(looksLikeChargeSummaryBanner("Charge Code Summary")).toBe(true);
+    expect(looksLikeNonUnitLabel("Summary of Charges by Charge Code")).toBe(true);
+    expect(looksLikeUnitCode("Summary of Charges by Charge Code")).toBe(false);
+    for (const token of ["r-rent", "r-cable", "r-laundr", "r-park", "r-pet", "r-storag", "r-emp", "r-mtm"]) {
+      expect(looksLikeChargeCodeToken(token)).toBe(true);
+      expect(looksLikeNonUnitLabel(token)).toBe(true);
+      expect(looksLikeUnitCode(token)).toBe(false);
+    }
+    expect(looksLikeChargeCodeToken("A-101")).toBe(false);
+    expect(looksLikeUnitCode("A-101")).toBe(true);
+    expect(looksLikeUnitCode("SUP939-1")).toBe(true);
+
+    const normalized = normalizeRentRollTable(hamptonLeaseChargesRows(), { sourceFilename: "Hampton-RR.xlsx" });
+    const codes = normalized.units.map((u) => u.unitCode);
+    expect(normalized.units).toHaveLength(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
+    expect(codes).toEqual(expect.arrayContaining(["171L725-1", "FYL725-1", "171L730-1"]));
+    for (const junk of HAMPTON_LEASE_CHARGES_SUMMARY_JUNK) {
+      expect(codes).not.toContain(junk);
+    }
+    const chargeSum = normalized.charges.reduce((acc, c) => acc + c.amountCents, 0n);
+    expect(chargeSum).toBe(HAMPTON_LEASE_CHARGES_CHARGE_TOTAL_CENTS);
+    expect(normalized.charges.some((c) => c.unitCode === "171L725-1" && c.chargeCode === "r-rent")).toBe(true);
+    expect(normalized.charges.every((c) => !HAMPTON_LEASE_CHARGES_SUMMARY_JUNK.includes(c.unitCode as (typeof HAMPTON_LEASE_CHARGES_SUMMARY_JUNK)[number]))).toBe(
+      true,
+    );
+    expect(normalized.unmapped.some((row) => row.reason === "charge_summary_section")).toBe(true);
+    expect(Object.values(normalized.meta.extras).join(" ")).toMatch(/Summary of Charges by Charge Code/i);
+    expect(Object.values(normalized.meta.extras).join(" ")).toMatch(/r-rent/);
+
+    const chargeSheet = canonicalChargeSheetRows(normalized);
+    expect(chargeSheet.some((row) => row.includes("r-rent") && row.includes("171L725-1"))).toBe(true);
+    expect(chargeSheet.some((row) => row[0] === "r-rent" || row[0] === "Summary of Charges by Charge Code")).toBe(false);
   });
 
   it("rebuilds Canonical / Charge Detail / Original / Meta without dropping the source title", () => {

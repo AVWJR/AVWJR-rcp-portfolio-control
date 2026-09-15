@@ -4,6 +4,20 @@ import { utils, write } from "xlsx";
 export const HAMPTON_LEASE_CHARGES_UNIT_COUNT = 8;
 export const HAMPTON_LEASE_CHARGES_OCCUPIED = 7;
 export const HAMPTON_LEASE_CHARGES_CHARGE_TOTAL_CENTS = 1010_20n + 1271_89n + 995_91n + 1309_95n + 1010_20n + 1008_95n + 1010_20n;
+export const HAMPTON_LEASE_CHARGES_SUMMARY_JUNK = [
+  "Summary of Charges by Charge Code",
+  "r-cable",
+  "r-conoth",
+  "r-emp",
+  "r-laundr",
+  "r-lossmt",
+  "r-misc",
+  "r-mtm",
+  "r-park",
+  "r-pet",
+  "r-rent",
+  "r-storag",
+] as const;
 
 export function hamptonLeaseChargesRows(): string[][] {
   return [
@@ -173,6 +187,19 @@ export function hamptonLeaseChargesRows(): string[][] {
     ["", "", "", "", "", "", "Total", "1010.20"],
     ["Vacant Residents", "", "0", "", "", "1220.00", "", "0.00", "0.00", "0.00", "", "", "", "0.00"],
     ["171L730-1", "1P/V", "540", "", "VACANT", "1220.00", "", "", "95.00", "0.00", "", "", "", "0.00"],
+    // Yardi workbook footer — must not become Unit rows (inflates unit count).
+    ["Summary of Charges by Charge Code", "", "0", "", "", "0.00", "", "0.00", "0.00", "0.00", "", "", "", "0.00"],
+    ["r-cable", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-conoth", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-emp", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-laundr", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-lossmt", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-misc", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-mtm", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-park", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-pet", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-rent", "", "0", "", "", "0.00", "", "0.00"],
+    ["r-storag", "", "0", "", "", "0.00", "", "0.00"],
   ];
 }
 

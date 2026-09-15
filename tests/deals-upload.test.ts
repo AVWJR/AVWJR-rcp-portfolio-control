@@ -617,7 +617,8 @@ describe("Add Deal intake upload", () => {
     expect(first?.marketRent).toBe(1220_00n);
     expect(first?.sqft).toBe(540);
     expect(units.some((u) => u.unitCode === "FYL725-1")).toBe(true);
-    expect(units.some((u) => /charge code|current\/notice\/vacant/i.test(u.unitCode))).toBe(false);
+    expect(units.some((u) => /charge code|current\/notice\/vacant|summary of charges/i.test(u.unitCode))).toBe(false);
+    expect(units.some((u) => /^r-[a-z]+$/i.test(u.unitCode))).toBe(false);
     const canonical = await prisma.vaultDocument.findFirst({
       where: { entityId: report.created.entityId!, filename: CANONICAL_WORKBOOK_FILENAME },
     });

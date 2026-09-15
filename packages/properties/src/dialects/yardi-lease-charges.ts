@@ -13,6 +13,8 @@ import {
 } from "../rent-roll-canonical";
 import {
   couldNotMapColumnsMessage,
+  looksLikeChargeCodeToken,
+  looksLikeChargeSummaryBanner,
   looksLikeNonUnitLabel,
   looksLikeSectionPhrase,
   looksLikeUnitCode,
@@ -154,13 +156,22 @@ function looksLikeSectionHeader(row: string[]): boolean {
   const filled = row.map((c) => c.trim()).filter(Boolean);
   if (filled.length === 0) return false;
   const first = filled[0] ?? "";
+  const joined = filled.join(" ");
+  if (looksLikeChargeSummaryBanner(first) || looksLikeChargeSummaryBanner(joined)) return true;
   if (looksLikeSectionPhrase(first) && !looksLikeUnitCode(first)) return true;
   if (filled.length > 3) return false;
-  const text = filled.join(" ").toLowerCase();
+  const text = joined.toLowerCase();
   if (/current|notice|vacant|occupied|down|model|resident/.test(text) && !looksLikeUnitCode(first)) {
     return true;
   }
   return false;
+}
+
+function rowIsChargeSummary(row: string[], unitCell: string): boolean {
+  if (looksLikeChargeSummaryBanner(unitCell)) return true;
+  const filled = row.map((c) => (c ?? "").trim()).filter(Boolean);
+  if (!filled.length) return false;
+  return looksLikeChargeSummaryBanner(filled.join(" ")) || looksLikeChargeSummaryBanner(filled[0] ?? "");
 }
 
 function looksLikeHeaderRepeat(row: string[]): boolean {
@@ -390,15 +401,34 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
     current = null;
   };
 
-  rows.slice(found.dataStart).forEach((row, offset) => {
+  const body = rows.slice(found.dataStart);
+  const retainChargeSummaryFrom = (startOffset: number) => {
+    for (let j = startOffset; j < body.length; j += 1) {
+      const summaryRow = body[j] ?? [];
+      const summaryLine = found.dataStart + j + 1;
+      const text = summaryRow.map((c) => (c ?? "").trim()).filter(Boolean).join(" | ");
+      if (!text) continue;
+      unmapped.push({ row: summaryLine, value: text, reason: "charge_summary_section" });
+      meta.extras[`charge_summary_row_${summaryLine}`] = text;
+    }
+  };
+
+  for (let offset = 0; offset < body.length; offset += 1) {
+    const row = body[offset] ?? [];
     const line = found.dataStart + offset + 1;
     const nonempty = row.some((c) => (c ?? "").trim());
-    if (!nonempty) return;
-    if (looksLikeHeaderRepeat(row)) return;
+    if (!nonempty) continue;
+    if (looksLikeHeaderRepeat(row)) continue;
 
     const rawUnit = cell(row, map.unit);
     const chargeCode = cell(row, map.chargeCode);
     const isTotal = looksLikeTotalRow(row, map);
+
+    if (rowIsChargeSummary(row, rawUnit)) {
+      flush();
+      retainChargeSummaryFrom(offset);
+      break;
+    }
 
     if (isTotal && current) {
       const amountRaw = cell(row, map.amount) || row.map((c) => c.trim()).filter((c) => /^-?[\d,.]+$/.test(c)).at(-1) || "";
@@ -410,7 +440,17 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
         unmapped.push({ row: line, header, value, reason: "total_row_extra" });
       });
       flush();
-      return;
+      continue;
+    }
+
+    if (rawUnit && looksLikeChargeCodeToken(rawUnit) && !looksLikeUnitCode(rawUnit)) {
+      unmapped.push({
+        row: line,
+        header: found.headers[unitCol] || "Unit",
+        value: rawUnit,
+        reason: "charge_code_as_unit",
+      });
+      continue;
     }
 
     if (rawUnit && looksLikeNonUnitLabel(rawUnit)) {
@@ -420,7 +460,7 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
       } else {
         unmapped.push({ row: line, header: found.headers[unitCol] || "Unit", value: rawUnit, reason: "header_label_row" });
       }
-      return;
+      continue;
     }
 
     if (looksLikeSectionHeader(row)) {
@@ -428,13 +468,14 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
       if (!maybeUnit || !looksLikeUnitCode(maybeUnit)) {
         flush();
         section = looksLikeSectionPhrase(maybeUnit) ? maybeUnit : row.map((c) => c.trim()).filter(Boolean).join(" ");
-        return;
+        continue;
       }
     }
 
     const startingUnit = Boolean(
       rawUnit &&
         !looksLikeNonUnitLabel(rawUnit) &&
+        !looksLikeChargeCodeToken(rawUnit) &&
         !/^total$/i.test(rawUnit) &&
         !looksLikeHeaderRepeat([rawUnit]) &&
         (looksLikeUnitCode(rawUnit) || !looksLikeSectionHeader(row)),
@@ -496,7 +537,7 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
         const charge = makeCharge(current.unitCode, chargeCode, amount, line, unusedCells(row, found.headers, mappedCols));
         current.charges.push(charge);
       }
-      return;
+      continue;
     }
 
     if (current && looksLikeChargeCode(chargeCode)) {
@@ -508,7 +549,7 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
       Object.entries(leftover).forEach(([header, value]) => {
         unmapped.push({ row: line, header, value, reason: "charge_row_extra" });
       });
-      return;
+      continue;
     }
 
     const leftover = unusedCells(row, found.headers, new Set());
@@ -517,7 +558,7 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
       if (current) mergeExtras(current.extras, { [header]: value });
       else meta.extras[`row_${line}_${header}`] = value;
     });
-  });
+  }
 
   flush();
 
