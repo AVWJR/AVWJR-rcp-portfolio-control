@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { storeVaultDocument } from "@/lib/vault";
 import { CANONICAL_WORKBOOK_FILENAME } from "@/lib/rent-roll-workbook";
 import { afterAll, describe, expect, it } from "vitest";
-import { HAMPTON_LEASE_CHARGES_UNIT_COUNT, hamptonLeaseChargesWorkbook } from "./fixtures/hampton-lease-charges";
+import { HAMPTON_LEASE_CHARGES_SUMMARY_JUNK, HAMPTON_LEASE_CHARGES_UNIT_COUNT, hamptonLeaseChargesWorkbook } from "./fixtures/hampton-lease-charges";
 import {
   HARRINGTON_REDIQ_UNIT_COUNT,
   harringtonRediqRentRollWorkbook,
@@ -130,6 +130,45 @@ describe("re-apply vaulted rent roll when Kind is Other", () => {
           concessionCents: 0n,
           asOfDate: new Date("2026-07-08T16:00:00.000Z"),
         },
+        {
+          entityId: entity.id,
+          unitCode: "Summary of Charges by Charge Code",
+          floorplan: "",
+          beds: 0,
+          bathsTenths: 0,
+          sqft: 0,
+          status: "VACANT",
+          marketRent: 0n,
+          inPlaceRent: 0n,
+          concessionCents: 0n,
+          asOfDate: new Date("2026-07-08T16:00:00.000Z"),
+        },
+        {
+          entityId: entity.id,
+          unitCode: "r-rent",
+          floorplan: "",
+          beds: 0,
+          bathsTenths: 0,
+          sqft: 0,
+          status: "OCCUPIED",
+          marketRent: 0n,
+          inPlaceRent: 0n,
+          concessionCents: 0n,
+          asOfDate: new Date("2026-07-08T16:00:00.000Z"),
+        },
+        {
+          entityId: entity.id,
+          unitCode: "r-cable",
+          floorplan: "",
+          beds: 0,
+          bathsTenths: 0,
+          sqft: 0,
+          status: "OCCUPIED",
+          marketRent: 0n,
+          inPlaceRent: 0n,
+          concessionCents: 0n,
+          asOfDate: new Date("2026-07-08T16:00:00.000Z"),
+        },
       ],
     });
     await vaultAsOther({
@@ -142,7 +181,11 @@ describe("re-apply vaulted rent roll when Kind is Other", () => {
     const codes = (await prisma.unit.findMany({ where: { entityId: entity.id } })).map((u) => u.unitCode);
     expect(codes).not.toContain("Charge Code");
     expect(codes).not.toContain("Current/Notice/Vacant Residents");
+    for (const junk of HAMPTON_LEASE_CHARGES_SUMMARY_JUNK) {
+      expect(codes).not.toContain(junk);
+    }
     expect(codes).toEqual(expect.arrayContaining(["171L725-1", "FYL725-1"]));
+    expect(codes).toHaveLength(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
   });
 
   it("still re-applies a kind=rent_roll redIQ workbook", async () => {

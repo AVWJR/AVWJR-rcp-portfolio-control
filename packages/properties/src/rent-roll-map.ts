@@ -302,6 +302,7 @@ export function looksLikeHeaderLabel(value: string): boolean {
 export function looksLikeSectionPhrase(value: string): boolean {
   const n = normalizeHeader(value);
   if (!n) return false;
+  if (looksLikeChargeSummaryBanner(value)) return true;
   if (/\b(current|notice|vacant)\b/.test(n) && /\bresidents?\b/.test(n) && !/\d/.test(n)) return true;
   if (
     /^(current|notice|vacant|future|occupied|eviction|applicant|canceled|cancelled|denied|wait list|model|down|admin)(\s+(residents?|units?))?$/.test(
@@ -314,11 +315,40 @@ export function looksLikeSectionPhrase(value: string): boolean {
   return false;
 }
 
-/** Never start a Unit from a known header, section banner, or totals label. */
+/**
+ * Workbook footer “Summary of Charges by Charge Code” (and equivalents).
+ * These banners must never start a Unit row.
+ */
+export function looksLikeChargeSummaryBanner(value: string): boolean {
+  const n = normalizeHeader(value);
+  if (!n) return false;
+  if (/\bsummary\b/.test(n) && /\bcharges?\b/.test(n)) return true;
+  if (/\bcharges?\s+by\s+charge\s+codes?\b/.test(n)) return true;
+  if (/^charge\s+codes?\s+summary$/.test(n)) return true;
+  return false;
+}
+
+/**
+ * Yardi charge-code tokens that leak into the unit cell in the summary block
+ * (`r-rent`, `r-cable`, …). Letter-only after the hyphen so real units like
+ * `A-101` still start a Unit.
+ */
+export function looksLikeChargeCodeToken(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  if (/^r-[A-Za-z]{2,}$/i.test(v)) return true;
+  if (/^(?:[A-Za-z]{1,3}-)?(?:rent|laundry|laundr|cable|trash|parking|park|petrent|pet|storage|storag|misc|mtm|emp)$/i.test(v)) {
+    return true;
+  }
+  return false;
+}
+
+/** Never start a Unit from a known header, section banner, charge code, or totals label. */
 export function looksLikeNonUnitLabel(value: string): boolean {
   const v = value.trim();
   if (!v) return false;
   if (looksLikeHeaderLabel(v) || looksLikeSectionPhrase(v)) return true;
+  if (looksLikeChargeSummaryBanner(v) || looksLikeChargeCodeToken(v)) return true;
   if (/^(total|average|avg|subtotal|grand total)\b/i.test(v)) return true;
   return false;
 }
@@ -326,6 +356,7 @@ export function looksLikeNonUnitLabel(value: string): boolean {
 export function looksLikeUnitCode(value: string): boolean {
   const v = value.trim();
   if (!v || looksLikeNonUnitLabel(v) || looksLikeSummary(v, [v]) || looksLikeHeaderRepeat(v)) return false;
+  if (looksLikeChargeCodeToken(v)) return false;
   if (/^[4-7]\d{3}$/.test(v)) return false;
   return /^(?:[A-Za-z]{1,3}[-/]?)?\d{1,5}[A-Za-z]{0,2}$/.test(v) || /^\d{1,3}-\d{2,4}$/.test(v) || /^[A-Za-z0-9]{3,14}-\d{1,4}$/.test(v);
 }
