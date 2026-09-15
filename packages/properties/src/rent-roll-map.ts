@@ -285,9 +285,47 @@ export function resolveRentRollHeader(rows: string[][], maxScan = 80): ResolvedR
   return { index: found.index, headers: found.headers, dataStart: found.index + 1, score: found.score };
 }
 
+const UNIT_CELL_HEADER_COMPACT =
+  /^(unit|unitid|unitno|unitnbr|unitnumber|unitcode|unittype|unitdesign|unitsqft|propname|planid|plan|floorplan|floorplanname|bldg|building|buildingno|status|occstatus|occupancy|renstatus|resident|residentid|residentname|tenant|tenantname|name|market|marketrent|mktrent|mkt|inplacerent|charges|charge|chargecode|chgcode|chg|chargeamount|chargeamt|amount|netsf|sqft|sf|type|deposit|residentdeposit|otherdeposit|balance|amtbalance|movein|moveindate|moveout|moveoutdate|leaseexpiration|leaseexpire|leasestart|leaseend|makeready|code|expiration)$/;
+
+/** Column-header text that leaked into the unit cell (e.g. "Charge Code"). */
+export function looksLikeHeaderLabel(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  const compact = v.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (UNIT_CELL_HEADER_COMPACT.test(compact)) return true;
+  const n = normalizeHeader(v);
+  return /^(charge codes?|chg codes?|unit types?|unit designs?|floor ?plans?|market rents?|charge amounts?|make ready)$/.test(n);
+}
+
+/** Yardi section / banner phrases occupying the unit cell. */
+export function looksLikeSectionPhrase(value: string): boolean {
+  const n = normalizeHeader(value);
+  if (!n) return false;
+  if (/\b(current|notice|vacant)\b/.test(n) && /\bresidents?\b/.test(n) && !/\d/.test(n)) return true;
+  if (
+    /^(current|notice|vacant|future|occupied|eviction|applicant|canceled|cancelled|denied|wait list|model|down|admin)(\s+(residents?|units?))?$/.test(
+      n,
+    )
+  ) {
+    return true;
+  }
+  if (/^(totals?|grand totals?|subtotals?|averages?)$/.test(n)) return true;
+  return false;
+}
+
+/** Never start a Unit from a known header, section banner, or totals label. */
+export function looksLikeNonUnitLabel(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  if (looksLikeHeaderLabel(v) || looksLikeSectionPhrase(v)) return true;
+  if (/^(total|average|avg|subtotal|grand total)\b/i.test(v)) return true;
+  return false;
+}
+
 export function looksLikeUnitCode(value: string): boolean {
   const v = value.trim();
-  if (!v || looksLikeSummary(v, [v]) || looksLikeHeaderRepeat(v)) return false;
+  if (!v || looksLikeNonUnitLabel(v) || looksLikeSummary(v, [v]) || looksLikeHeaderRepeat(v)) return false;
   if (/^[4-7]\d{3}$/.test(v)) return false;
   return /^(?:[A-Za-z]{1,3}[-/]?)?\d{1,5}[A-Za-z]{0,2}$/.test(v) || /^\d{1,3}-\d{2,4}$/.test(v) || /^[A-Za-z0-9]{3,14}-\d{1,4}$/.test(v);
 }
@@ -375,10 +413,7 @@ function looksLikeSummary(unitCode: string, cols: string[]): boolean {
 }
 
 function looksLikeHeaderRepeat(unitCode: string): boolean {
-  const compact = unitCode.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return /^(unit|unitid|unitno|unitnbr|unitnumber|propname|planid|bldg|building|status|occstatus|renstatus|resident|market|mktrent|inplacerent|charges|netsf|type)$/.test(
-    compact,
-  );
+  return looksLikeHeaderLabel(unitCode);
 }
 
 function parseNonNegNumber(raw: string, field: string, line: number, integer: boolean, lenient: boolean): number {
@@ -410,7 +445,7 @@ export function parseMappedRentRollRows(
       const rawUnit = cell(cols, map.unit);
       const bldg = cell(cols, map.building);
       const unitCode = bldg && rawUnit && !rawUnit.startsWith(`${bldg}-`) && !rawUnit.includes("/") ? `${bldg}-${rawUnit}` : rawUnit;
-      if (!unitCode || looksLikeSummary(unitCode, cols) || looksLikeHeaderRepeat(unitCode)) return;
+      if (!unitCode || looksLikeSummary(unitCode, cols) || looksLikeNonUnitLabel(unitCode)) return;
 
       const combo = map.beds_baths != null ? parseBedsBaths(cell(cols, map.beds_baths)) : null;
       const bedsN = combo ? Math.trunc(combo.beds) : parseNonNegNumber(cell(cols, map.beds), "beds", line, true, opts.lenient ?? false);

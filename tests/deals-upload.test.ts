@@ -23,7 +23,11 @@ import {
   harringtonYardiT12ExtWorkbook,
   unmappableWorkbook,
 } from "./fixtures/harrington-rent-roll";
-import { hamptonLeaseChargesWorkbook } from "./fixtures/hampton-lease-charges";
+import {
+  HAMPTON_LEASE_CHARGES_OCCUPIED,
+  HAMPTON_LEASE_CHARGES_UNIT_COUNT,
+  hamptonLeaseChargesWorkbook,
+} from "./fixtures/hampton-lease-charges";
 import { CANONICAL_WORKBOOK_FILENAME } from "@/lib/rent-roll-workbook";
 import { resolveReportScope } from "@/lib/reports-server";
 
@@ -602,16 +606,18 @@ describe("Add Deal intake upload", () => {
     const report = await autoIngestIntake(intake.id);
     if (report.created.entityId) entityIds.push(report.created.entityId);
     const rr = report.results.find((row) => row.kind === "rent_roll");
-    expect(rr?.imported).toBe(7);
+    expect(rr?.imported).toBe(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
     expect(rr?.dialect).toBe("yardi_lease_charges");
     expect(report.gaps.some((gap) => /Lease Charges/i.test(gap))).toBe(true);
     const units = await prisma.unit.findMany({ where: { entityId: report.created.entityId! } });
-    expect(units).toHaveLength(7);
-    expect(units.filter((u) => u.status === "OCCUPIED")).toHaveLength(6);
+    expect(units).toHaveLength(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
+    expect(units.filter((u) => u.status === "OCCUPIED")).toHaveLength(HAMPTON_LEASE_CHARGES_OCCUPIED);
     const first = units.find((u) => u.unitCode === "171L725-1");
     expect(first?.inPlaceRent).toBe(975_00n);
     expect(first?.marketRent).toBe(1220_00n);
     expect(first?.sqft).toBe(540);
+    expect(units.some((u) => u.unitCode === "FYL725-1")).toBe(true);
+    expect(units.some((u) => /charge code|current\/notice\/vacant/i.test(u.unitCode))).toBe(false);
     const canonical = await prisma.vaultDocument.findFirst({
       where: { entityId: report.created.entityId!, filename: CANONICAL_WORKBOOK_FILENAME },
     });

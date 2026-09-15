@@ -13,6 +13,8 @@ import {
 } from "../rent-roll-canonical";
 import {
   couldNotMapColumnsMessage,
+  looksLikeNonUnitLabel,
+  looksLikeSectionPhrase,
   looksLikeUnitCode,
   mergeHeaderRows,
   normalizeHeader,
@@ -150,9 +152,12 @@ function looksLikeTotalRow(row: string[], map: ColMap): boolean {
 
 function looksLikeSectionHeader(row: string[]): boolean {
   const filled = row.map((c) => c.trim()).filter(Boolean);
-  if (filled.length === 0 || filled.length > 3) return false;
+  if (filled.length === 0) return false;
+  const first = filled[0] ?? "";
+  if (looksLikeSectionPhrase(first) && !looksLikeUnitCode(first)) return true;
+  if (filled.length > 3) return false;
   const text = filled.join(" ").toLowerCase();
-  if (/current|notice|vacant|occupied|down|model|resident/.test(text) && !looksLikeUnitCode(filled[0] ?? "")) {
+  if (/current|notice|vacant|occupied|down|model|resident/.test(text) && !looksLikeUnitCode(first)) {
     return true;
   }
   return false;
@@ -348,7 +353,8 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
     throw new CsvParseError(1, couldNotMapColumnsMessage((rows[0] ?? []).filter(Boolean), ["unit", "charge code"]));
   }
   const { map, used: mappedCols } = mapLeaseChargeHeaders(found.headers);
-  if (map.unit == null) {
+  const unitCol = map.unit;
+  if (unitCol == null) {
     throw new CsvParseError(found.index + 1, couldNotMapColumnsMessage(found.headers.filter(Boolean), ["unit"]));
   }
 
@@ -389,14 +395,6 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
     const nonempty = row.some((c) => (c ?? "").trim());
     if (!nonempty) return;
     if (looksLikeHeaderRepeat(row)) return;
-    if (looksLikeSectionHeader(row)) {
-      const maybeUnit = cell(row, map.unit) || (row[0] ?? "").trim();
-      if (!maybeUnit || !looksLikeUnitCode(maybeUnit)) {
-        flush();
-        section = row.map((c) => c.trim()).filter(Boolean).join(" ");
-        return;
-      }
-    }
 
     const rawUnit = cell(row, map.unit);
     const chargeCode = cell(row, map.chargeCode);
@@ -415,8 +413,28 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
       return;
     }
 
+    if (rawUnit && looksLikeNonUnitLabel(rawUnit)) {
+      if (looksLikeSectionPhrase(rawUnit) || looksLikeSectionHeader(row)) {
+        flush();
+        section = looksLikeSectionPhrase(rawUnit) ? rawUnit : row.map((c) => c.trim()).filter(Boolean).join(" ");
+      } else {
+        unmapped.push({ row: line, header: found.headers[unitCol] || "Unit", value: rawUnit, reason: "header_label_row" });
+      }
+      return;
+    }
+
+    if (looksLikeSectionHeader(row)) {
+      const maybeUnit = rawUnit || (row[0] ?? "").trim();
+      if (!maybeUnit || !looksLikeUnitCode(maybeUnit)) {
+        flush();
+        section = looksLikeSectionPhrase(maybeUnit) ? maybeUnit : row.map((c) => c.trim()).filter(Boolean).join(" ");
+        return;
+      }
+    }
+
     const startingUnit = Boolean(
       rawUnit &&
+        !looksLikeNonUnitLabel(rawUnit) &&
         !/^total$/i.test(rawUnit) &&
         !looksLikeHeaderRepeat([rawUnit]) &&
         (looksLikeUnitCode(rawUnit) || !looksLikeSectionHeader(row)),

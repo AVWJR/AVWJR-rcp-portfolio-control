@@ -100,6 +100,51 @@ describe("re-apply vaulted rent roll when Kind is Other", () => {
     expect(await prisma.unit.count({ where: { entityId: entity.id } })).toBe(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
   });
 
+  it("full replace drops Charge Code / section banners that were previously stored as units", async () => {
+    const entity = await newSpe("Hampton Cleanup");
+    await prisma.unit.createMany({
+      data: [
+        {
+          entityId: entity.id,
+          unitCode: "Charge Code",
+          floorplan: "",
+          beds: 0,
+          bathsTenths: 0,
+          sqft: 0,
+          status: "OCCUPIED",
+          marketRent: 0n,
+          inPlaceRent: 0n,
+          concessionCents: 0n,
+          asOfDate: new Date("2026-07-08T16:00:00.000Z"),
+        },
+        {
+          entityId: entity.id,
+          unitCode: "Current/Notice/Vacant Residents",
+          floorplan: "",
+          beds: 0,
+          bathsTenths: 0,
+          sqft: 0,
+          status: "OCCUPIED",
+          marketRent: 329_227_00n,
+          inPlaceRent: 518_504_19n,
+          concessionCents: 0n,
+          asOfDate: new Date("2026-07-08T16:00:00.000Z"),
+        },
+      ],
+    });
+    await vaultAsOther({
+      entityId: entity.id,
+      filename: "Hampton - RR 07.08.26.xlsx",
+      bytes: hamptonLeaseChargesWorkbook(),
+    });
+    const report = await reapplyRentRollForEntity(entity.code);
+    expect(report.imported).toBe(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
+    const codes = (await prisma.unit.findMany({ where: { entityId: entity.id } })).map((u) => u.unitCode);
+    expect(codes).not.toContain("Charge Code");
+    expect(codes).not.toContain("Current/Notice/Vacant Residents");
+    expect(codes).toEqual(expect.arrayContaining(["171L725-1", "FYL725-1"]));
+  });
+
   it("still re-applies a kind=rent_roll redIQ workbook", async () => {
     const entity = await newSpe("Harrington Court");
     await storeVaultDocument({

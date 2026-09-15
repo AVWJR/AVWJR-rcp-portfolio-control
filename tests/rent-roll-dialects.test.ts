@@ -1,6 +1,8 @@
 import { read } from "xlsx";
 import { describe, expect, it } from "vitest";
 import {
+  looksLikeNonUnitLabel,
+  looksLikeUnitCode,
   canonicalUnitSheetRows,
   detectRentRollDialect,
   metaSheetRows,
@@ -50,6 +52,10 @@ describe("rent-roll dialects", () => {
     expect(first.charges.map((c) => c.chargeCode).sort()).toEqual(["r-cable", "r-laundr", "r-rent"]);
     expect(first.section).toMatch(/Current/i);
     expect(first.reportedTotalCents).toBe(1010_20n);
+    const fyl = normalized.units.find((u) => u.unitCode === "FYL725-1");
+    expect(fyl?.unitType).toBe("1PW");
+    expect(fyl?.inPlaceRentCents).toBe(975_00n);
+    expect(fyl?.section).toMatch(/Current\/Notice\/Vacant Residents/i);
     const vacant = normalized.units.find((u) => u.unitCode === "171L730-1");
     expect(vacant?.status).toBe("VACANT");
     expect(vacant?.inPlaceRentCents).toBe(0n);
@@ -88,6 +94,32 @@ describe("rent-roll dialects", () => {
     ]) {
       expect(retained).toContain(token.toLowerCase());
     }
+  });
+
+  it("does not promote Charge Code or Current/Notice/Vacant Residents into units", () => {
+    expect(looksLikeNonUnitLabel("Charge Code")).toBe(true);
+    expect(looksLikeNonUnitLabel("Current/Notice/Vacant Residents")).toBe(true);
+    expect(looksLikeNonUnitLabel("Notice Residents")).toBe(true);
+    expect(looksLikeNonUnitLabel("Vacant Residents")).toBe(true);
+    expect(looksLikeNonUnitLabel("Grand Total")).toBe(true);
+    expect(looksLikeUnitCode("Charge Code")).toBe(false);
+    expect(looksLikeUnitCode("Current/Notice/Vacant Residents")).toBe(false);
+    expect(looksLikeUnitCode("171L725-1")).toBe(true);
+    expect(looksLikeUnitCode("FYL725-1")).toBe(true);
+
+    const normalized = normalizeRentRollTable(hamptonLeaseChargesRows(), { sourceFilename: "Hampton-RR.xlsx" });
+    const codes = normalized.units.map((u) => u.unitCode);
+    expect(codes).not.toContain("Charge Code");
+    expect(codes).not.toContain("Current/Notice/Vacant Residents");
+    expect(codes).not.toContain("Notice Residents");
+    expect(codes).not.toContain("Vacant Residents");
+    expect(codes).not.toContain("Total");
+    expect(codes).toEqual(expect.arrayContaining(["171L725-1", "171L725-2", "FYL725-1", "171L730-1"]));
+    expect(normalized.units).toHaveLength(HAMPTON_LEASE_CHARGES_UNIT_COUNT);
+    expect(normalized.units[0]?.section).toBe("Current/Notice/Vacant Residents");
+    expect(normalized.unmapped.some((row) => row.reason === "header_label_row" && row.value === "Charge Code")).toBe(
+      true,
+    );
   });
 
   it("rebuilds Canonical / Charge Detail / Original / Meta without dropping the source title", () => {
