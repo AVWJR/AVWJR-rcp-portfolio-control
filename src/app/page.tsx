@@ -55,7 +55,7 @@ export default async function HomePage({
                 ...(role === "principal"
                   ? [{ href: "/deals/new", title: "Add Deal", copy: "Guided intake for a new property SPE under OpCo. Upload files now; Dropbox and email hooks when connected." }]
                   : []),
-                { href: "/deals", title: "Deals / SPE list", copy: "Live property SPEs plus saved Add Deal drafts. Deleted deals are not here — use gold nav Deal Archive." },
+                { href: "/deals", title: "Deals / SPE list", copy: "Live property SPEs plus saved Add Deal drafts. LP/GP waterfall is on each SPE card. Deleted deals are not here — use gold nav Deal Archive." },
                 ...(role === "principal"
                   ? [{ href: "/archive", title: "Deal Archive", copy: "Study deleted SPEs and restore them. Not a tab under Deals. Books and vault stay intact." }]
                   : []),

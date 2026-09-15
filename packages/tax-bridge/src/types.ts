@@ -10,7 +10,7 @@ export const K1_EXPORT_LIMITATIONS = [
   "Capital accounts are book-basis rollforwards (beg + contrib − dist ± book NI = end).",
   "Ordinary income is allocated book net income, not tax special allocations, 704(c), or §743(b).",
   "No guaranteed payments, 199A, at-risk, or passive-activity worksheets.",
-  "Seed SPEs are 100% owned — do not invent minority interest or a promote waterfall.",
+  "Seed SPEs default to 100% look-through. Deal LP/GP waterfalls (when saved) amend OpCo cash/CFADS only — not K-1 special allocations, 704(c), or §743(b).",
   "Combined roll-up is not a tax consolidation or a GAAP consolidation.",
 ] as const;
 

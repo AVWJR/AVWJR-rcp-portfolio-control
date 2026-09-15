@@ -289,7 +289,7 @@ export function execThesis(snap: PeriodSnapshot, audience: AudienceId): ExecThes
         bullets: [
           occ,
           `Controllable OpEx is ${formatUsd(snap.controllableOpexCents)}.`,
-          `CFADS (distributions proxy) is ${formatUsd(snap.cfadsCents)}.`,
+          `CFADS (distributions proxy) is ${formatUsd(snap.cfadsCents)}${snap.waterfallApplied ? " after waterfall" : ""}.`,
           plan,
         ],
       };
@@ -510,7 +510,7 @@ function commonDisclosures(snap: PeriodSnapshot): string[] {
       : "Standalone SPE presentation.",
     `LTV gated: ${snap.ltvReason}`,
     `Delinquency not available: ${snap.delinquencyReason}`,
-    "CFADS is a distributions proxy, not a posted investor distribution. No promote waterfall.",
+    "CFADS is a distributions proxy, not a posted investor distribution. Saved deal waterfalls haircut OpCo CFADS to the GP/RCP share; default is 100% look-through.",
     "No live PMS or bank feed. Charts reprint the same period snapshot as the narratives.",
     "Soft-archived SPEs are excluded from live financial packs and OpCo combined roll-up.",
   ];

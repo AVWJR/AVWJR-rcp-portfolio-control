@@ -26,6 +26,7 @@ erDiagram
   Entity ||--o{ VaultDocument : vault
   Entity ||--o{ ReportJob : scheduled-packs
   Entity ||--o{ DealIntake : add-deal
+  Entity ||--o| SpeWaterfall : waterfall
   DealIntake ||--o{ DealIntakeFile : files
   ReportJob ||--o{ ReportJobRun : runs
 
@@ -44,8 +45,17 @@ erDiagram
     datetime restoredAt
     string restoredBy
     string currency "USD"
-    string locale "en-US"
-    string timezone "America/New_York"
+  }
+
+  SpeWaterfall {
+    string id PK
+    string entityId UK
+    string templateId "look_through_100 until chosen"
+    int prefRateBps
+    string compounding "NONE | ANNUAL"
+    bool catchUpEnabled
+    bigint lpContributedCents
+    string tiersJson
   }
 
   Account {
@@ -156,7 +166,7 @@ Roche Capital Partners HoldCo
     └── Harbor Court Residences LLC      (SPE, 84 units, light rehab, 100%)
 ```
 
-Wholly owned **LIVE** SPEs roll into OpCo as a **combined roll-up**. `ARCHIVED` SPEs leave that roll-up and the live Deals list; books and vault stay for study on `/archive`. Intercompany `1310`/`2310` and AM fee `6310`/`7010` eliminate on that view. Occupancy KPIs come from `Unit`, never from the GL.
+Wholly owned **LIVE** SPEs roll into OpCo as a **combined roll-up**. `ARCHIVED` SPEs leave that roll-up and the live Deals list; books and vault stay for study on `/archive`. Intercompany `1310`/`2310` and AM fee `6310`/`7010` eliminate on that view. Occupancy KPIs come from `Unit`, never from the GL. Deal LP/GP waterfalls (when saved) haircut OpCo cash/CFADS to the GP/RCP share; default remains 100% look-through.
 
 ## Posting rule
 

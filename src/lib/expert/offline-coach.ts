@@ -1,5 +1,5 @@
 import { composeExpertChrome, pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
-import { isClearHowToQuery, isDeleteDealQuery, isVagueQuery } from "./feature-intents";
+import { isClearHowToQuery, isDeleteDealQuery, isVagueQuery, isWaterfallQuery } from "./feature-intents";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
@@ -371,6 +371,23 @@ You asked: “${userText.trim()}”
 Are you asking about a number on this page, something missing for this entity, or a click path?`;
 }
 
+function waterfallCopy(ctx: ExpertClientContext): string {
+  const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-HMTOS";
+  const list = link("/deals", ctx, "Deals");
+  const form = link(`/deals/${spe}/waterfall`, { ...ctx, entityCode: spe }, `waterfall for ${spe}`);
+  const opco = link("/dashboard/RCP-OPCO", { ...ctx, entityCode: "RCP-OPCO", view: "combined" }, "OpCo dashboard");
+  return `**How to set the deal waterfall**
+
+Gold nav **Deals** → ${list} → open the SPE card (**${spe}** — or any live SPE) → **LP/GP waterfall**. Direct: ${form}.
+
+1. Click a template chip: Simple pref + promote, Institutional catch-up, Multi-hurdle IRR, American / deal-by-deal, or European / whole-fund. Existing SPEs start as **100% look-through** (today’s OpCo stack) until you choose — nothing silent-changes demo numbers.
+2. Edit pref rate, compounding, catch-up, hurdle IRRs, LP/GP splits, GP co-invest %, promote base, lookback/clawback, LP contributed capital, and notes.
+3. The gold **Applies to OpCo rollup** preview splits this period’s CFADS into **LP share** vs **GP/RCP after waterfall**.
+4. **Save waterfall**. Live ${opco} cash / CFADS / liquidity then use the GP/RCP share. Property NOI stays look-through. Soft-archived SPEs stay out of rollup.
+
+Partners cannot save. This is a distribution waterfall on CFADS / cash-if-distributed — not invented AR or delinquency.`;
+}
+
 function deleteDealCopy(ctx: ExpertClientContext): string {
   const list = link("/deals", ctx, "Deals");
   const archive = link("/archive", ctx, "Deal Archive");
@@ -442,7 +459,9 @@ export function answerOffline(
   if (!q || q === "open" || q === "hello" || q === "hi") {
     return buildOpener(ctx, bundle);
   }
-  if (isDeleteDealQuery(q)) {
+  if (isWaterfallQuery(q) || /how do i set the deal waterfall/.test(q)) {
+    content = waterfallCopy(ctx);
+  } else if (isDeleteDealQuery(q)) {
     content = deleteDealCopy(ctx);
   } else if (/tour|this page|controls|lost|where am i/.test(q) && !/wrong/.test(q)) {
     content = tour(ctx);

@@ -60,7 +60,8 @@ async function DealIndex({
           <p className="mt-2 max-w-2xl text-sm text-ink-700">
             Live property SPEs under OpCo only. Deleted deals are not listed here — study and restore
             them from gold nav <strong>Deal Archive</strong>. Add a new deal when you are onboarding a
-            new SPE, not a new HoldCo or a second OpCo.
+            new SPE, not a new HoldCo or a second OpCo. Set the deal LP/GP waterfall from each SPE card
+            — default is 100% look-through until you pick a template.
           </p>
         </div>
         {role === "principal" ? (
@@ -114,6 +115,12 @@ async function DealIndex({
                 className="text-sm text-navy-800 underline"
               >
                 Open dashboard
+              </Link>
+              <Link
+                href={`/deals/${spe.code}/waterfall?entity=${spe.code}&period=${period}`}
+                className="text-sm text-navy-800 underline"
+              >
+                LP/GP waterfall
               </Link>
               <Link href={`/vault?entity=${spe.code}&period=${period}`} className="text-sm text-navy-800 underline">
                 Vault

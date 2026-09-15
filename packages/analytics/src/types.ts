@@ -55,6 +55,9 @@ export const RATIO_IDS = [
   "look_through_upb",
   "properties_units",
   "noi_concentration",
+  "rcp_after_waterfall",
+  "lp_pref_unpaid",
+  "lp_share_not_upstreamed",
 ] as const;
 
 export type RatioId = (typeof RATIO_IDS)[number];

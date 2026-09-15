@@ -90,6 +90,14 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    test: /^\/deals\/SPE-[A-Z0-9]+\/waterfall$/,
+    title: "Deal waterfall",
+    hints: [
+      "Click a template chip (simple pref, institutional catch-up, multi-hurdle, American, European) then edit pref, splits, and capital.",
+      "Save to amend OpCo cash/CFADS to the GP/RCP share. Default is 100% look-through until you choose.",
+    ],
+  },
+  {
     test: /^\/deals\/new$/,
     title: "Add Deal",
     hints: [
@@ -104,6 +112,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     hints: [
       "Live SPE list plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
       "Delete on a row is a two-step soft-archive. Deleted SPEs are not here — gold nav Deal Archive.",
+      "LP/GP waterfall is on each SPE card — not buried. Default 100% look-through until a template is saved.",
     ],
   },
   {
@@ -190,6 +199,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "bs", href: "/reports/balance-sheet", label: "Balance Sheet", hint: "A = L + E" },
   { id: "cf", href: "/reports/cash-flow", label: "Cash Flow", hint: "Indirect; ties to BS" },
   { id: "deals", href: "/deals", label: "Deals", hint: "Live SPE list and Add Deal drafts" },
+  { id: "waterfall", href: "/deals", label: "Deal waterfall", hint: "LP/GP waterfall on a live SPE card — how do I set the deal waterfall?" },
   { id: "add_deal", href: "/deals/new", label: "Add Deal", hint: "Guided SPE intake" },
   { id: "archive", href: "/archive", label: "Deal Archive", hint: "Deleted SPEs for study — not under Deals" },
   { id: "properties", href: "/properties", label: "Properties", hint: "SPE list / rent roll" },
@@ -233,6 +243,8 @@ export function listNavTargets(): NavTarget[] {
 export function entityFromPathname(pathname: string): string | null {
   const dash = pathname.match(/^\/dashboard\/(SPE-[A-Z0-9]+|RCP-OPCO)$/);
   if (dash) return dash[1];
+  const wf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/waterfall$/);
+  if (wf) return wf[1];
   const prop = pathname.match(/^\/properties\/(SPE-[A-Z0-9]+)$/);
   return prop?.[1] ?? null;
 }

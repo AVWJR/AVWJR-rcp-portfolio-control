@@ -95,6 +95,13 @@ export function fixtureSnapshot(overrides: Partial<PeriodSnapshot> = {}): Period
     gaRatioBps: null,
     lookThroughNoiCents: null,
     combinedRollupNoiCents: null,
+    waterfallApplied: false,
+    cashLookThroughCents: dollars(265_000),
+    cfadsLookThroughCents: dollars(80_400),
+    lpShareOfDistributableCents: 0n,
+    gpShareOfDistributableCents: dollars(80_400),
+    lpPrefUnpaidCents: 0n,
+    waterfallNote: null,
     trends: [
       {
         period: "2026-07",

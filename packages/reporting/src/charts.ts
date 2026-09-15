@@ -251,7 +251,7 @@ export function buildCapexVsReserves(snap: PeriodSnapshot): ChartSuite["capexVsR
         cents: snap.reserveRequirementCents,
       },
     ],
-    footnote: `CFADS (distributions proxy) ${formatUsd(snap.cfadsCents)} = period NOI − PPE additions − reserve requirement. Not an actual distribution.`,
+    footnote: `CFADS (distributions proxy) ${formatUsd(snap.cfadsCents)} = period NOI − PPE additions − reserve requirement${snap.waterfallApplied ? " then RCP/GP share after waterfall" : ""}. Not an actual distribution.`,
   };
 }
 

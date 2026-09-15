@@ -6,3 +6,4 @@ export * from "./balances";
 export * from "./reports";
 export * from "./close";
 export * from "./intercompany";
+export * from "./waterfall";

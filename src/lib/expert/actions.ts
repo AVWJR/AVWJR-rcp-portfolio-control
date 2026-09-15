@@ -1,4 +1,4 @@
-import { isDeleteDealQuery } from "./feature-intents";
+import { isDeleteDealQuery, isWaterfallQuery } from "./feature-intents";
 import { describePage, withContext } from "./nav";
 import type {
   AnomalyFlag,
@@ -67,6 +67,7 @@ export function chromeAlias(label: string, href?: string): string {
   const path = (href ?? "").split("?")[0] || "";
   if (path === "/deals/new" || (/\badd\b/.test(n) && /\bdeal\b/.test(n))) return "add_deal";
   if (path === "/archive" || (/\barchive\b/.test(n) && /\bdeal\b/.test(n))) return "deal_archive";
+  if (path.includes("/waterfall") || (/\bwaterfall\b/.test(n) && /\b(deal|lp|gp|pref|promote)\b/.test(n))) return "deal_waterfall";
   if (path === "/deals" || (/\bdeals?\b/.test(n) && /\b(open|list)\b/.test(n))) return "deals_list";
   if (path) return `path:${path}`;
   return n;
@@ -133,6 +134,15 @@ const IMPORT_RR_CHIP: ExpertChip = {
 
 function queryChips(q: string): ExpertChip[] | null {
   if (!q) return null;
+  if (isWaterfallQuery(q)) {
+    return [
+      {
+        id: "deal_waterfall",
+        label: "Open deal waterfall",
+        prompt: "How do I set the deal waterfall? Give the Deals click path for SPE-HMTOS.",
+      },
+    ];
+  }
   if (isDeleteDealQuery(q)) {
     return [
       {
@@ -210,6 +220,24 @@ export function rankSuggestedActions(
   const page = ctx.pathname;
   const viewer = isViewer(ctx.accessRole);
   const q = userText.trim().toLowerCase();
+
+  if (isWaterfallQuery(q)) {
+    const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-HMTOS";
+    return [
+      {
+        id: "act_waterfall",
+        kind: "navigate",
+        label: "Open deal waterfall",
+        href: dest(`/deals/${spe}/waterfall`, { ...ctx, entityCode: spe }),
+      },
+      {
+        id: "act_deals",
+        kind: "navigate",
+        label: "Open Deals",
+        href: dest("/deals", ctx),
+      },
+    ];
+  }
 
   if (isDeleteDealQuery(q)) {
     const dealActions: ExpertSuggestedAction[] = [

@@ -33,6 +33,7 @@ import { buildOperatingPackage } from "./operating";
 import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
+import { loadSpeWaterfall, runRecordWaterfall } from "./waterfall";
 
 function leaseRollover12mCount(units: { leaseEnd: Date | null }[], asOf: Date): number | null {
   if (!units.length) return null;
@@ -265,6 +266,10 @@ async function loadSpeSnapshot(opts: {
   const trends = await trendForEntity(opts.entityId, opts.year, opts.month);
   const t12 = dash.t12;
   const entity = pack.scope.entity;
+  const wfRecord = await loadSpeWaterfall(opts.entityId);
+  const wfRun = wfRecord
+    ? runRecordWaterfall(wfRecord, cfads > 0n ? cfads : 0n, { periodMonths: 1, europeanPromoteOpen: true })
+    : null;
   const controls = await loadOpsControls({
     entityId: opts.entityId,
     entityIds: [opts.entityId],
@@ -359,6 +364,13 @@ async function loadSpeSnapshot(opts: {
     gaRatioBps: null,
     lookThroughNoiCents: null,
     combinedRollupNoiCents: null,
+    waterfallApplied: Boolean(wfRun && !wfRun.lookThrough),
+    cashLookThroughCents: cash.total,
+    cfadsLookThroughCents: cfads,
+    lpShareOfDistributableCents: wfRun?.lpCents ?? 0n,
+    gpShareOfDistributableCents: wfRun?.gpCents ?? (cfads > 0n ? cfads : 0n),
+    lpPrefUnpaidCents: wfRun?.unpaidPrefAfterCents ?? 0n,
+    waterfallNote: wfRun && !wfRun.lookThrough ? wfRun.notes.join(" ") : null,
     trends,
     loans: dash.loans.map((l) => ({
       entityCode: l.entityCode,
@@ -707,16 +719,27 @@ async function loadOpCoSnapshot(opts: {
           }).breakevenOccupancyBps
         : null,
     lossToLeaseCents: hasRr ? lossToLease : null,
-    cashOperatingCents: cashOperating,
-    cashReserveCents: cashReserve,
-    cashEscrowCents: cashEscrow,
-    cashDepositsCents: cashDeposits,
-    cashTotalCents: cashTotal,
+    cashOperatingCents: dash.waterfallApplied && cashTotal > 0n
+      ? (cashOperating * dash.cashAfterWaterfallCents) / cashTotal
+      : cashOperating,
+    cashReserveCents: dash.waterfallApplied && cashTotal > 0n
+      ? (cashReserve * dash.cashAfterWaterfallCents) / cashTotal
+      : cashReserve,
+    cashEscrowCents: dash.waterfallApplied && cashTotal > 0n
+      ? (cashEscrow * dash.cashAfterWaterfallCents) / cashTotal
+      : cashEscrow,
+    cashDepositsCents: dash.waterfallApplied && cashTotal > 0n
+      ? dash.cashAfterWaterfallCents -
+        (cashOperating * dash.cashAfterWaterfallCents) / cashTotal -
+        (cashReserve * dash.cashAfterWaterfallCents) / cashTotal -
+        (cashEscrow * dash.cashAfterWaterfallCents) / cashTotal
+      : cashDeposits,
+    cashTotalCents: dash.cashAfterWaterfallCents,
     periodCapexCents: periodCapex,
     reserveRequirementCents: reserveReq,
-    cfadsCents: cfads,
-    cfadsDscrBps: cfadsDscrBps(cfads, useInterest + usePrincipal),
-    liquidityMonthsHundredths: liquidityMonthsHundredths(cashTotal, opex),
+    cfadsCents: dash.cfadsAfterWaterfallCents,
+    cfadsDscrBps: cfadsDscrBps(dash.cfadsAfterWaterfallCents, useInterest + usePrincipal),
+    liquidityMonthsHundredths: liquidityMonthsHundredths(dash.cashAfterWaterfallCents, opex),
     dscrBps: covenants.dscrBps,
     dscrThresholdBps: covenants.dscrThresholdBps,
     dscrPass: covenants.dscrPass,
@@ -738,6 +761,13 @@ async function loadOpCoSnapshot(opts: {
     gaRatioBps: gaRatioBps(ga, feeIncome),
     lookThroughNoiCents: noi,
     combinedRollupNoiCents: combinedIs.noi,
+    waterfallApplied: dash.waterfallApplied,
+    cashLookThroughCents: dash.cashLookThroughCents,
+    cfadsLookThroughCents: dash.cfadsLookThroughCents,
+    lpShareOfDistributableCents: dash.lpShareCfadsCents,
+    gpShareOfDistributableCents: dash.cfadsAfterWaterfallCents,
+    lpPrefUnpaidCents: dash.lpPrefUnpaidCents,
+    waterfallNote: dash.waterfallNote,
     trends,
     loans: loans.map((l) => ({
       entityCode: l.entityCode,
