@@ -383,7 +383,7 @@ Gold nav **Deals** → ${list} → open the SPE card (**${spe}** — or any live
 1. Click a template chip: Simple pref + promote, Institutional catch-up, Multi-hurdle IRR, American / deal-by-deal, or European / whole-fund. Existing SPEs start as **100% look-through** (today’s OpCo stack) until you choose — nothing silent-changes demo numbers.
 2. Edit pref rate, compounding, catch-up, hurdle IRRs, LP/GP splits, GP co-invest %, promote base, lookback/clawback, LP contributed capital, and notes.
 3. The gold **Applies to OpCo rollup** preview splits this period’s CFADS into **LP share** vs **GP/RCP after waterfall**.
-4. **Save waterfall**. Live ${opco} cash / CFADS / liquidity then use the GP/RCP share. Property NOI stays look-through. Soft-archived SPEs stay out of rollup.
+4. **Save waterfall**. Live ${opco} cash / CFADS / liquidity then use the GP/RCP share. The **Monthly Investor Pack** and LP/GP/IC narratives reprint this same split (LP share / GP promote / pref unpaid) — they do not stay on 100% look-through. Property NOI stays look-through. Soft-archived SPEs stay out of rollup.
 
 Partners cannot save. This is a distribution waterfall on CFADS / cash-if-distributed — not invented AR or delinquency.`;
 }

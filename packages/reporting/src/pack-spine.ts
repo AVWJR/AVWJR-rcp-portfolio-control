@@ -14,6 +14,7 @@ import { icRecommendation } from "./ic-recommendation";
 import type { AudienceNarrative, NarrativeCitation } from "./narratives";
 import type { AudienceId, PeriodSnapshot } from "./snapshot-types";
 import { AUDIENCE_LABELS } from "./snapshot-types";
+import { audienceCfads, gpDistributionSentence, waterfallSplitSentence } from "./waterfall-view";
 
 export const PACK_SPINE = ["cover", "kpis", "thesis", "visuals", "risks", "appendix"] as const;
 export type PackSpineKind = (typeof PACK_SPINE)[number];
@@ -75,11 +76,11 @@ export type PackSlide =
 
 /** 3–5 board KPIs — audience skin, same strip geometry. */
 export const EXEC_KPI_IDS: Record<AudienceId, AudienceKpiId[]> = {
-  lp: ["look_through_noi", "noi_per_unit", "occupancy", "budget_variance", "liquidity"],
-  gp: ["noi", "occupancy", "cfads", "capex", "fee_income"],
-  ic: ["recommendation", "noi", "dscr", "occupancy", "t12_status"],
+  lp: ["look_through_noi", "noi_per_unit", "lp_share", "lp_pref_unpaid", "occupancy"],
+  gp: ["noi", "occupancy", "cfads", "gp_promote", "capex"],
+  ic: ["recommendation", "noi", "dscr", "lp_share", "gp_promote"],
   lender: ["dscr", "debt_yield", "occupancy", "reserves", "upb"],
-  mgmt: ["close_status", "look_through_noi", "budget_variance", "occupancy", "covenant_watch"],
+  mgmt: ["close_status", "look_through_noi", "lp_share", "gp_promote", "covenant_watch"],
 };
 
 export function visualKind(id: ChartId): PackVisual["mode"] {
@@ -222,7 +223,15 @@ function kpiSoWhat(id: AudienceKpiId, snap: PeriodSnapshot, citation: NarrativeC
     case "covenant_watch":
       return "Fails only.";
     case "cfads":
-      return "Distributions proxy — not a posted investor distribution.";
+      return audienceCfads(snap, "gp").hint;
+    case "lp_share":
+      return snap.waterfallApplied
+        ? "Same SPE waterfall as OpCo — not 100% look-through."
+        : "No template saved; RCP look-through.";
+    case "gp_promote":
+      return snap.waterfallApplied ? "GP/RCP promote + co-invest after waterfall." : "100% look-through until a template is saved.";
+    case "lp_pref_unpaid":
+      return "Preferred return still owed to LP-class.";
     case "capex":
       return `Reserve cash ${formatUsd(snap.cashReserveCents)}.`;
     case "fee_income":
@@ -289,7 +298,7 @@ export function execThesis(snap: PeriodSnapshot, audience: AudienceId): ExecThes
         bullets: [
           occ,
           `Controllable OpEx is ${formatUsd(snap.controllableOpexCents)}.`,
-          `CFADS (distributions proxy) is ${formatUsd(snap.cfadsCents)}${snap.waterfallApplied ? " after waterfall" : ""}.`,
+          gpDistributionSentence(snap),
           plan,
         ],
       };
@@ -364,7 +373,9 @@ export function execRisks(snap: PeriodSnapshot, audience: AudienceId, suite: Cha
             proof: watch,
           },
         ],
-        ask: `No capital call is posted. CFADS of ${formatUsd(snap.cfadsCents)} is a distributions proxy, not an investor distribution.`,
+        ask: snap.waterfallApplied
+          ? `No capital call is posted. ${waterfallSplitSentence(snap)} LP share ${formatUsd(audienceCfads(snap, "lp").cents)} is the distributions proxy for this pack — not gross SPE CFADS.`
+          : `No capital call is posted. CFADS of ${formatUsd(audienceCfads(snap, "lp").cents)} is a distributions proxy, not an investor distribution.`,
       };
     case "gp":
       return {
@@ -438,6 +449,24 @@ export function execRisks(snap: PeriodSnapshot, audience: AudienceId, suite: Cha
 
 function appendixTables(snap: PeriodSnapshot, suite: ChartSuite, leftover: ChartId[]): PackAppendixTable[] {
   const tables: PackAppendixTable[] = [];
+  if (snap.waterfallApplied) {
+    tables.push({
+      title: "Deal waterfall (same config as OpCo)",
+      soWhat: waterfallSplitSentence(snap),
+      headers: ["Slice", "Amount"],
+      rows: [
+        ["CFADS pool (look-through)", formatUsd(snap.cfadsLookThroughCents)],
+        ["LP share after waterfall", formatUsd(snap.lpShareOfDistributableCents)],
+        ["GP/RCP after waterfall", formatUsd(snap.gpShareOfDistributableCents)],
+        ["ROC to LP", formatUsd(snap.waterfallRocLpCents)],
+        ["Pref paid to LP", formatUsd(snap.waterfallPrefPaidLpCents)],
+        ["GP catch-up", formatUsd(snap.waterfallCatchUpGpCents)],
+        ["GP residual promote", formatUsd(snap.waterfallPromoteGpCents)],
+        ["LP residual", formatUsd(snap.waterfallResidualLpCents)],
+        ["LP pref unpaid", formatUsd(snap.lpPrefUnpaidCents)],
+      ],
+    });
+  }
   if (leftover.includes("portfolio_heatmap")) {
     tables.push({
       title: suite.heatmap.title,
@@ -510,7 +539,7 @@ function commonDisclosures(snap: PeriodSnapshot): string[] {
       : "Standalone SPE presentation.",
     `LTV gated: ${snap.ltvReason}`,
     `Delinquency not available: ${snap.delinquencyReason}`,
-    "CFADS is a distributions proxy, not a posted investor distribution. Saved deal waterfalls haircut OpCo CFADS to the GP/RCP share; default is 100% look-through.",
+    "CFADS is a distributions proxy, not a posted investor distribution. Saved deal waterfalls split CFADS into LP share vs GP/RCP; OpCo cash/CFADS and the Monthly Investor Pack use that same config. Default is 100% look-through.",
     "No live PMS or bank feed. Charts reprint the same period snapshot as the narratives.",
     "Soft-archived SPEs are excluded from live financial packs and OpCo combined roll-up.",
   ];

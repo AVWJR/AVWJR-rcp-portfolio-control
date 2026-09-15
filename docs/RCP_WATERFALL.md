@@ -22,7 +22,7 @@ Until the Principal clicks a template and **Saves**, nothing in the demo numbers
 
 - **Persisted** on `SpeWaterfall` (1:1 with the SPE). Missing row = look-through 100%.
 - **Property NOI / occupancy / DSCR** stay look-through (operating performance of the asset).
-- **OpCo cash, CFADS, liquidity, pack CFADS/cash** use **GP/RCP after waterfall**. LP share is labeled **not upstreamed**. **LP pref unpaid** is shown when a template is live.
+- **OpCo cash, CFADS, liquidity, pack CFADS/cash** use **GP/RCP after waterfall**. **LP Monthly Investor Pack / LP narratives** use **LP share after waterfall** plus pref unpaid, catch-up, and residual promote — same `SpeWaterfall` row. Property NOI / occupancy / DSCR stay look-through (operating performance of the asset).
 - Soft-archived SPEs still stay out.
 
 Entry: gold nav **Deals** → SPE card → **LP/GP waterfall** (`/deals/{code}/waterfall`). Also linked from the SPE dashboard and Properties.
@@ -47,7 +47,21 @@ Engine formulas: `packages/ledger/src/waterfall.ts` (`WATERFALL_FORMULAS`). Inte
 4. Click **Institutional pref + 100% catch-up + promote**. Enter LP contributed capital if you want ROC/pref to have a base.
 5. Read **Applies to OpCo rollup** (LP share vs GP/RCP).
 6. **Save waterfall**.
-7. Open **OpCo** combined dashboard: Cash / CFADS should say **after waterfall** and no longer equal 100% of SPE-HMTOS cash.
+7. Open **OpCo** combined dashboard: Cash / CFADS say **after waterfall**.
+8. Open **Narratives → Limited Partner** (or export Monthly Investor Pack): distributions / pref / promote must match the SPE waterfall (LP share, not 100% look-through).
+
+## Packs (one source of truth)
+
+The period snapshot carries both the CFADS **pool** and the LP/GP split. Audience packs pick:
+
+| Audience | Economic CFADS / cash |
+| --- | --- |
+| LP (`monthly_investor`) | LP share after waterfall; pref unpaid; residual LP vs GP promote |
+| GP | GP/RCP after waterfall (promote + catch-up + co-invest) |
+| IC / Management | Both sides labeled; do not ship look-through as LP cash |
+| Lender | SPE **book** CFADS/cash for coverage/collateral, plus the split disclosed |
+
+Default with no template remains 100% look-through.
 
 ## APIs
 

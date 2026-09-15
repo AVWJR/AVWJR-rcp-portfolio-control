@@ -33,7 +33,7 @@ import { buildOperatingPackage } from "./operating";
 import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
-import { loadSpeWaterfall, runRecordWaterfall } from "./waterfall";
+import { loadLiveSpeWaterfalls, loadSpeWaterfall, europeanPromoteOpen, applyWaterfallToPools } from "./waterfall";
 
 function leaseRollover12mCount(units: { leaseEnd: Date | null }[], asOf: Date): number | null {
   if (!units.length) return null;
@@ -267,9 +267,17 @@ async function loadSpeSnapshot(opts: {
   const t12 = dash.t12;
   const entity = pack.scope.entity;
   const wfRecord = await loadSpeWaterfall(opts.entityId);
-  const wfRun = wfRecord
-    ? runRecordWaterfall(wfRecord, cfads > 0n ? cfads : 0n, { periodMonths: 1, europeanPromoteOpen: true })
+  const siblings = entity.parentId ? await loadLiveSpeWaterfalls(entity.parentId) : wfRecord ? [wfRecord] : [];
+  const gate = europeanPromoteOpen(siblings.length ? siblings : wfRecord ? [wfRecord] : [], 1);
+  const wfPools = wfRecord
+    ? applyWaterfallToPools(
+        wfRecord,
+        { cashCents: cash.total, cfadsCents: cfads > 0n ? cfads : 0n },
+        gate,
+        1,
+      )
     : null;
+  const wfApplied = Boolean(wfPools && !wfPools.lookThrough);
   const controls = await loadOpsControls({
     entityId: opts.entityId,
     entityIds: [opts.entityId],
@@ -364,13 +372,25 @@ async function loadSpeSnapshot(opts: {
     gaRatioBps: null,
     lookThroughNoiCents: null,
     combinedRollupNoiCents: null,
-    waterfallApplied: Boolean(wfRun && !wfRun.lookThrough),
+    waterfallApplied: wfApplied,
+    waterfallTemplateId: wfApplied && wfPools ? wfPools.templateId : null,
     cashLookThroughCents: cash.total,
     cfadsLookThroughCents: cfads,
-    lpShareOfDistributableCents: wfRun?.lpCents ?? 0n,
-    gpShareOfDistributableCents: wfRun?.gpCents ?? (cfads > 0n ? cfads : 0n),
-    lpPrefUnpaidCents: wfRun?.unpaidPrefAfterCents ?? 0n,
-    waterfallNote: wfRun && !wfRun.lookThrough ? wfRun.notes.join(" ") : null,
+    cashLpCents: wfPools?.cashLpCents ?? 0n,
+    cashGpCents: wfPools?.cashGpCents ?? (cash.total > 0n ? cash.total : 0n),
+    lpShareOfDistributableCents: wfApplied ? (wfPools?.cfadsLpCents ?? 0n) : 0n,
+    gpShareOfDistributableCents: wfApplied
+      ? (wfPools?.cfadsGpCents ?? 0n)
+      : cfads > 0n
+        ? cfads
+        : 0n,
+    lpPrefUnpaidCents: wfPools?.unpaidPrefAfterCents ?? 0n,
+    waterfallRocLpCents: wfApplied ? (wfPools?.rocLpCents ?? 0n) : 0n,
+    waterfallPrefPaidLpCents: wfApplied ? (wfPools?.prefLpCents ?? 0n) : 0n,
+    waterfallCatchUpGpCents: wfApplied ? (wfPools?.catchUpGpCents ?? 0n) : 0n,
+    waterfallPromoteGpCents: wfApplied ? (wfPools?.promoteGpCents ?? 0n) : 0n,
+    waterfallResidualLpCents: wfApplied ? (wfPools?.residualLpCents ?? 0n) : 0n,
+    waterfallNote: wfApplied && wfPools ? wfPools.waterfallNote : null,
     trends,
     loans: dash.loans.map((l) => ({
       entityCode: l.entityCode,
@@ -762,11 +782,21 @@ async function loadOpCoSnapshot(opts: {
     lookThroughNoiCents: noi,
     combinedRollupNoiCents: combinedIs.noi,
     waterfallApplied: dash.waterfallApplied,
+    waterfallTemplateId: dash.waterfallApplied
+      ? dash.properties.find((p) => p.afterWaterfall)?.templateId ?? "saved"
+      : null,
     cashLookThroughCents: dash.cashLookThroughCents,
     cfadsLookThroughCents: dash.cfadsLookThroughCents,
+    cashLpCents: dash.cashLpCents,
+    cashGpCents: dash.cashAfterWaterfallCents,
     lpShareOfDistributableCents: dash.lpShareCfadsCents,
     gpShareOfDistributableCents: dash.cfadsAfterWaterfallCents,
     lpPrefUnpaidCents: dash.lpPrefUnpaidCents,
+    waterfallRocLpCents: dash.waterfallRocLpCents,
+    waterfallPrefPaidLpCents: dash.waterfallPrefPaidLpCents,
+    waterfallCatchUpGpCents: dash.waterfallCatchUpGpCents,
+    waterfallPromoteGpCents: dash.waterfallPromoteGpCents,
+    waterfallResidualLpCents: dash.waterfallResidualLpCents,
     waterfallNote: dash.waterfallNote,
     trends,
     loans: loans.map((l) => ({

@@ -6,7 +6,7 @@ OpCo accounting / portfolio control for **Roche Capital Partners**. Phase A is t
 
 Locked stack: TypeScript, Next.js App Router, Prisma, PostgreSQL in production, **SQLite for local demo**. Server actions + API routes. USD, `en-US`, `America/New_York`. Integer cents. Double-entry intact.
 
-Entity tree: **HoldCo → OpCo → Property SPE/LLC**. Seed SPEs are 100% owned and **looked through 100%** until a Principal saves a deal waterfall. OpCo asset management fees sit **below NOI** on the SPE. OpCo’s multi-SPE view is a **combined roll-up** (eliminates IC `1310`/`2310` and AM `6310`/`7010`) — not a GAAP consolidation. Deal LP/GP waterfalls (when saved) amend OpCo cash/CFADS to the GP/RCP share. See [docs/RCP_INTERCOMPANY.md](./docs/RCP_INTERCOMPANY.md) and [docs/RCP_WATERFALL.md](./docs/RCP_WATERFALL.md).
+Entity tree: **HoldCo → OpCo → Property SPE/LLC**. Seed SPEs are 100% owned and **looked through 100%** until a Principal saves a deal waterfall. OpCo asset management fees sit **below NOI** on the SPE. OpCo’s multi-SPE view is a **combined roll-up** (eliminates IC `1310`/`2310` and AM `6310`/`7010`) — not a GAAP consolidation. Deal LP/GP waterfalls (when saved) amend OpCo cash/CFADS to the GP/RCP share and LP packs to the LP share. See [docs/RCP_INTERCOMPANY.md](./docs/RCP_INTERCOMPANY.md) and [docs/RCP_WATERFALL.md](./docs/RCP_WATERFALL.md).
 
 ## Local (SQLite) vs Vercel (Neon Postgres)
 

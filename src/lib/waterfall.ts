@@ -7,6 +7,7 @@ import {
   prefAccrualCents,
   runWaterfall,
   scaleByShare,
+  summarizeWaterfall,
   WATERFALL_COMPOUNDING,
   PROMOTE_BASES,
   type PromoteBase,
@@ -261,6 +262,11 @@ export type SpeWaterfallPools = {
   cfadsLpCents: bigint;
   unpaidPrefAfterCents: bigint;
   prefAccruedThisRunCents: bigint;
+  rocLpCents: bigint;
+  prefLpCents: bigint;
+  catchUpGpCents: bigint;
+  promoteGpCents: bigint;
+  residualLpCents: bigint;
   waterfallNote: string;
 };
 
@@ -272,6 +278,7 @@ export function applyWaterfallToPools(
 ): SpeWaterfallPools {
   const cashRun = runRecordWaterfall(record, pools.cashCents, { periodMonths, europeanPromoteOpen: europeanOpen });
   const cfadsRun = runRecordWaterfall(record, pools.cfadsCents, { periodMonths, europeanPromoteOpen: europeanOpen });
+  const tiers = summarizeWaterfall(cfadsRun);
   return {
     entityCode: record.entityCode,
     entityName: record.entityName,
@@ -285,6 +292,11 @@ export function applyWaterfallToPools(
     cfadsLpCents: cfadsRun.lpCents,
     unpaidPrefAfterCents: cfadsRun.unpaidPrefAfterCents,
     prefAccruedThisRunCents: cfadsRun.prefAccruedThisRunCents,
+    rocLpCents: tiers.rocLpCents,
+    prefLpCents: tiers.prefLpCents,
+    catchUpGpCents: tiers.catchUpGpCents,
+    promoteGpCents: tiers.promoteGpCents,
+    residualLpCents: tiers.residualLpCents,
     waterfallNote: [...cfadsRun.notes, ...cfadsRun.steps.slice(0, 1).map((s) => s.label)].join(" "),
   };
 }
@@ -300,6 +312,11 @@ export type OpCoWaterfallRollup = {
   cfadsGpCents: bigint;
   cfadsLpCents: bigint;
   unpaidPrefCents: bigint;
+  rocLpCents: bigint;
+  prefLpCents: bigint;
+  catchUpGpCents: bigint;
+  promoteGpCents: bigint;
+  residualLpCents: bigint;
   europeanPromoteOpen: boolean;
   note: string;
   spes: SpeWaterfallPools[];
@@ -327,6 +344,11 @@ export function rollupWaterfallPools(
   const cfadsGp = spes.reduce((acc, s) => acc + s.cfadsGpCents, 0n);
   const cfadsLp = spes.reduce((acc, s) => acc + s.cfadsLpCents, 0n);
   const unpaidPref = spes.reduce((acc, s) => acc + s.unpaidPrefAfterCents, 0n);
+  const rocLpCents = spes.reduce((acc, s) => acc + s.rocLpCents, 0n);
+  const prefLpCents = spes.reduce((acc, s) => acc + s.prefLpCents, 0n);
+  const catchUpGpCents = spes.reduce((acc, s) => acc + s.catchUpGpCents, 0n);
+  const promoteGpCents = spes.reduce((acc, s) => acc + s.promoteGpCents, 0n);
+  const residualLpCents = spes.reduce((acc, s) => acc + s.residualLpCents, 0n);
   const applied = templatedCount > 0;
   const note = applied
     ? `OpCo cash and CFADS are RCP/GP after waterfall (${templatedCount} SPE template(s)). LP share is not look-through. Property NOI stays look-through. Soft-archived SPEs stay out.`
@@ -342,6 +364,11 @@ export function rollupWaterfallPools(
     cfadsGpCents: cfadsGp,
     cfadsLpCents: cfadsLp,
     unpaidPrefCents: unpaidPref,
+    rocLpCents,
+    prefLpCents,
+    catchUpGpCents,
+    promoteGpCents,
+    residualLpCents,
     europeanPromoteOpen: gate,
     note,
     spes,

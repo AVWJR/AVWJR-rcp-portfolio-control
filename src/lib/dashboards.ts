@@ -43,7 +43,7 @@ import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
 import { loadBrokerT12Overlay, type BrokerT12OverlaySummary } from "./t12-overlay";
-import { loadLiveSpeWaterfalls, rollupWaterfallPools } from "./waterfall";
+import { loadLiveSpeWaterfalls, rollupWaterfallPools, europeanPromoteOpen, applyWaterfallToPools, loadSpeWaterfall } from "./waterfall";
 
 export type LiveRatio = {
   id: RatioId;
@@ -111,7 +111,13 @@ export type OpCoDashboard = {
   cashAfterWaterfallCents: bigint;
   cfadsAfterWaterfallCents: bigint;
   lpShareCfadsCents: bigint;
+  cashLpCents: bigint;
   lpPrefUnpaidCents: bigint;
+  waterfallRocLpCents: bigint;
+  waterfallPrefPaidLpCents: bigint;
+  waterfallCatchUpGpCents: bigint;
+  waterfallPromoteGpCents: bigint;
+  waterfallResidualLpCents: bigint;
   waterfallNote: string;
 };
 
@@ -236,6 +242,13 @@ export async function buildPropertyDashboard(opts: {
   const delq = ratioAvailability("delinquency");
   const ctx = qs(entity.code, period);
   const brokerOverlay = await loadBrokerT12Overlay(entity.id);
+  const wfRecord = await loadSpeWaterfall(entity.id);
+  const siblings = entity.parentId ? await loadLiveSpeWaterfalls(entity.parentId) : wfRecord ? [wfRecord] : [];
+  const gate = europeanPromoteOpen(siblings.length ? siblings : wfRecord ? [wfRecord] : [], 1);
+  const wfPools = wfRecord
+    ? applyWaterfallToPools(wfRecord, { cashCents: cash.total, cfadsCents: cfads > 0n ? cfads : 0n }, gate, 1)
+    : null;
+  const wfApplied = Boolean(wfPools && !wfPools.lookThrough);
 
   const tiles: LiveRatio[] = [
     live({
@@ -342,7 +355,9 @@ export async function buildPropertyDashboard(opts: {
     live({
       id: "cfads",
       display: formatUsd(cfads),
-      hint: "Period NOI − PPE additions − reserve requirement",
+      hint: wfApplied
+        ? `SPE CFADS pool (book). LP share ${formatUsd(wfPools!.cfadsLpCents)} · GP/RCP ${formatUsd(wfPools!.cfadsGpCents)} after waterfall.`
+        : "Period NOI − PPE additions − reserve requirement",
       contributors: [
         contributor({ kind: "account", code: "NOI", label: "Period NOI", statement: "os" }, entity.code, period, actual.noi),
         contributor({ kind: "capex", field: "periodPpeAdditions", label: "Period PPE additions", statement: "cf" }, entity.code, period, periodCapex),
@@ -485,6 +500,34 @@ export async function buildPropertyDashboard(opts: {
         contributor({ kind: "account", code: "1110", label: "AR control total (not aging)", statement: "tb" }, entity.code, period, endMap.get("1110") ?? 0n),
       ],
     }),
+    ...(wfApplied && wfPools
+      ? [
+          live({
+            id: "lp_share_not_upstreamed",
+            display: formatUsd(wfPools.cfadsLpCents),
+            hint: "LP share of period CFADS after this SPE’s waterfall — same config as OpCo rollup / LP pack",
+            contributors: [
+              contributor({ kind: "entity", field: "lpShare", label: "LP CFADS after waterfall" }, entity.code, period, wfPools.cfadsLpCents),
+            ],
+          }),
+          live({
+            id: "rcp_after_waterfall",
+            display: formatUsd(wfPools.cfadsGpCents),
+            hint: "GP/RCP share after waterfall (promote + co-invest). OpCo cash/CFADS use this share.",
+            contributors: [
+              contributor({ kind: "entity", field: "gpShare", label: "GP/RCP CFADS after waterfall" }, entity.code, period, wfPools.cfadsGpCents),
+            ],
+          }),
+          live({
+            id: "lp_pref_unpaid",
+            display: formatUsd(wfPools.unpaidPrefAfterCents),
+            hint: "LP pref unpaid after this period’s CFADS waterfall",
+            contributors: [
+              contributor({ kind: "entity", field: "unpaidPref", label: "LP pref unpaid" }, entity.code, period, wfPools.unpaidPrefAfterCents),
+            ],
+          }),
+        ]
+      : []),
   ];
 
   return {
@@ -859,7 +902,13 @@ export async function buildOpCoDashboard(opts: {
     cashAfterWaterfallCents: displayCash,
     cfadsAfterWaterfallCents: displayCfads,
     lpShareCfadsCents: waterfall.cfadsLpCents,
+    cashLpCents: waterfall.cashLpCents,
     lpPrefUnpaidCents: waterfall.unpaidPrefCents,
+    waterfallRocLpCents: waterfall.rocLpCents,
+    waterfallPrefPaidLpCents: waterfall.prefLpCents,
+    waterfallCatchUpGpCents: waterfall.catchUpGpCents,
+    waterfallPromoteGpCents: waterfall.promoteGpCents,
+    waterfallResidualLpCents: waterfall.residualLpCents,
     waterfallNote: waterfall.note,
   };
 }

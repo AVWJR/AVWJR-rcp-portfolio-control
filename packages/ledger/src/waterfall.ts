@@ -669,6 +669,51 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
   };
 }
 
+export type WaterfallTierTotals = {
+  rocLpCents: bigint;
+  rocGpCents: bigint;
+  prefLpCents: bigint;
+  prefGpCents: bigint;
+  catchUpGpCents: bigint;
+  promoteGpCents: bigint;
+  residualLpCents: bigint;
+};
+
+export const EMPTY_WATERFALL_TOTALS: WaterfallTierTotals = {
+  rocLpCents: 0n,
+  rocGpCents: 0n,
+  prefLpCents: 0n,
+  prefGpCents: 0n,
+  catchUpGpCents: 0n,
+  promoteGpCents: 0n,
+  residualLpCents: 0n,
+};
+
+/** ROC / pref / catch-up / residual promote from an auditable run. */
+export function summarizeWaterfall(result: WaterfallRunResult): WaterfallTierTotals {
+  const out: WaterfallTierTotals = { ...EMPTY_WATERFALL_TOTALS };
+  for (const step of result.steps) {
+    switch (step.kind) {
+      case "ROC":
+        out.rocLpCents += step.lpCents;
+        out.rocGpCents += step.gpCents;
+        break;
+      case "PREF":
+        out.prefLpCents += step.lpCents;
+        out.prefGpCents += step.gpCents;
+        break;
+      case "CATCH_UP":
+        out.catchUpGpCents += step.gpCents;
+        break;
+      case "PROMOTE":
+        out.residualLpCents += step.lpCents;
+        out.promoteGpCents += step.gpCents;
+        break;
+    }
+  }
+  return out;
+}
+
 export function gpShareBps(result: WaterfallRunResult): number {
   if (result.distributableCents <= 0n) {
     return result.lookThrough ? BPS_DENOMINATOR : 0;
