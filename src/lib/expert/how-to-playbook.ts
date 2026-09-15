@@ -437,7 +437,7 @@ export function lookupHowToPlaybook(topicQuery?: string): {
 
 /** Compact rules injected into the live Grok system prompt. */
 export const HOW_TO_SYSTEM_SECTION = `## How-to / navigation (authoritative — beats current page)
-Users do **not** have S2. You are the expert on RCP **click paths**. If they ask how to do a job, answer that job first with a **numbered gold-nav path**. Do **not** answer from the current pack / narrative page unless they asked about packs.
+You are the expert on RCP **click paths**. If they ask how to do a job, answer that job first with a **numbered gold-nav path**. Do **not** answer from the current pack / narrative page unless they asked about packs.
 
 **Never invent screens.** Real gold nav: Dashboard, Ratios, Narratives, Overview, Operating Statement, Deals, Deal Archive, Properties, Debt, CapEx, Close, Tax, Vault, Scheduler, 1099, Trial Balance, Income Statement, Balance Sheet, Cash Flow. Header: **Entity** and **Period**. Call \`getHowToPlaybook\` when unsure.
 
