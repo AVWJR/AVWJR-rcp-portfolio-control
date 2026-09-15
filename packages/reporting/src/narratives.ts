@@ -13,6 +13,13 @@ import {
   passFail,
   periodLabel,
 } from "./formatters";
+import {
+  audienceCash,
+  audienceCfads,
+  gpDistributionSentence,
+  lpDistributionParagraph,
+  waterfallSplitSentence,
+} from "./waterfall-view";
 
 export type { IcAction };
 export { icRecommendation };
@@ -84,7 +91,7 @@ function seedDisclaimer(snap: PeriodSnapshot): string {
   return bits.join(" ");
 }
 
-function citationCatalog(snap: PeriodSnapshot): Record<AudienceKpiId, NarrativeCitation> {
+function citationCatalog(snap: PeriodSnapshot, audience: AudienceId): Record<AudienceKpiId, NarrativeCitation> {
   const rec = icRecommendation(snap);
   const debtService = snap.interestCents + snap.principalCents;
   const watch =
@@ -111,6 +118,8 @@ function citationCatalog(snap: PeriodSnapshot): Record<AudienceKpiId, NarrativeC
     snap.priorNoiCents === null
       ? "No prior month"
       : formatUsd(snap.noiCents - snap.priorNoiCents);
+  const cfadsView = audienceCfads(snap, audience);
+  const cashView = audienceCash(snap, audience);
   return {
     noi: cite(
       "noi",
@@ -165,9 +174,9 @@ function citationCatalog(snap: PeriodSnapshot): Record<AudienceKpiId, NarrativeC
       snap.budgetNoiCents === null ? "No monthly budget posted" : `${formatBpsAsPercent(snap.noiVarianceBps)} vs plan`,
       "period",
     ),
-    cash: cite("cash", "Cash", formatUsd(snap.cashTotalCents), "USD", "GL 1010–1040"),
+    cash: cite("cash", cashView.label, formatUsd(cashView.cents), "USD", cashView.hint),
     btcf: cite("btcf", "BTCF", formatUsd(snap.btcfCents), "USD", "Period NOI − interest − principal"),
-    cfads: cite("cfads", "CFADS", formatUsd(snap.cfadsCents), "USD", "Distributions proxy · NOI − PPE − reserve req."),
+    cfads: cite("cfads", cfadsView.label, formatUsd(cfadsView.cents), "USD", cfadsView.hint),
     cfads_dscr: cite(
       "cfads_dscr",
       "CFADS-DSCR",
@@ -246,11 +255,38 @@ function citationCatalog(snap: PeriodSnapshot): Record<AudienceKpiId, NarrativeC
     mom: cite("mom", "NOI MoM", mom, "USD", "Period NOI minus prior month · period definition", "period"),
     units: cite("units", "Units", String(snap.unitCount || "—"), "count", "Look-through unit count"),
     properties: cite("properties", "Properties", String(snap.propertyCount), "count", "SPE count in this view"),
+    lp_share: cite(
+      "lp_share",
+      "LP share after waterfall",
+      snap.waterfallApplied ? formatUsd(snap.lpShareOfDistributableCents) : "Look-through",
+      snap.waterfallApplied ? "USD" : "—",
+      snap.waterfallApplied
+        ? "LP entitlement of this SPE’s CFADS — same waterfall as OpCo. Not 100% look-through."
+        : "No template saved — 100% look-through to RCP; LP share is not computed.",
+    ),
+    gp_promote: cite(
+      "gp_promote",
+      snap.waterfallApplied ? "GP/RCP after waterfall" : "GP/RCP look-through",
+      snap.waterfallApplied ? formatUsd(snap.rcpShareOfDistributableCents) : formatUsd(snap.gpShareOfDistributableCents),
+      "USD",
+      snap.waterfallApplied
+        ? `Promote ${formatUsd(snap.waterfallPromoteGpCents)} + catch-up ${formatUsd(snap.waterfallCatchUpGpCents)} (plus co-invest in the GP total).${snap.coGpShareOfDistributableCents > 0n ? ` Co-GP ${formatUsd(snap.coGpShareOfDistributableCents)}; RCP ${formatUsd(snap.rcpShareOfDistributableCents)}.` : ""}`
+        : "100% look-through until a deal waterfall is saved.",
+    ),
+    lp_pref_unpaid: cite(
+      "lp_pref_unpaid",
+      "LP pref unpaid",
+      formatUsd(snap.lpPrefUnpaidCents),
+      "USD",
+      snap.waterfallApplied
+        ? "Preferred return still owed to LP-class after this period’s CFADS waterfall."
+        : "No template saved — pref is not accrued on look-through.",
+    ),
   };
 }
 
-function citationsFor(snap: PeriodSnapshot, ids: AudienceKpiId[]): NarrativeCitation[] {
-  const catalog = citationCatalog(snap);
+function citationsFor(snap: PeriodSnapshot, ids: AudienceKpiId[], audience: AudienceId): NarrativeCitation[] {
+  const catalog = citationCatalog(snap, audience);
   return ids.map((id) => catalog[id]);
 }
 
@@ -267,9 +303,9 @@ function envelope(snap: PeriodSnapshot, audience: AudienceId, extras: Pick<Audie
     entityName: snap.entityName,
     period: snap.period,
     viewLabel: snap.viewLabel,
-    citations: citationsFor(snap, brief.kpiIds),
-    sharedCitations: citationsFor(snap, parts.shared),
-    specificCitations: citationsFor(snap, parts.specific),
+    citations: citationsFor(snap, brief.kpiIds, audience),
+    sharedCitations: citationsFor(snap, parts.shared, audience),
+    specificCitations: citationsFor(snap, parts.specific, audience),
     chartIds: brief.chartIds,
     seedDisclaimer: seedDisclaimer(snap),
     ...extras,
@@ -407,7 +443,7 @@ function lpNarrative(snap: PeriodSnapshot): AudienceNarrative {
       },
       {
         heading: "Ask / next capital event",
-        body: `No investor distribution subledger and no capital-call notice are posted for ${snap.period}. The book distributions proxy is CFADS of ${formatUsd(snap.cfadsCents)} (period NOI ${formatUsd(snap.noiCents)} less period PPE additions ${formatUsd(snap.periodCapexCents)} and the monthly reserve requirement of ${formatUsd(snap.reserveRequirementCents)}). Before-tax cash flow after debt service is BTCF of ${formatUsd(snap.btcfCents)}. Ending cash is ${formatUsd(snap.cashTotalCents)}, including replacement-reserve cash of ${formatUsd(snap.cashReserveCents)}. Next capital event: none scheduled on this seed — do not invent a call, refinance, or promote. This is a stewardship update, not a K-1 or tax bridge.`,
+        body: `${lpDistributionParagraph(snap)} Before-tax cash flow after debt service is BTCF of ${formatUsd(snap.btcfCents)} (property operations — AM stays below NOI). Next capital event: none scheduled on this seed — do not invent a call or refinance. This is a stewardship update, not a K-1 or tax bridge.`,
       },
     ],
   });
@@ -435,11 +471,11 @@ function gpNarrative(snap: PeriodSnapshot): AudienceNarrative {
     sections: [
       {
         heading: "Intervene this month",
-        body: `${scopeClause(snap)} ${problemChild(snap)} ${varianceSentence(snap)} Controllable OpEx is ${formatUsd(snap.controllableOpexCents)} (${formatBpsAsPercent(snap.controllableOpexRatioBps)} of EGI) — a spike here is the site lever, not a lender memo. ${occupancyFacts(snap)} LTL ${formatUsdOrDash(snap.lossToLeaseCents)}.${lease} ${capexFlag} CFADS ${formatUsd(snap.cfadsCents)}. Do not lead with DSCR/maturity jargon; those are watchlist reason codes only: ${failsOnlyWatch(snap)}`,
+        body: `${scopeClause(snap)} ${problemChild(snap)} ${varianceSentence(snap)} Controllable OpEx is ${formatUsd(snap.controllableOpexCents)} (${formatBpsAsPercent(snap.controllableOpexRatioBps)} of EGI) — a spike here is the site lever, not a lender memo. ${occupancyFacts(snap)} LTL ${formatUsdOrDash(snap.lossToLeaseCents)}.${lease} ${capexFlag} ${gpDistributionSentence(snap)} Do not lead with DSCR/maturity jargon; those are watchlist reason codes only: ${failsOnlyWatch(snap)}`,
       },
       {
         heading: "Fee income / OpCo burn versus property",
-        body: `${fee}${mismatch} Property period NOI is ${formatUsd(snap.noiCents)}; liquidity on the books is ${formatUsd(snap.cashTotalCents)} (${formatMonthsCoverage(snap.liquidityMonthsHundredths)} of OpEx). ${
+        body: `${fee}${mismatch} Property period NOI is ${formatUsd(snap.noiCents)}; ${gpDistributionSentence(snap)} Liquidity on the SPE books is ${formatUsd(snap.cashLookThroughCents || snap.cashTotalCents)} (${formatMonthsCoverage(snap.liquidityMonthsHundredths)} of OpEx). ${
           snap.lookThroughNoiCents !== null
             ? `Look-through property NOI is ${formatUsd(snap.lookThroughNoiCents)}.`
             : "This is a standalone SPE book."
@@ -483,7 +519,7 @@ function icNarrative(snap: PeriodSnapshot): AudienceNarrative {
       },
       {
         heading: "Falsifiers",
-        body: `What kills or holds the thesis: silent T12 annualization; covenant breach with no mitigation (${failsOnlyWatch(snap)}); concentration plus weak occupancy; definition drift (calling annualized period NOI a T12). A DSCR print below ${formatBpsAsMultiple(snap.dscrThresholdBps)}, physical occupancy below breakeven ${formatBpsAsPercent(snap.breakevenOccupancyBps)}, or an unlabeled T12 would move this file toward HOLD or KILL. Path-dependency: the two-month demo cannot become a T12 by multiplying. Delinquency is stubbed. ${snap.delinquencyReason} No marketing fluff.`,
+        body: `What kills or holds the thesis: silent T12 annualization; covenant breach with no mitigation (${failsOnlyWatch(snap)}); concentration plus weak occupancy; definition drift (calling annualized period NOI a T12); treating gross SPE CFADS as LP (or GP) cash after a waterfall is saved. ${waterfallSplitSentence(snap)} A DSCR print below ${formatBpsAsMultiple(snap.dscrThresholdBps)}, physical occupancy below breakeven ${formatBpsAsPercent(snap.breakevenOccupancyBps)}, or an unlabeled T12 would move this file toward HOLD or KILL. Path-dependency: the two-month demo cannot become a T12 by multiplying. Delinquency is stubbed. ${snap.delinquencyReason} No marketing fluff.`,
       },
     ],
   });
@@ -526,7 +562,7 @@ function lenderNarrative(snap: PeriodSnapshot): AudienceNarrative {
       },
       {
         heading: "Collateral operations",
-        body: `${occupancyFacts(snap)}${occBelow ? " Red flag: breakeven exceeds physical occupancy." : ""} Cash ${formatUsd(snap.cashTotalCents)} (operating ${formatUsd(snap.cashOperatingCents)}, reserve 1020 ${formatUsd(snap.cashReserveCents)}, escrow ${formatUsd(snap.cashEscrowCents)}). CFADS ${formatUsd(snap.cfadsCents)}; CFADS-DSCR ${formatBpsAsMultiple(snap.cfadsDscrBps)}. Delinquency is not available from GL 1110. ${snap.delinquencyReason} No tax / K-1 language.`,
+        body: `${occupancyFacts(snap)}${occBelow ? " Red flag: breakeven exceeds physical occupancy." : ""} SPE book cash ${formatUsd(snap.cashLookThroughCents || snap.cashTotalCents)} (operating ${formatUsd(snap.cashOperatingCents)}, reserve 1020 ${formatUsd(snap.cashReserveCents)}, escrow ${formatUsd(snap.cashEscrowCents)}). SPE CFADS pool ${formatUsd(snap.cfadsLookThroughCents || snap.cfadsCents)}; CFADS-DSCR ${formatBpsAsMultiple(snap.cfadsDscrBps)}. ${snap.waterfallApplied ? `${waterfallSplitSentence(snap)} Lender coverage uses the SPE book pool, not the LP share. ` : ""}Delinquency is not available from GL 1110. ${snap.delinquencyReason} No tax / K-1 language.`,
       },
     ],
   });
@@ -566,7 +602,7 @@ function mgmtNarrative(snap: PeriodSnapshot): AudienceNarrative {
       },
       {
         heading: "What ships externally?",
-        body: `External ship list this period: LP stewardship pack (not a CoA dump), lender covenant memo (not an LP letter), IC go/hold/kill memo. Do not ship marketing copy, a GAAP consolidation claim, or tax-filing language. CPA tax export is not a filing. ${t12Sentence(snap)} Watchlist that would block a ship: ${failsOnlyWatch(snap)}`,
+        body: `External ship list this period: LP stewardship pack (not a CoA dump), lender covenant memo (not an LP letter), IC go/hold/kill memo. ${waterfallSplitSentence(snap)} LP pack and OpCo dashboards reprint this same waterfall — do not ship 100% look-through CFADS as LP cash after a template is saved. Do not ship marketing copy, a GAAP consolidation claim, or tax-filing language. CPA tax export is not a filing. ${t12Sentence(snap)} Watchlist that would block a ship: ${failsOnlyWatch(snap)}`,
       },
     ],
   });

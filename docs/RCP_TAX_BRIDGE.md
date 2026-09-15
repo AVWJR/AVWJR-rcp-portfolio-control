@@ -49,7 +49,7 @@ Beginning comes from 3010 / 3020 through period start. Period contrib / dist fro
 
 - Not a filed Schedule K-1 (Form 1065).
 - Book-basis capital only. No 704(c), §743(b), special allocations, guaranteed payments, 199A, at-risk, or PAL worksheets.
-- No promote waterfall. No invented minority interest.
+- K-1 export does not apply the deal LP/GP waterfall (book capital rollforward only). OpCo cash/CFADS do, when a template is saved.
 - Combined roll-up is not a tax consolidation.
 
 ## 1099 vendor hooks

@@ -38,7 +38,10 @@ export type AudienceKpiId =
   | "close_status"
   | "mom"
   | "units"
-  | "properties";
+  | "properties"
+  | "lp_share"
+  | "gp_promote"
+  | "lp_pref_unpaid";
 
 export type AudienceBrief = {
   audience: AudienceId;
@@ -71,6 +74,9 @@ export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
       "be_cushion",
       "concentration",
       "liquidity",
+      "lp_share",
+      "lp_pref_unpaid",
+      "gp_promote",
       "upb",
     ],
     chartIds: ["portfolio_concentration", "occupancy_breakeven", "t12_status", "covenant_watchlist"],
@@ -96,6 +102,8 @@ export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
       "controllable_opex",
       "capex",
       "cfads",
+      "gp_promote",
+      "lp_share",
       "budget_variance",
       "fee_income",
       "ga_ratio",
@@ -124,6 +132,8 @@ export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
       "occ_book",
       "be_cushion",
       "ltl",
+      "lp_share",
+      "gp_promote",
       "concentration",
     ],
     chartIds: ["decision_posture", "upb_stack", "t12_status"],
@@ -172,6 +182,8 @@ export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
       "occupancy",
       "units",
       "properties",
+      "lp_share",
+      "gp_promote",
     ],
     chartIds: ["close_control", "actual_vs_budget_bridge", "portfolio_heatmap"],
     exclude: ["marketing copy", "claiming GAAP consolidation", "tax filing language"],

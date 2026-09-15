@@ -43,6 +43,7 @@ import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
 import { loadBrokerT12Overlay, type BrokerT12OverlaySummary } from "./t12-overlay";
+import { loadLiveSpeWaterfalls, rollupWaterfallPools, europeanPromoteOpen, applyWaterfallToPools, loadSpeWaterfall } from "./waterfall";
 
 export type LiveRatio = {
   id: RatioId;
@@ -97,9 +98,31 @@ export type OpCoDashboard = {
     strategy: string | null;
     noiCents: bigint;
     href: string;
+    templateId: string;
+    cfadsGpCents: bigint;
+    cfadsLpCents: bigint;
+    cfadsRcpCents: bigint;
+    cfadsCoGpCents: bigint;
+    afterWaterfall: boolean;
   }[];
   t12: TrailingNoi;
   combinedNote: string;
+  waterfallApplied: boolean;
+  cashLookThroughCents: bigint;
+  cfadsLookThroughCents: bigint;
+  cashAfterWaterfallCents: bigint;
+  cfadsAfterWaterfallCents: bigint;
+  lpShareCfadsCents: bigint;
+  cashLpCents: bigint;
+  cashCoGpCents: bigint;
+  cfadsCoGpCents: bigint;
+  lpPrefUnpaidCents: bigint;
+  waterfallRocLpCents: bigint;
+  waterfallPrefPaidLpCents: bigint;
+  waterfallCatchUpGpCents: bigint;
+  waterfallPromoteGpCents: bigint;
+  waterfallResidualLpCents: bigint;
+  waterfallNote: string;
 };
 
 function debitNetMap(lines: PostedLine[]): Map<string, bigint> {
@@ -223,6 +246,13 @@ export async function buildPropertyDashboard(opts: {
   const delq = ratioAvailability("delinquency");
   const ctx = qs(entity.code, period);
   const brokerOverlay = await loadBrokerT12Overlay(entity.id);
+  const wfRecord = await loadSpeWaterfall(entity.id);
+  const siblings = entity.parentId ? await loadLiveSpeWaterfalls(entity.parentId) : wfRecord ? [wfRecord] : [];
+  const gate = europeanPromoteOpen(siblings.length ? siblings : wfRecord ? [wfRecord] : [], 1);
+  const wfPools = wfRecord
+    ? applyWaterfallToPools(wfRecord, { cashCents: cash.total, cfadsCents: cfads > 0n ? cfads : 0n }, gate, 1)
+    : null;
+  const wfApplied = Boolean(wfPools && !wfPools.lookThrough);
 
   const tiles: LiveRatio[] = [
     live({
@@ -329,7 +359,9 @@ export async function buildPropertyDashboard(opts: {
     live({
       id: "cfads",
       display: formatUsd(cfads),
-      hint: "Period NOI − PPE additions − reserve requirement",
+      hint: wfApplied
+        ? `SPE CFADS pool (book). LP share ${formatUsd(wfPools!.cfadsLpCents)} · RCP ${formatUsd(wfPools!.cfadsRcpCents)}${wfPools!.cfadsCoGpCents > 0n ? ` · Co-GP ${formatUsd(wfPools!.cfadsCoGpCents)}` : ""} after waterfall.`
+        : "Period NOI − PPE additions − reserve requirement",
       contributors: [
         contributor({ kind: "account", code: "NOI", label: "Period NOI", statement: "os" }, entity.code, period, actual.noi),
         contributor({ kind: "capex", field: "periodPpeAdditions", label: "Period PPE additions", statement: "cf" }, entity.code, period, periodCapex),
@@ -472,6 +504,46 @@ export async function buildPropertyDashboard(opts: {
         contributor({ kind: "account", code: "1110", label: "AR control total (not aging)", statement: "tb" }, entity.code, period, endMap.get("1110") ?? 0n),
       ],
     }),
+    ...(wfApplied && wfPools
+      ? [
+          live({
+            id: "lp_share_not_upstreamed",
+            display: formatUsd(wfPools.cfadsLpCents),
+            hint: "LP share of period CFADS after this SPE’s waterfall — same config as OpCo rollup / LP pack",
+            contributors: [
+              contributor({ kind: "entity", field: "lpShare", label: "LP CFADS after waterfall" }, entity.code, period, wfPools.cfadsLpCents),
+            ],
+          }),
+          live({
+            id: "rcp_after_waterfall",
+            display: formatUsd(wfPools.cfadsRcpCents),
+            hint: "RCP share after waterfall (promote + co-invest, after Co-GP). OpCo cash/CFADS use this share.",
+            contributors: [
+              contributor({ kind: "entity", field: "rcpShare", label: "RCP CFADS after waterfall" }, entity.code, period, wfPools.cfadsRcpCents),
+            ],
+          }),
+          ...(wfPools.cfadsCoGpCents > 0n || wfPools.hasCoGp
+            ? [
+                live({
+                  id: "co_gp_after_waterfall",
+                  display: formatUsd(wfPools.cfadsCoGpCents),
+                  hint: `Deal Co-GP${wfPools.coGpName ? ` (${wfPools.coGpName})` : ""} share of GP-side CFADS. Stays at the SPE — not OpCo.`,
+                  contributors: [
+                    contributor({ kind: "entity", field: "coGpShare", label: "Co-GP CFADS after waterfall" }, entity.code, period, wfPools.cfadsCoGpCents),
+                  ],
+                }),
+              ]
+            : []),
+          live({
+            id: "lp_pref_unpaid",
+            display: formatUsd(wfPools.unpaidPrefAfterCents),
+            hint: "LP pref unpaid after this period’s CFADS waterfall",
+            contributors: [
+              contributor({ kind: "entity", field: "unpaidPref", label: "LP pref unpaid" }, entity.code, period, wfPools.unpaidPrefAfterCents),
+            ],
+          }),
+        ]
+      : []),
   ];
 
   return {
@@ -500,17 +572,23 @@ export async function buildOpCoDashboard(opts: {
     include: { children: true },
   });
   const spes = opco.children.filter((c) => c.type === "SPE" && c.lifecycleStatus !== "ARCHIVED").sort((a, b) => a.code.localeCompare(b.code));
-  const spePacks = await Promise.all(
-    spes.map(async (spe) => {
-      const pack = await buildOperatingPackage({
-        entityId: spe.id,
-        year: opts.year,
-        month: opts.month,
-        consolidated: false,
-      });
-      return { spe, pack };
-    }),
-  );
+  const spePacks = (
+    await Promise.all(
+      spes.map(async (spe) => {
+        try {
+          const pack = await buildOperatingPackage({
+            entityId: spe.id,
+            year: opts.year,
+            month: opts.month,
+            consolidated: false,
+          });
+          return { spe, pack };
+        } catch {
+          return null;
+        }
+      }),
+    )
+  ).filter((row): row is NonNullable<typeof row> => row !== null);
 
   const opcoScope = await resolveReportScope({
     entityId: opco.id,
@@ -544,12 +622,21 @@ export async function buildOpCoDashboard(opts: {
   let lookThroughNoi = 0n;
   let lookThroughUnits = 0;
   const propertyRows: OpCoDashboard["properties"] = [];
+  const spePoolDraft: { entityCode: string; cashCents: bigint; noiCents: bigint; capexCents: bigint }[] = [];
   for (const row of spePacks) {
     lookThroughNoi += row.pack.operating.actual.noi;
     lookThroughOpex += row.pack.operating.actual.opex;
     lookThroughUnits += row.spe.unitCount ?? 0;
     const speEnd = asOfAssetMap(row.pack.scope.throughEnd);
-    stackedCashTotal += cashBreakdown(speEnd).total;
+    const speStart = asOfAssetMap(row.pack.scope.throughStart);
+    const speCash = cashBreakdown(speEnd).total;
+    stackedCashTotal += speCash;
+    spePoolDraft.push({
+      entityCode: row.spe.code,
+      cashCents: speCash,
+      noiCents: row.pack.operating.actual.noi,
+      capexCents: periodPpeAdditionsCents(speStart, speEnd),
+    });
     propertyRows.push({
       entityCode: row.spe.code,
       entityName: row.spe.name,
@@ -557,6 +644,12 @@ export async function buildOpCoDashboard(opts: {
       strategy: row.spe.strategy,
       noiCents: row.pack.operating.actual.noi,
       href: `/dashboard/${row.spe.code}?entity=${row.spe.code}&period=${period}`,
+      templateId: "look_through_100",
+      cfadsGpCents: 0n,
+      cfadsLpCents: 0n,
+      cfadsRcpCents: 0n,
+      cfadsCoGpCents: 0n,
+      afterWaterfall: false,
     });
   }
 
@@ -582,6 +675,32 @@ export async function buildOpCoDashboard(opts: {
     periodCapexCents: lookThroughCapex,
     reserveRequirementCents: lookThroughReserveReq,
   });
+  const waterfallRecords = await loadLiveSpeWaterfalls(opco.id);
+  const spePools = spePoolDraft.map((row) => {
+    const loan = loans.find((l) => l.entityCode === row.entityCode);
+    return {
+      entityCode: row.entityCode,
+      cashCents: row.cashCents,
+      cfadsCents: cfadsCents({
+        periodNoiCents: row.noiCents,
+        periodCapexCents: row.capexCents,
+        reserveRequirementCents: loan?.reserveRequirementCents ?? 0n,
+      }),
+    };
+  });
+  const waterfall = rollupWaterfallPools(waterfallRecords, spePools, stackedCash.total, 1);
+  for (const row of propertyRows) {
+    const speWf = waterfall.spes.find((s) => s.entityCode === row.entityCode);
+    if (!speWf) continue;
+    row.templateId = speWf.templateId;
+    row.cfadsGpCents = speWf.cfadsGpCents;
+    row.cfadsLpCents = speWf.cfadsLpCents;
+    row.cfadsRcpCents = speWf.cfadsRcpCents;
+    row.cfadsCoGpCents = speWf.cfadsCoGpCents;
+    row.afterWaterfall = !speWf.lookThrough;
+  }
+  const displayCash = waterfall.cashRcpCents;
+  const displayCfads = waterfall.cfadsRcpCents;
   const lookThroughCovenants = computeCovenants({
     noiCents: lookThroughNoi,
     interestCents: loans.reduce((acc, l) => acc + l.interestCents, 0n),
@@ -660,18 +779,22 @@ export async function buildOpCoDashboard(opts: {
     }),
     live({
       id: "cash",
-      display: formatUsd(stackedCashTotal),
-      hint: "OpCo + SPE cash (1010–1040). Liquidity proxy, not a bank rec.",
+      display: formatUsd(displayCash),
+      hint: waterfall.applied
+        ? "RCP cash after waterfall (not gross SPE cash; Co-GP stays at the deal). Liquidity proxy, not a bank rec."
+        : "OpCo + SPE cash (1010–1040). Liquidity proxy, not a bank rec. 100% look-through until a deal waterfall is saved.",
       contributors: [
-        contributor({ kind: "account", code: "1010", label: "Stacked cash", statement: "bs" }, opco.code, period, stackedCashTotal, undefined, "combined"),
+        contributor({ kind: "account", code: "1010", label: waterfall.applied ? "Cash after waterfall" : "Stacked cash", statement: "bs" }, opco.code, period, displayCash, undefined, "combined"),
       ],
     }),
     live({
       id: "liquidity_months",
-      display: formatMonthsHundredths(liquidityMonthsHundredths(stackedCashTotal, lookThroughOpex)),
-      hint: "Stacked cash ÷ look-through SPE OpEx",
+      display: formatMonthsHundredths(liquidityMonthsHundredths(displayCash, lookThroughOpex)),
+      hint: waterfall.applied
+        ? "RCP cash after waterfall ÷ look-through SPE OpEx"
+        : "Stacked cash ÷ look-through SPE OpEx",
       contributors: [
-        contributor({ kind: "account", code: "1010", label: "Stacked cash", statement: "bs" }, opco.code, period, stackedCashTotal, undefined, "combined"),
+        contributor({ kind: "account", code: "1010", label: waterfall.applied ? "Cash after waterfall" : "Stacked cash", statement: "bs" }, opco.code, period, displayCash, undefined, "combined"),
         contributor({ kind: "account", code: "OX", label: "Look-through SPE OpEx", statement: "os" }, opco.code, period, lookThroughOpex, undefined, "combined"),
       ],
     }),
@@ -703,8 +826,10 @@ export async function buildOpCoDashboard(opts: {
     }),
     live({
       id: "cfads",
-      display: formatUsd(lookThroughCfads),
-      hint: "Look-through NOI − stacked PPE additions − stacked reserve req.",
+      display: formatUsd(displayCfads),
+      hint: waterfall.applied
+        ? "CFADS after waterfall — RCP share of distributable cash (after Co-GP). Not gross SPE CFADS."
+        : "Look-through NOI − stacked PPE additions − stacked reserve req. 100% look-through until a deal waterfall is saved.",
       contributors: [
         contributor({ kind: "account", code: "NOI", label: "Look-through period NOI", statement: "os" }, opco.code, period, lookThroughNoi, undefined, "combined"),
         contributor({ kind: "capex", field: "periodPpeAdditions", label: "Stacked PPE additions", statement: "cf" }, opco.code, period, lookThroughCapex, undefined, "combined"),
@@ -730,6 +855,46 @@ export async function buildOpCoDashboard(opts: {
         contributor({ kind: "account", code: "7010", label: "Asset Management Fee Income", statement: "os" }, opco.code, period, feeIncome),
       ],
     }),
+    ...(waterfall.applied
+      ? [
+          live({
+            id: "rcp_after_waterfall",
+            display: formatUsd(waterfall.cashRcpCents),
+            hint: "RCP cash after waterfall (same as Cash tile when a template is saved). Co-GP stays at the deal.",
+            contributors: waterfall.spes.map((s) =>
+              contributor({ kind: "entity", field: "rcpShare", label: `${s.entityCode} RCP cash` }, s.entityCode, period, s.cashRcpCents),
+            ),
+          }),
+          ...(waterfall.hasCoGp
+            ? [
+                live({
+                  id: "co_gp_after_waterfall",
+                  display: formatUsd(waterfall.cfadsCoGpCents),
+                  hint: "Third-party Co-GP CFADS at the deal — not upstreamed to OpCo.",
+                  contributors: waterfall.spes.map((s) =>
+                    contributor({ kind: "entity", field: "coGpShare", label: `${s.entityCode} Co-GP CFADS` }, s.entityCode, period, s.cfadsCoGpCents),
+                  ),
+                }),
+              ]
+            : []),
+          live({
+            id: "lp_share_not_upstreamed",
+            display: formatUsd(waterfall.cfadsLpCents),
+            hint: "LP share of period CFADS — not upstreamed to OpCo",
+            contributors: waterfall.spes.map((s) =>
+              contributor({ kind: "entity", field: "lpShare", label: `${s.entityCode} LP CFADS` }, s.entityCode, period, s.cfadsLpCents),
+            ),
+          }),
+          live({
+            id: "lp_pref_unpaid",
+            display: formatUsd(waterfall.unpaidPrefCents),
+            hint: "LP pref unpaid after this period’s CFADS waterfall",
+            contributors: waterfall.spes.map((s) =>
+              contributor({ kind: "entity", field: "unpaidPref", label: `${s.entityCode} LP pref unpaid` }, s.entityCode, period, s.unpaidPrefAfterCents),
+            ),
+          }),
+        ]
+      : []),
     live({
       id: "ltv",
       display: "Gated",
@@ -762,7 +927,23 @@ export async function buildOpCoDashboard(opts: {
     watchlist,
     properties: propertyRows,
     t12,
-    combinedNote: `Combined roll-up NOI ${formatUsd(combinedIs.noi)} after IC 1310/2310 and AM 6310/7010 elimination. Look-through property NOI ${formatUsd(lookThroughNoi)} is the operating stack. Neither figure is a GAAP consolidation — the combined roll-up is not a GAAP consolidation.`,
+    combinedNote: `Combined roll-up NOI ${formatUsd(combinedIs.noi)} after IC 1310/2310 and AM 6310/7010 elimination. Look-through property NOI ${formatUsd(lookThroughNoi)} is the operating stack. ${waterfall.note} Neither NOI figure is a GAAP consolidation.`,
+    waterfallApplied: waterfall.applied,
+    cashLookThroughCents: stackedCashTotal,
+    cfadsLookThroughCents: lookThroughCfads,
+    cashAfterWaterfallCents: displayCash,
+    cfadsAfterWaterfallCents: displayCfads,
+    lpShareCfadsCents: waterfall.cfadsLpCents,
+    cashLpCents: waterfall.cashLpCents,
+    cashCoGpCents: waterfall.cashCoGpCents,
+    cfadsCoGpCents: waterfall.cfadsCoGpCents,
+    lpPrefUnpaidCents: waterfall.unpaidPrefCents,
+    waterfallRocLpCents: waterfall.rocLpCents,
+    waterfallPrefPaidLpCents: waterfall.prefLpCents,
+    waterfallCatchUpGpCents: waterfall.catchUpGpCents,
+    waterfallPromoteGpCents: waterfall.promoteGpCents,
+    waterfallResidualLpCents: waterfall.residualLpCents,
+    waterfallNote: waterfall.note,
   };
 }
 

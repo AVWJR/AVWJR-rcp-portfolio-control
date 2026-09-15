@@ -90,6 +90,30 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    test: /^\/deals\/SPE-[A-Z0-9]+\/waterfall$/,
+    title: "Deal waterfall",
+    hints: [
+      "Click a template chip (simple pref, institutional catch-up, multi-hurdle, American, European) then edit pref, splits, Co-GP, and capital.",
+      "Save to amend OpCo cash/CFADS to the RCP share (Co-GP stays at the deal). Default is 100% look-through until you choose.",
+    ],
+  },
+  {
+    test: /^\/deals\/SPE-[A-Z0-9]+\/proforma$/,
+    title: "Deal proforma",
+    hints: [
+      "Forward-looking Deal LP vs Deal GP (RCP + Co-GP) using the saved waterfall. Not historical books.",
+      "Hold years, CFADS growth, and exit proceeds are scenario inputs. Open OpCo proforma for the platform roll-up.",
+    ],
+  },
+  {
+    test: /^\/opco\/proforma$/,
+    title: "OpCo proforma",
+    hints: [
+      "Aggregates each live SPE’s deal waterfall. OpCo LPs = Deal LPs; OpCo GPs = RCP platform. Co-GP stays at the deal.",
+      "Optional OpCo-level pref if you enter platform capital. Same source of truth as live rollup and LP packs.",
+    ],
+  },
+  {
     test: /^\/deals\/new$/,
     title: "Add Deal",
     hints: [
@@ -104,6 +128,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     hints: [
       "Live SPE list plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
       "Delete on a row is a two-step soft-archive. Deleted SPEs are not here — gold nav Deal Archive.",
+      "LP/GP waterfall is on each SPE card — not buried. Default 100% look-through until a template is saved.",
     ],
   },
   {
@@ -190,6 +215,9 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "bs", href: "/reports/balance-sheet", label: "Balance Sheet", hint: "A = L + E" },
   { id: "cf", href: "/reports/cash-flow", label: "Cash Flow", hint: "Indirect; ties to BS" },
   { id: "deals", href: "/deals", label: "Deals", hint: "Live SPE list and Add Deal drafts" },
+  { id: "waterfall", href: "/deals", label: "Deal waterfall", hint: "LP/GP waterfall and Co-GP on a live SPE card — how do I set the deal waterfall?" },
+  { id: "deal_proforma", href: "/deals", label: "Deal proforma", hint: "Forward-looking Deal LP / Deal GP (RCP + Co-GP) on a live SPE" },
+  { id: "opco_proforma", href: "/opco/proforma", label: "OpCo proforma", hint: "OpCo LPs and OpCo GPs after each SPE waterfall" },
   { id: "add_deal", href: "/deals/new", label: "Add Deal", hint: "Guided SPE intake" },
   { id: "archive", href: "/archive", label: "Deal Archive", hint: "Deleted SPEs for study — not under Deals" },
   { id: "properties", href: "/properties", label: "Properties", hint: "SPE list / rent roll" },
@@ -233,6 +261,11 @@ export function listNavTargets(): NavTarget[] {
 export function entityFromPathname(pathname: string): string | null {
   const dash = pathname.match(/^\/dashboard\/(SPE-[A-Z0-9]+|RCP-OPCO)$/);
   if (dash) return dash[1];
+  const wf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/waterfall$/);
+  if (wf) return wf[1];
+  const pf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/proforma$/);
+  if (pf) return pf[1];
+  if (pathname === "/opco/proforma") return "RCP-OPCO";
   const prop = pathname.match(/^\/properties\/(SPE-[A-Z0-9]+)$/);
   return prop?.[1] ?? null;
 }

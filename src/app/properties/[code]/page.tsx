@@ -65,6 +65,12 @@ export default async function PropertyDetailPage({
                 <Link className="text-navy-700 underline" href={`/dashboard/${code}?entity=${code}&period=${period}`}>
                   Property dashboard
                 </Link>
+                <Link className="text-navy-700 underline" href={`/deals/${code}/waterfall?entity=${code}&period=${period}`}>
+                  LP/GP waterfall
+                </Link>
+                <Link className="text-navy-700 underline" href={`/deals/${code}/proforma?entity=${code}&period=${period}`}>
+                  Deal proforma
+                </Link>
                 <Link className="text-navy-700 underline" href={`/reports/operating-statement?entity=${code}&period=${period}`}>
                   Full NOI bridge
                 </Link>

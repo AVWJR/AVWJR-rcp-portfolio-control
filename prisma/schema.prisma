@@ -136,6 +136,36 @@ model Entity {
   vaultDocuments   VaultDocument[]
   reportJobs       ReportJob[]
   dealIntakes      DealIntake[]
+  waterfall        SpeWaterfall?
+}
+
+/// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
+/// (legacy OpCo stack). Saving a template is an explicit Principal choice.
+model SpeWaterfall {
+  id                     String   @id @default(cuid())
+  entityId               String   @unique
+  entity                 Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  templateId             String   @default("look_through_100")
+  prefRateBps            Int      @default(800)
+  compounding            String   @default("NONE")
+  catchUpEnabled         Boolean  @default(false)
+  catchUpBps             Int      @default(10000)
+  gpCoInvestBps          Int      @default(0)
+  coGpName               String?
+  coGpOfPromoteBps       Int      @default(0)
+  coGpCoInvestShareBps   Int      @default(0)
+  promoteBase            String   @default("DISTRIBUTABLE_CASH")
+  lookbackClawback       Boolean  @default(false)
+  lpContributedCents     BigInt   @default(0)
+  unreturnedCapitalCents BigInt   @default(0)
+  unpaidPrefCents        BigInt   @default(0)
+  prefPaidToDateCents    BigInt   @default(0)
+  notes                  String?
+  tiersJson              String   @default("[]")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([templateId])
 }
 
 /// Master template rows use entityId = null. Entity CoA is cloned from the template.

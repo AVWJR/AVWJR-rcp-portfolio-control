@@ -90,6 +90,12 @@ function PropertyView({
           <Link className="text-navy-700 underline" href={`/properties/${dash.entityCode}?${q}`}>
             Rent roll
           </Link>
+          <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/waterfall?${q}`}>
+            LP/GP waterfall
+          </Link>
+          <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/proforma?${q}`}>
+            Deal proforma
+          </Link>
           <Link className="text-navy-700 underline" href={`/dashboard/ratios?${q}`}>
             Ratio dictionary
           </Link>
@@ -115,6 +121,9 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
         <p className="mt-2 max-w-3xl text-sm text-ink-700">
           {dash.lookThroughLabel}. Operating KPIs stack wholly owned SPE books. The navy header
           combined view is a <strong>combined roll-up</strong> — it is not a GAAP consolidation.
+          Cash, CFADS, and liquidity use <strong>RCP after waterfall</strong> when a deal template
+          is saved (Co-GP stays at the deal); property NOI stays look-through. Default remains 100% look-through until you
+          choose a template on Deals.
         </p>
         <p className="mt-2 max-w-3xl text-sm text-ink-500">{dash.combinedNote}</p>
         <div className="mt-3 flex flex-wrap gap-3 text-sm">
@@ -130,6 +139,9 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
           <Link className="text-navy-700 underline" href={`/narratives?${q}`}>
             Narratives / packs
           </Link>
+          <Link className="text-navy-700 underline" href={`/opco/proforma?${q}`}>
+            OpCo proforma
+          </Link>
         </div>
       </div>
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} view="combined" />
@@ -144,6 +156,7 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                 <th className="py-2 text-right">Units</th>
                 <th className="py-2 text-left">Strategy</th>
                 <th className="py-2 text-right">Period NOI</th>
+                <th className="py-2 text-right">RCP CFADS after waterfall</th>
                 <th className="py-2 text-right">Share</th>
               </tr>
             </thead>
@@ -161,6 +174,14 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                     <td className="tabular py-2 text-right">{p.unitCount}</td>
                     <td className="py-2 text-ink-700">{p.strategy?.replaceAll("_", " ") ?? "—"}</td>
                     <td className="tabular py-2 text-right">{formatUsd(p.noiCents)}</td>
+                    <td className="tabular py-2 text-right">
+                      {formatUsd(p.cfadsRcpCents)}
+                      {p.afterWaterfall ? (
+                        <span className="ml-1 text-[10px] uppercase tracking-[0.08em] text-gold-700">after waterfall</span>
+                      ) : (
+                        <span className="ml-1 text-[10px] uppercase tracking-[0.08em] text-ink-500">look-through</span>
+                      )}
+                    </td>
                     <td className="tabular py-2 text-right">{formatRatioBps(share?.shareBps ?? null)}</td>
                   </tr>
                 );

@@ -195,6 +195,27 @@ export type PeriodSnapshot = {
   lookThroughNoiCents: bigint | null;
   combinedRollupNoiCents: bigint | null;
 
+  waterfallApplied: boolean;
+  waterfallTemplateId: string | null;
+  cashLookThroughCents: bigint;
+  cfadsLookThroughCents: bigint;
+  cashLpCents: bigint;
+  cashGpCents: bigint;
+  cashRcpCents: bigint;
+  cashCoGpCents: bigint;
+  lpShareOfDistributableCents: bigint;
+  gpShareOfDistributableCents: bigint;
+  rcpShareOfDistributableCents: bigint;
+  coGpShareOfDistributableCents: bigint;
+  coGpName: string | null;
+  lpPrefUnpaidCents: bigint;
+  waterfallRocLpCents: bigint;
+  waterfallPrefPaidLpCents: bigint;
+  waterfallCatchUpGpCents: bigint;
+  waterfallPromoteGpCents: bigint;
+  waterfallResidualLpCents: bigint;
+  waterfallNote: string | null;
+
   trends: TrendPoint[];
   loans: LoanBrief[];
   watchlist: WatchItem[];

@@ -167,7 +167,8 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
     source: "gl",
     status: "ready",
     phase: "A",
-    description: "As-of cash: operating, replacement reserve, escrow, and security-deposit accounts.",
+    description:
+      "As-of cash: operating, replacement reserve, escrow, and security-deposit accounts. On OpCo, when a deal waterfall is saved, this tile is RCP/GP cash after waterfall — not gross SPE cash as if wholly owned.",
     contributors: [
       { kind: "account", code: "1010", label: "Cash — Operating", statement: "bs" },
       { kind: "account", code: "1020", label: "Cash — Replacement Reserve", statement: "bs" },
@@ -203,7 +204,7 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
     status: "ready",
     phase: "D",
     description:
-      "Cash flow available for debt service on a book period basis. Not a GAAP cash-flow line. CapEx is the 1420–1460 net increase; reserve is the contractual monthly requirement.",
+      "Cash flow available for debt service on a book period basis. Not a GAAP cash-flow line. CapEx is the 1420–1460 net increase; reserve is the contractual monthly requirement. On OpCo, a saved deal waterfall haircuts this to the RCP/GP share (distributions after waterfall).",
     contributors: [
       { kind: "account", code: "NOI", label: "Period NOI", statement: "os" },
       { kind: "capex", field: "periodPpeAdditions", label: "Period PPE additions", statement: "cf" },
@@ -448,7 +449,7 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
     status: "ready",
     phase: "D",
     description:
-      "Liquidity proxy, not a bank-rec forecast. Combined view uses stacked cash and look-through SPE OpEx.",
+      "Liquidity proxy, not a bank-rec forecast. Combined view uses stacked cash and look-through SPE OpEx. When a waterfall is saved, the numerator is RCP/GP cash after waterfall.",
     contributors: [
       { kind: "account", code: "1010", label: "Cash accounts", statement: "bs" },
       { kind: "account", code: "OX", label: "Period OpEx", statement: "os" },
@@ -490,6 +491,58 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
     phase: "D",
     description: "Look-through property NOI mix. Combined roll-up is not a GAAP consolidation.",
     contributors: [{ kind: "entity", field: "noi", label: "Each SPE period NOI", statement: "os" }],
+  },
+  {
+    id: "rcp_after_waterfall",
+    label: "RCP cash after waterfall",
+    formula: "Σ SPE GP/RCP share of cash-if-distributed + OpCo cash",
+    unit: "usd_cents",
+    noiDefinition: null,
+    source: "mixed",
+    status: "ready",
+    phase: "F+",
+    description:
+      "OpCo entitlement after each live SPE’s LP/GP waterfall and optional Co-GP split. Default with no template is 100% look-through. Not a GAAP minority-interest line.",
+    contributors: [{ kind: "account", code: "1010", label: "RCP cash after waterfall", statement: "bs" }],
+  },
+  {
+    id: "co_gp_after_waterfall",
+    label: "Co-GP after waterfall",
+    formula: "Σ SPE Co-GP share of CFADS (GP-side promote/co-invest × Co-GP bps)",
+    unit: "usd_cents",
+    noiDefinition: "period",
+    source: "mixed",
+    status: "ready",
+    phase: "F+",
+    description:
+      "Third-party Co-GP at the deal/SPE. Not upstreamed to RCP OpCo. $0 when Co-GP share is 0 (two-party LP vs single GP/RCP).",
+    contributors: [{ kind: "entity", field: "coGpShare", label: "Co-GP CFADS after waterfall" }],
+  },
+  {
+    id: "lp_pref_unpaid",
+    label: "LP pref unpaid",
+    formula: "Unpaid preferred return after this period’s CFADS waterfall (including this run’s accrual)",
+    unit: "usd_cents",
+    noiDefinition: "period",
+    source: "mixed",
+    status: "ready",
+    phase: "F+",
+    description:
+      "Preferred return still owed to LP-class after the period distribution waterfall. $0 when no template is saved or capital is not entered.",
+    contributors: [{ kind: "entity", field: "unpaidPref", label: "LP pref unpaid after waterfall" }],
+  },
+  {
+    id: "lp_share_not_upstreamed",
+    label: "LP share (not upstreamed)",
+    formula: "Σ SPE LP share of CFADS after waterfall",
+    unit: "usd_cents",
+    noiDefinition: "period",
+    source: "mixed",
+    status: "ready",
+    phase: "F+",
+    description:
+      "Distributable cash that stays with LPs under the deal waterfall and does not roll to RCP OpCo. $0 under 100% look-through.",
+    contributors: [{ kind: "entity", field: "lpShare", label: "LP CFADS share" }],
   },
 ];
 

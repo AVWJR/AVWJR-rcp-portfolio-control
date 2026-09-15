@@ -9,7 +9,7 @@ OpCo’s multi-SPE view is a **combined roll-up**:
 - Does **not** eliminate HoldCo `1350` Investment in Subsidiaries
 - Does **not** claim NCI, push-down, or GAAP consolidation
 
-The entity switcher labels this **Combined roll-up**, not “consolidated.”
+The seed SPEs look through 100% until a deal waterfall is saved; then OpCo **cash/CFADS** use the RCP share (optional Co-GP stays at the deal). See [RCP_WATERFALL.md](./RCP_WATERFALL.md).
 
 ## Matching rule
 

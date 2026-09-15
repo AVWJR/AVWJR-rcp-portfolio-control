@@ -71,7 +71,7 @@ UI: Export PDF / Export PPTX on `/narratives` and `/narratives/packs/[id]`.
 - T12 incomplete on the two-month demo seed is **not annualized**.
 - LTV gated without appraisal. Delinquency stubbed (no charge/receipt subledger).
 - AM 6310 sits below NOI. CPA tax export is not a filing.
-- No promote waterfall. No live PMS or bank rec.
+- Deal LP/GP waterfalls (when saved) split CFADS for **all audiences** from the same SPE config: LP pack = LP share / pref / promote; OpCo + GP = RCP after waterfall (Co-GP stays at the deal); lender coverage keeps SPE book cash. Default is 100% look-through. No live PMS or bank rec.
 
 ## Phase F
 

@@ -1,0 +1,92 @@
+# Deal-level LP / GP waterfall
+
+Roche Capital Partners OpCo has historically **looked through 100%** of each live property SPE: cash, NOI, and ratios stack as if RCP owns the SPE outright. That is still the **demo default**. Real Roche deals have unique LP/GP splits and return hurdles. This feature adds a per-SPE waterfall so **cash available for distribution up to RCP OpCo** is the GP/RCP share after the waterfall — not gross SPE cash.
+
+This is a **distribution** engine on CFADS / cash-if-distributed. It does not invent AR aging or delinquency, and it is not a GAAP consolidation with minority interest.
+
+## Current treatment (verified in code)
+
+| Layer | Actual behavior before a template is saved |
+| --- | --- |
+| Entity tree | HoldCo (`RCP-HOLD`) → OpCo (`RCP-OPCO`) → property SPE/LLC |
+| Ownership | Seed SPEs `ownershipBps = 10000` (100%). `isWhollyOwned` exists; OpCo rollup does **not** haircut by that field. |
+| OpCo combined | Stacks **live** SPE books + OpCo, eliminates IC `1310`/`2310` and AM `6310`/`7010`. Labeled **combined roll-up — not a GAAP consolidation**. No NCI, no HoldCo `1350` elimination. |
+| Look-through | Dashboard NOI, units, UPB, DSCR, debt yield stack 100% of live SPE operating results. |
+| Cash / CFADS | OpCo cash = OpCo GL cash + every live SPE’s `1010–1040`. CFADS = look-through NOI − stacked PPE − stacked reserve requirement. Treated as wholly owned. |
+| Promote / pref | **None.** Partner capital / K-1 export is a 100% member rollforward. Tax-bridge copy previously said not to invent a promote — that remains true for K-1 special allocations. |
+| Soft-archive | `ARCHIVED` SPEs already leave live Deals and OpCo rollup; books and vault stay on Deal Archive. |
+
+Until the Principal clicks a template and **Saves**, nothing in the demo numbers changes.
+
+## After a template is saved
+
+- **Persisted** on `SpeWaterfall` (1:1 with the SPE). Missing row = look-through 100%.
+- **Property NOI / occupancy / DSCR** stay look-through (operating performance of the asset).
+- **OpCo cash, CFADS, liquidity, pack CFADS/cash** use **RCP after waterfall** (GP-side after optional Co-GP). **LP Monthly Investor Pack / LP narratives** use **LP share after waterfall** plus pref unpaid, catch-up, residual promote, and Co-GP when set — same `SpeWaterfall` row. Property NOI / occupancy / DSCR stay look-through (operating performance of the asset).
+- Soft-archived SPEs still stay out.
+
+Entry: gold nav **Deals** → SPE card → **LP/GP waterfall** (`/deals/{code}/waterfall`). **Deal proforma** `/deals/{code}/proforma`. **OpCo proforma** `/opco/proforma`. Also linked from the SPE dashboard and Properties.
+
+## Co-GP (deal/SPE)
+
+Parties at the SPE: **Deal LPs**, **RCP (GP or Co-GP)**, and optional **third-party Co-GP**. Editable:
+
+- Co-GP name
+- Co-GP % of GP-side promote / catch-up / residual
+- Co-GP % of GP co-invest (ROC / pref / pari passu)
+
+Both shares default **0** (blank name) = prior two-party LP vs single GP/RCP. `rcpCents + coGpCents = gpCents`. OpCo entitlement is **RCP cents**; Co-GP stays at the deal.
+
+## Proformas (forward-looking)
+
+Same engine and Co-GP terms as live rollup / LP packs. Not historical books and not a budget.
+
+1. **Deal level** — Deal LPs vs Deal GPs (RCP + Co-GP). Year 1 CFADS defaults to this period × 12; optional growth; user-entered exit proceeds on the last year.
+2. **OpCo level** — aggregates each live SPE’s deal waterfall. **OpCo LPs** = Σ Deal LPs. **OpCo GPs (RCP platform)** = Σ RCP. Co-GP is shown at the deal, not as OpCo GP. Optional OpCo-level pref (enter platform capital + pref rate) splits RCP cash through a simple ROC → pref → residual.
+
+Engine: `packages/ledger/src/proforma.ts`. Tests: `tests/waterfall-engine.test.ts`, `tests/waterfall-proforma.test.ts`.
+
+## Five templates
+
+Grounded in CRE/REPE practice (deal-level pref + promote, institutional catch-up, multi-hurdle, American vs European). Click a chip to populate; every field stays editable.
+
+1. **Simple pref + promote (no catch-up)** — ROC → LP pref (default 8%) → residual 80% LP / 20% GP.
+2. **Institutional pref + 100% catch-up + promote** — ROC → LP pref → 100% GP catch-up until GP has its promote share of profits above ROC → 80/20 residual.
+3. **Multi-hurdle IRR promote** — ROC → dollar-pref bands at 8%→20% GP, 12%→30%, 15%→40%. **Honest:** these are dollar-pref proxies of IRR hurdles, not XIRR.
+4. **American / deal-by-deal** — same deal-level hurdles as simple pref+promote; clawback/lookback is **flagged for later true-up** (this run does not reverse prior promote).
+5. **European / whole-fund style** — no GP promote from this SPE until portfolio/OpCo capital + pref are satisfied (or until LP contributed capital is entered — LP-protective). Residual then splits per promote %.
+
+Engine formulas: `packages/ledger/src/waterfall.ts` (`WATERFALL_FORMULAS`). Integer USD cents. Unit tests: `tests/waterfall-engine.test.ts` (fixed $12M on $10M / 8% / 12 months) and `tests/waterfall-rollup.test.ts`.
+
+## Principal click-test (SPE-HMTOS)
+
+1. Gold nav **Deals**.
+2. Open **SPE-HMTOS** (or create/select that live SPE if it exists on this deploy).
+3. Click **LP/GP waterfall**.
+4. Click **Institutional pref + 100% catch-up + promote**. Enter LP contributed capital if you want ROC/pref to have a base.
+5. Read **Applies to OpCo rollup** (Deal LP vs RCP vs Co-GP).
+6. Optional: enter a Co-GP name and promote %. Leave 0% to keep two-party LP/GP.
+7. **Save waterfall**.
+8. Open **Deal proforma** (same SPE) and **OpCo proforma** (`/opco/proforma`).
+9. Open **OpCo** combined dashboard: Cash / CFADS say **after waterfall** (RCP).
+10. Open **Narratives → Limited Partner** (or export Monthly Investor Pack): distributions / pref / promote must match the SPE waterfall (LP share, not 100% look-through).
+
+## Packs (one source of truth)
+
+The period snapshot carries both the CFADS **pool** and the LP/GP split. Audience packs pick:
+
+| Audience | Economic CFADS / cash |
+| --- | --- |
+| LP (`monthly_investor`) | LP share after waterfall; pref unpaid; residual LP vs GP promote; Co-GP disclosed |
+| GP | RCP after waterfall (promote + catch-up + co-invest, after Co-GP) |
+| IC / Management | Pool labeled; LP vs RCP vs Co-GP; do not ship look-through as LP cash |
+| Lender | SPE **book** CFADS/cash for coverage/collateral, plus the split disclosed |
+
+Default with no template remains 100% look-through.
+
+## APIs
+
+- `GET /api/deals/{code}/waterfall`
+- `PUT /api/deals/{code}/waterfall` — Principal only (partner view 403 on writes)
+
+Expert: ask **“How do I set the deal waterfall?”** (covers Co-GP and where to open deal / OpCo proformas).

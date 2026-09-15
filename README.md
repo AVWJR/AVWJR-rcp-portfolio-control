@@ -6,7 +6,7 @@ OpCo accounting / portfolio control for **Roche Capital Partners**. Phase A is t
 
 Locked stack: TypeScript, Next.js App Router, Prisma, PostgreSQL in production, **SQLite for local demo**. Server actions + API routes. USD, `en-US`, `America/New_York`. Integer cents. Double-entry intact.
 
-Entity tree: **HoldCo → OpCo → Property SPE/LLC**. Seed SPEs are 100% owned. OpCo asset management fees sit **below NOI** on the SPE. OpCo’s multi-SPE view is a **combined roll-up** (eliminates IC `1310`/`2310` and AM `6310`/`7010`) — not a GAAP consolidation. See [docs/RCP_INTERCOMPANY.md](./docs/RCP_INTERCOMPANY.md).
+Entity tree: **HoldCo → OpCo → Property SPE/LLC**. Seed SPEs are 100% owned and **looked through 100%** until a Principal saves a deal waterfall. OpCo asset management fees sit **below NOI** on the SPE. OpCo’s multi-SPE view is a **combined roll-up** (eliminates IC `1310`/`2310` and AM `6310`/`7010`) — not a GAAP consolidation. Deal LP/GP waterfalls (when saved) amend OpCo cash/CFADS to the GP/RCP share and LP packs to the LP share. Optional Co-GP stays at the deal. See [docs/RCP_INTERCOMPANY.md](./docs/RCP_INTERCOMPANY.md) and [docs/RCP_WATERFALL.md](./docs/RCP_WATERFALL.md).
 
 ## Local (SQLite) vs Vercel (Neon Postgres)
 
@@ -56,6 +56,10 @@ Without a key, Expert still opens: gold **Offline coach — add key**, live comp
 ### Add Deal (new property SPE)
 
 Guided intake for a **new SPE under OpCo** (usually `RCP-OPCO`). Gold nav **Deals** → **Add Deal**, or Overview → Add Deal. Route: [`/deals/new`](http://localhost:3000/deals/new) · live SPE list: [`/deals`](http://localhost:3000/deals). Expert chip: **Add a new deal**.
+
+### Deal waterfall (LP / GP / Co-GP) and proformas
+
+Gold nav **Deals** → SPE card → **LP/GP waterfall**. Five CRE templates plus 100% look-through (the default until you choose). Optional third-party **Co-GP** at the deal (promote / co-invest shares; 0% = prior two-party LP vs single GP/RCP). Saving amends OpCo cash/CFADS to the **RCP** share (Co-GP stays at the SPE). **Deal proforma** (`/deals/{code}/proforma`) and **OpCo proforma** (`/opco/proforma`) use that same waterfall. Spec: [docs/RCP_WATERFALL.md](./docs/RCP_WATERFALL.md). Expert: **How do I set the deal waterfall?**
 
 ### Deal Archive (Delete is a soft-archive)
 
@@ -190,6 +194,9 @@ http://localhost:3000/capex?entity=SPE-WBG&period=2026-08
 http://localhost:3000/close?entity=SPE-WBG&period=2026-07
 http://localhost:3000/deals
 http://localhost:3000/deals/new
+http://localhost:3000/deals/SPE-WBG/waterfall?entity=SPE-WBG&period=2026-08
+http://localhost:3000/deals/SPE-WBG/proforma?entity=SPE-WBG&period=2026-08
+http://localhost:3000/opco/proforma?entity=RCP-OPCO&period=2026-08&view=combined
 
 Close demo: WBG `2026-07` is **hard locked**. CVC `2026-07` is **soft closed**. August stays open.
 
@@ -219,7 +226,7 @@ BTCF = period NOI − interest − principal (AM stays below NOI). CFADS remains
 
 - **Live dictionary** — `@rcp/analytics` implements [docs/RCP_RATIO_DICTIONARY_STUB.md](./docs/RCP_RATIO_DICTIONARY_STUB.md) with explicit formulas, units, and NOI definition labels (**period** vs **T12** vs **annualized period**). T12 is incomplete on the two-month demo seed and is not silently annualized.
 - **Property dashboard** — `/dashboard/[entityCode]` (e.g. `SPE-WBG`): period NOI, NOI/unit, EGI, OpEx ratio, tagged controllable OpEx, CapEx vs reserves, CFADS and CFADS/DSCR, cash, NOI budget variance, rent-roll physical occupancy / loss-to-lease / book economic occupancy / breakeven, loan DSCR / debt yield / UPB / maturity. Delinquency and LTV stay gated.
-- **OpCo dashboard** — `/dashboard` → `RCP-OPCO` combined: properties/units, look-through NOI and NOI/unit, liquidity months, look-through UPB / DSCR / debt yield (not LTV), fee income, G&A%, covenant watchlist, NOI concentration. Combined roll-up is labeled **not a GAAP consolidation**.
+- **OpCo dashboard** — `/dashboard` → `RCP-OPCO` combined: properties/units, look-through NOI and NOI/unit, liquidity months, look-through UPB / DSCR / debt yield (not LTV), fee income, G&A%, covenant watchlist, NOI concentration. Cash / CFADS / liquidity use **RCP after waterfall** when a deal template is saved (optional Co-GP stays at the deal; default 100% look-through). Combined roll-up is labeled **not a GAAP consolidation**.
 - **Drill-down** — every tile opens `/dashboard/ratios/[id]` with the formula, NOI label, contributing accounts or rent-roll fields, and links to OS / TB / debt / rent roll / CapEx.
 - **Phase E** — live at `/narratives` (this release).
 
@@ -322,4 +329,4 @@ Rents and budget amounts are USD in the file; the importer stores integer cents.
 
 ## Out of scope
 
-No live PMS or bank feed. No promote waterfall. No IRS e-file / SSO. No full AP invoice subledger (1099 overlay only). No BigBrainRE underwriting. No LTV from book cost. Does not file taxes. Does not choose the final RCP ingest mailbox address. Dropbox / Gmail OAuth product polish waits on partner credentials.
+No live PMS or bank feed. No IRS e-file / SSO. No full AP invoice subledger (1099 overlay only). No BigBrainRE underwriting. No LTV from book cost. Does not file taxes. Deal LP/GP waterfalls are opt-in per SPE (default 100% look-through). Does not choose the final RCP ingest mailbox address. Dropbox / Gmail OAuth product polish waits on partner credentials.

@@ -52,6 +52,10 @@ OpCo’s multi-SPE presentation is a **combined roll-up** (IC `1310`/`2310` and 
 | `look_through_upb` | Look-through UPB | Σ SPE loan-file UPB | usd_cents | — | ready | loan |
 | `properties_units` | Properties / units | Count of SPEs and Σ unitCount | count | — | ready | entity |
 | `noi_concentration` | NOI concentration | SPE period NOI ÷ Σ SPE period NOI | bps | period | ready | GL |
+| `rcp_after_waterfall` | RCP cash after waterfall | Σ SPE RCP share of cash-if-distributed + OpCo cash (after Co-GP) | usd_cents | — | ready | mixed |
+| `co_gp_after_waterfall` | Co-GP after waterfall | Σ SPE Co-GP share of CFADS (deal-level; not OpCo) | usd_cents | period | ready | mixed |
+| `lp_pref_unpaid` | LP pref unpaid | Unpaid preferred return after this period’s CFADS waterfall | usd_cents | period | ready | mixed |
+| `lp_share_not_upstreamed` | LP share (not upstreamed) | Σ SPE LP share of CFADS after waterfall | usd_cents | period | ready | mixed |
 
 See [RCP_OPERATING_KPIS.md](./RCP_OPERATING_KPIS.md) for Phase B occupancy / breakeven detail and [RCP_DEBT.md](./RCP_DEBT.md) for covenant journals.
 
@@ -81,5 +85,6 @@ Do not:
 
 ## Combined roll-up vs look-through
 
-- **Look-through** — stack wholly owned SPE property KPIs (NOI, units, UPB, DS). Primary OpCo operating dashboard.
+- **Look-through** — stack wholly owned SPE property KPIs (NOI, units, UPB, DS). Primary OpCo operating dashboard. Property NOI stays look-through even after a deal waterfall is saved.
 - **Combined roll-up** — OpCo + SPEs after IC / AM elimination. Labeled in the header. **not a GAAP consolidation**.
+- **After waterfall** — when a Principal saves an LP/GP template on Deals, OpCo **cash / CFADS / liquidity** use the **RCP** share (optional Co-GP stays at the deal). Default remains 100% look-through. See [RCP_WATERFALL.md](./RCP_WATERFALL.md).

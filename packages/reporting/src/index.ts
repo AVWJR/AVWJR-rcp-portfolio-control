@@ -24,3 +24,4 @@ export * from "./audience-briefs";
 export * from "./narratives";
 export * from "./pack-spine";
 export * from "./packs";
+export * from "./waterfall-view";
