@@ -1,4 +1,5 @@
 import { isDeleteDealQuery } from "./feature-intents";
+import { howToActions, howToChips, matchHowTo } from "./how-to-playbook";
 import { describePage, withContext } from "./nav";
 import type {
   AnomalyFlag,
@@ -133,6 +134,12 @@ const IMPORT_RR_CHIP: ExpertChip = {
 
 function queryChips(q: string): ExpertChip[] | null {
   if (!q) return null;
+  const topic = matchHowTo(q);
+  if (topic) {
+    const fromPlaybook = howToChips(topic);
+    if (fromPlaybook.length) return fromPlaybook;
+    if (topic !== "narratives_packs") return [];
+  }
   if (isDeleteDealQuery(q)) {
     return [
       {
@@ -210,6 +217,11 @@ export function rankSuggestedActions(
   const page = ctx.pathname;
   const viewer = isViewer(ctx.accessRole);
   const q = userText.trim().toLowerCase();
+  const topic = matchHowTo(q);
+  if (topic) {
+    const playbook = howToActions(topic, ctx);
+    if (playbook.length) return playbook;
+  }
 
   if (isDeleteDealQuery(q)) {
     const dealActions: ExpertSuggestedAction[] = [
@@ -457,6 +469,31 @@ export function rankChips(ctx: ExpertClientContext, bundle: OfflineBundle, userT
     if (!chips.some((c) => c.id === extra.id)) chips.push(extra);
   }
   return chips.slice(0, MAX_CHROME);
+}
+
+const PACK_CHROME = /lp narrative|investor pack|audience|pptx|pdf pack|switch audience|monthly investor/i;
+
+function isPackChrome(label: string, href?: string): boolean {
+  if (PACK_CHROME.test(label)) return true;
+  const path = (href ?? "").split("?")[0] ?? "";
+  return path.startsWith("/narratives");
+}
+
+/** Playbook how-tos beat Grok-proposed pack chips. */
+export function preferHowToChrome(
+  ctx: ExpertClientContext,
+  bundle: OfflineBundle,
+  userText: string,
+  proposed: ExpertSuggestedAction[] = [],
+): { actions: ExpertSuggestedAction[]; chips: ExpertChip[] } {
+  const topic = matchHowTo(userText);
+  const ranked = rankSuggestedActions(ctx, bundle, userText);
+  const chips = rankChips(ctx, bundle, userText);
+  if (topic && topic !== "narratives_packs") {
+    const filtered = proposed.filter((action) => !isPackChrome(action.label, action.href));
+    return composeExpertChrome(mergeSuggestedActions(ranked, filtered), chips);
+  }
+  return composeExpertChrome(mergeSuggestedActions(proposed, ranked), chips);
 }
 
 export function pageProcessLead(ctx: ExpertClientContext): string {

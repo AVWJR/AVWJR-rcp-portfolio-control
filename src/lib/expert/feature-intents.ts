@@ -1,9 +1,20 @@
 /** Shared matchers so offline coach and chips agree on clear how-to questions. */
 
+import {
+  isAddDealQuery,
+  isDeleteDealQuery as playbookDeleteDeal,
+  isDownloadCanonicalQuery,
+  isHowToQuery,
+  isNarrativesPackQuery,
+  isPartnerLimitsQuery,
+  isRentRollHowToQuery,
+  isT12UploadQuery,
+  isVaultUploadQuery,
+  matchHowTo,
+} from "./how-to-playbook";
+
 export function isDeleteDealQuery(q: string): boolean {
-  return /(delete|remove|undo|get rid of|kill|archive|hide|restore)\b.{0,40}\b(deal|spe|propert|intake|draft)\b|\b(deal|spe|propert)\b.{0,20}\b(delete|remove|archive|hide|restore)\b|deal archive|archived deals?/i.test(
-    q,
-  );
+  return playbookDeleteDeal(q);
 }
 
 export function isVagueQuery(q: string): boolean {
@@ -15,8 +26,14 @@ export function isVagueQuery(q: string): boolean {
 
 export function isClearHowToQuery(q: string): boolean {
   if (isVagueQuery(q)) return false;
-  if (isDeleteDealQuery(q)) return true;
-  return /\b(how (do i|can i|to)|i need to|where (do i|can i|is)|walk me|click path|open the|export|upload|import|unlock|partner view|scheduler|vault|narrative|add deal|month-end|hard lock)\b/i.test(
+  if (isHowToQuery(q)) return true;
+  if (isDeleteDealQuery(q) || isT12UploadQuery(q) || isRentRollHowToQuery(q) || isAddDealQuery(q)) return true;
+  if (isDownloadCanonicalQuery(q) || isVaultUploadQuery(q) || isNarrativesPackQuery(q) || isPartnerLimitsQuery(q)) {
+    return true;
+  }
+  return /\b(how (do i|can i|to)|i need to|where (do i|can i|is)|walk me|click path|open the|export|upload|import|unlock|partner view|scheduler|vault|narrative|add deal|month-end|hard lock|re-?apply|re-?upload|t-?12)\b/i.test(
     q,
   );
 }
+
+export { matchHowTo, isT12UploadQuery, isRentRollHowToQuery, isHowToQuery };

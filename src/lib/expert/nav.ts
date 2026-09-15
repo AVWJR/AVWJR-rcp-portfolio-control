@@ -154,8 +154,8 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     test: /^\/vault$/,
     title: "Document vault",
     hints: [
-      "Metadata + files by entity (leases, loans, K-1s, draws, insurance). Not a bank or PMS feed.",
-      "Delete on a live SPE removes the deal from live Deals (soft-archive). Removing a file is not deleting the SPE.",
+      "Metadata + files by entity (leases, loans, T12/P&L as Kind Other, rent rolls, K-1s, draws, insurance). Not a bank or PMS feed.",
+      "Upload: Kind + Store in vault. Delete on a live SPE removes the deal from live Deals (soft-archive). Removing a file is not deleting the SPE.",
     ],
   },
   {
@@ -198,7 +198,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "close", href: "/close", label: "Close", hint: "Soft close / hard lock" },
   { id: "tax", href: "/tax", label: "Tax bridge", hint: "CPA worksheet — does not file" },
   { id: "k1", href: "/tax/k1", label: "K-1 export", hint: "Partner capital — not a filed K-1" },
-  { id: "vault", href: "/vault", label: "Vault", hint: "Entity documents" },
+  { id: "vault", href: "/vault", label: "Vault", hint: "Entity documents — T12/P&L as Kind Other, rent rolls, OM" },
   { id: "scheduler", href: "/scheduler", label: "Scheduler", hint: "Pack jobs" },
   { id: "vendors", href: "/vendors", label: "1099", hint: "Vendor overlay" },
 ];

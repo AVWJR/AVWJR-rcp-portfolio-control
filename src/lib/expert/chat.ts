@@ -1,4 +1,4 @@
-import { composeExpertChrome, mergeSuggestedActions, rankChips, rankSuggestedActions, sanitizeSuggestedActions } from "./actions";
+import { preferHowToChrome, sanitizeSuggestedActions } from "./actions";
 import {
   expertAiEnabled,
   enrichGatewayError,
@@ -122,10 +122,7 @@ function wrapMessage(
   proposed: ExpertSuggestedAction[] = [],
   userText = "",
 ): ExpertMessage {
-  const chrome = composeExpertChrome(
-    mergeSuggestedActions(proposed, rankSuggestedActions(ctx, bundle, userText)),
-    rankChips(ctx, bundle, userText),
-  );
+  const chrome = preferHowToChrome(ctx, bundle, userText, proposed);
   return {
     id: newExpertId(),
     role: "expert",
@@ -167,8 +164,8 @@ function attachFallbackSource(message: ExpertMessage, reason?: string): ExpertMe
   return { ...message, sources: [...sources, "Offline last resort after live Grok failed"] };
 }
 
-function systemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle): string {
-  return buildSystemForTurn(ctx, bundle);
+function systemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle, userText = ""): string {
+  return buildSystemForTurn(ctx, bundle, userText);
 }
 
 function openCoachPrompt(): string {
@@ -195,6 +192,7 @@ async function answerWithGateway(
     getPeriodStatus,
     listNavTargets,
   } = await import("./tools");
+  const { howToAnswerForQuery, lookupHowToPlaybook, matchHowTo } = await import("./how-to-playbook");
 
   const proposed: ExpertSuggestedAction[] = [];
   const tools = {
@@ -233,8 +231,19 @@ async function answerWithGateway(
       inputSchema: z.object({ intakeId: z.string() }),
       execute: async ({ intakeId }) => getDealIntakeStatus(intakeId),
     }),
+    getHowToPlaybook: tool({
+      description:
+        "Exact RCP click paths for how-to questions (reupload T12, re-apply rent roll, delete deal, vault vs deals, downloads). Call this when the user asks how to do something. Do not answer from the current pack page.",
+      inputSchema: z.object({ query: z.string() }),
+      execute: async ({ query }) => ({
+        topic: matchHowTo(query),
+        answer: howToAnswerForQuery(query, ctx),
+        catalog: lookupHowToPlaybook(query),
+      }),
+    }),
     proposeSuggestedActions: tool({
-      description: "Propose 1-3 ranked UI action buttons tightly relevant to the last question or current page. Call before you finish.",
+      description:
+        "Propose 1-3 ranked UI action buttons tightly relevant to the last user question. For T12/rent-roll/delete how-tos, deep-link Vault, Properties, Add Deal, Deals, or Deal Archive — never pack PDF or LP narrative chips.",
       inputSchema: z.object({
         actions: z
           .array(
@@ -265,7 +274,7 @@ async function answerWithGateway(
       const model = await resolveGatewayModel(candidate, apiKey);
       const result = streamText({
         model: model as never,
-        system: systemForTurn(ctx, bundle),
+        system: systemForTurn(ctx, bundle, userText),
         messages: [
           ...historyMessages(history),
           { role: "user" as const, content: userText || openCoachPrompt() },
@@ -284,7 +293,7 @@ async function answerWithGateway(
       if (!text) {
         const plain = await generateText({
           model: (await resolveGatewayModel(candidate, apiKey)) as never,
-          system: systemForTurn(ctx, bundle),
+          system: systemForTurn(ctx, bundle, userText),
           messages: [
             ...historyMessages(history),
             { role: "user" as const, content: userText || openCoachPrompt() },
@@ -299,7 +308,7 @@ async function answerWithGateway(
       try {
         const plain = await generateText({
           model: (await resolveGatewayModel(candidate, apiKey)) as never,
-          system: systemForTurn(ctx, bundle),
+          system: systemForTurn(ctx, bundle, userText),
           messages: [
             ...historyMessages(history),
             { role: "user" as const, content: userText || openCoachPrompt() },
@@ -332,7 +341,7 @@ async function answerWithXai(
 ): Promise<ExpertMessage | null> {
   if (!resolved.apiKey) return null;
   const messages: XaiChatMessage[] = [
-    { role: "system", content: systemForTurn(ctx, bundle) },
+    { role: "system", content: systemForTurn(ctx, bundle, userText) },
     ...historyMessages(history),
     { role: "user", content: userText || openCoachPrompt() },
   ];
