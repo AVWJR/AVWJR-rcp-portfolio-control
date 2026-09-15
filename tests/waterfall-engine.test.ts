@@ -162,6 +162,27 @@ describe("waterfall engine — fixed $12M on $10M capital / 8% pref / 12 months"
     expect(roc?.gpCents).toBeGreaterThan(0n);
   });
 
+  it("Co-GP share 0 matches the two-party GP/RCP total (rcpCents = gpCents)", () => {
+    const r = run("simple_pref_promote");
+    expect(r.gpCents).toBe(dollars(240_000));
+    expect(r.rcpCents).toBe(r.gpCents);
+    expect(r.coGpCents).toBe(0n);
+    expect(r.lpCents + r.rcpCents + r.coGpCents).toBe(dollars(12_000_000));
+  });
+
+  it("Co-GP 50% of promote splits GP residual between RCP and Co-GP", () => {
+    const r = run("simple_pref_promote", {}, (c) => ({
+      ...c,
+      coGpName: "JV Partner",
+      coGpOfPromoteBps: 5_000,
+    }));
+    expect(r.gpCents).toBe(dollars(240_000));
+    expect(r.rcpCents).toBe(dollars(120_000));
+    expect(r.coGpCents).toBe(dollars(120_000));
+    expect(r.rcpCents + r.coGpCents).toBe(r.gpCents);
+    expect(r.notes.join(" ")).toMatch(/Co-GP JV Partner/);
+  });
+
   it("annual compounding pref on 1 year equals 8% of capital", () => {
     const accrued = prefAccrualCents({
       capitalCents: dollars(10_000_000),

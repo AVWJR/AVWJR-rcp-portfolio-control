@@ -98,6 +98,9 @@ export function WaterfallForm({
       unreturnedCapitalCents: prev.unreturnedCapitalCents,
       unpaidPrefCents: prev.unpaidPrefCents,
       prefPaidToDateCents: prev.prefPaidToDateCents,
+      coGpName: prev.coGpName,
+      coGpOfPromoteBps: prev.coGpOfPromoteBps,
+      coGpCoInvestShareBps: prev.coGpCoInvestShareBps,
     }));
     setStatus("idle");
   }
@@ -122,6 +125,9 @@ export function WaterfallForm({
         catchUpEnabled: form.catchUpEnabled,
         catchUpBps: form.catchUpBps,
         gpCoInvestBps: form.gpCoInvestBps,
+        coGpName: form.coGpName,
+        coGpOfPromoteBps: form.coGpOfPromoteBps,
+        coGpCoInvestShareBps: form.coGpCoInvestShareBps,
         promoteBase: form.promoteBase,
         lookbackClawback: form.lookbackClawback,
         notes: form.notes,
@@ -292,9 +298,58 @@ export function WaterfallForm({
       </section>
 
       <section className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
+        <h2 className="font-display text-2xl text-navy-900">Co-GP (optional, deal/SPE)</h2>
+        <p className="mt-1 text-sm text-ink-600">
+          Parties at this SPE: <strong>Deal LPs</strong>, <strong>RCP (GP or Co-GP)</strong>, and an optional
+          third-party <strong>Co-GP investor</strong>. Leave name blank and both shares at 0% to keep the prior
+          two-party LP vs single GP/RCP model. Co-GP dollars stay at the deal — OpCo cash/CFADS use RCP only.
+        </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <label className="text-sm text-ink-700">
+            Co-GP name
+            <input
+              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2"
+              value={form.coGpName}
+              placeholder="Third-party Co-GP (optional)"
+              onChange={(e) => setForm((p) => ({ ...p, coGpName: e.target.value }))}
+            />
+          </label>
+          <label className="text-sm text-ink-700">
+            Co-GP % of GP promote / catch-up / residual
+            <input
+              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={(form.coGpOfPromoteBps / 100).toString()}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, coGpOfPromoteBps: Math.round(Number(e.target.value) * 100) || 0 }))
+              }
+            />
+          </label>
+          <label className="text-sm text-ink-700">
+            Co-GP % of GP co-invest (ROC / pref)
+            <input
+              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={(form.coGpCoInvestShareBps / 100).toString()}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, coGpCoInvestShareBps: Math.round(Number(e.target.value) * 100) || 0 }))
+              }
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
         <h2 className="font-display text-2xl text-navy-900">Tiers</h2>
         <p className="mt-1 text-sm text-ink-600">
-          Splits are LP / GP in percent. Multi-hurdle bands use dollar-pref proxies of IRR — not XIRR.
+          Splits are LP / GP in percent (GP side is then split RCP vs Co-GP above). Multi-hurdle bands use dollar-pref
+          proxies of IRR — not XIRR.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
@@ -358,36 +413,45 @@ export function WaterfallForm({
         <h2 className="font-display text-2xl text-navy-900">Applies to OpCo rollup</h2>
         <p className="mt-1 text-sm text-ink-700">
           Illustrative split of <strong>this period’s CFADS</strong> (distributable cash the app already defines — not
-          invented AR). RCP/GP share is what live OpCo cash / CFADS tiles use after you save. LP share stays at the SPE.
+          invented AR). <strong>RCP</strong> is what live OpCo cash / CFADS tiles use after you save. Deal LPs stay at
+          the SPE. Co-GP (if any) stays at the deal.
         </p>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.14em] text-gold-700">CFADS (gross)</p>
             <p className="font-display text-3xl tabular text-navy-900">{formatUsd(cfads)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-gold-700">LP share</p>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-gold-700">Deal LP share</p>
             <p className="font-display text-3xl tabular text-navy-900">{formatUsd(preview.lpCents)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-gold-700">GP / RCP after waterfall</p>
-            <p className="font-display text-3xl tabular text-navy-900">{formatUsd(preview.gpCents)}</p>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-gold-700">RCP after waterfall</p>
+            <p className="font-display text-3xl tabular text-navy-900">{formatUsd(preview.rcpCents)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-gold-700">
+              Co-GP{form.coGpName.trim() ? ` · ${form.coGpName.trim()}` : ""}
+            </p>
+            <p className="font-display text-3xl tabular text-navy-900">{formatUsd(preview.coGpCents)}</p>
           </div>
         </div>
         <p className="mt-3 text-sm text-ink-700">
           LP pref unpaid after this run: <strong>{formatUsd(preview.unpaidPrefAfterCents)}</strong>
           {preview.europeanPromoteBlocked ? " · European promote blocked this run." : ""}
           {preview.lookThrough ? " · 100% look-through (current default)." : ""}
+          {preview.coGpCents === 0n ? " · No Co-GP (two-party LP / GP)." : ""}
         </p>
         <p className="mt-1 text-sm text-ink-600">
-          If SPE cash were distributed today: LP {formatUsd(cashPreview.lpCents)} · GP/RCP {formatUsd(cashPreview.gpCents)}{" "}
-          of {formatUsd(cash)}.
+          If SPE cash were distributed today: Deal LP {formatUsd(cashPreview.lpCents)} · RCP{" "}
+          {formatUsd(cashPreview.rcpCents)} · Co-GP {formatUsd(cashPreview.coGpCents)} of {formatUsd(cash)}.
         </p>
         <ul className="mt-3 space-y-1 text-sm text-ink-700">
           {preview.steps.map((step) => (
             <li key={step.tierId + step.label}>
               <span className="uppercase tracking-[0.08em] text-gold-700">{step.kind}</span> {step.label}: LP{" "}
               {formatUsd(step.lpCents)} · GP {formatUsd(step.gpCents)}
+              {step.coGpCents > 0n ? ` (RCP ${formatUsd(step.rcpCents)} · Co-GP ${formatUsd(step.coGpCents)})` : ""}
             </li>
           ))}
         </ul>
@@ -402,7 +466,7 @@ export function WaterfallForm({
         >
           {status === "saving" ? "Saving…" : "Save waterfall"}
         </button>
-        {status === "saved" ? <p className="text-sm text-navy-800">Saved. OpCo rollup will use GP/RCP share.</p> : null}
+        {status === "saved" ? <p className="text-sm text-navy-800">Saved. OpCo rollup will use RCP share (Co-GP stays at the deal).</p> : null}
         {error ? <p className="text-sm text-red-800">{error}</p> : null}
       </div>
     </div>

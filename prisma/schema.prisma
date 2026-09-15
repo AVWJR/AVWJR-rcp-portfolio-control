@@ -151,6 +151,9 @@ model SpeWaterfall {
   catchUpEnabled         Boolean  @default(false)
   catchUpBps             Int      @default(10000)
   gpCoInvestBps          Int      @default(0)
+  coGpName               String?
+  coGpOfPromoteBps       Int      @default(0)
+  coGpCoInvestShareBps   Int      @default(0)
   promoteBase            String   @default("DISTRIBUTABLE_CASH")
   lookbackClawback       Boolean  @default(false)
   lpContributedCents     BigInt   @default(0)

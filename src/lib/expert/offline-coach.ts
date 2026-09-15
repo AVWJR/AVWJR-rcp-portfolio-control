@@ -375,15 +375,20 @@ function waterfallCopy(ctx: ExpertClientContext): string {
   const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-HMTOS";
   const list = link("/deals", ctx, "Deals");
   const form = link(`/deals/${spe}/waterfall`, { ...ctx, entityCode: spe }, `waterfall for ${spe}`);
+  const dealPf = link(`/deals/${spe}/proforma`, { ...ctx, entityCode: spe }, `deal proforma for ${spe}`);
+  const opcoPf = link("/opco/proforma", { ...ctx, entityCode: "RCP-OPCO", view: "combined" }, "OpCo proforma");
   const opco = link("/dashboard/RCP-OPCO", { ...ctx, entityCode: "RCP-OPCO", view: "combined" }, "OpCo dashboard");
-  return `**How to set the deal waterfall**
+  return `**How to set the deal waterfall, Co-GP, and proformas**
 
 Gold nav **Deals** → ${list} → open the SPE card (**${spe}** — or any live SPE) → **LP/GP waterfall**. Direct: ${form}.
 
 1. Click a template chip: Simple pref + promote, Institutional catch-up, Multi-hurdle IRR, American / deal-by-deal, or European / whole-fund. Existing SPEs start as **100% look-through** (today’s OpCo stack) until you choose — nothing silent-changes demo numbers.
 2. Edit pref rate, compounding, catch-up, hurdle IRRs, LP/GP splits, GP co-invest %, promote base, lookback/clawback, LP contributed capital, and notes.
-3. The gold **Applies to OpCo rollup** preview splits this period’s CFADS into **LP share** vs **GP/RCP after waterfall**.
-4. **Save waterfall**. Live ${opco} cash / CFADS / liquidity then use the GP/RCP share. The **Monthly Investor Pack** and LP/GP/IC narratives reprint this same split (LP share / GP promote / pref unpaid) — they do not stay on 100% look-through. Property NOI stays look-through. Soft-archived SPEs stay out of rollup.
+3. Optional **Co-GP** (third party at this SPE): name, % of GP promote/catch-up/residual, and % of GP co-invest. Leave 0% / blank name for the prior two-party LP vs single GP/RCP model.
+4. The gold **Applies to OpCo rollup** preview splits this period’s CFADS into **Deal LP** vs **RCP** vs **Co-GP**. OpCo uses RCP only.
+5. **Save waterfall**. Live ${opco} cash / CFADS / liquidity then use the RCP share after waterfall. The **Monthly Investor Pack** and LP/GP/IC narratives reprint this same split (LP share / RCP / Co-GP / pref unpaid) — they do not stay on 100% look-through. Property NOI stays look-through. Soft-archived SPEs stay out of rollup.
+
+**Proformas** (forward-looking, same waterfall + Co-GP — not historical books): Deal LPs and Deal GPs (RCP + Co-GP) at ${dealPf}. OpCo LPs (aggregated Deal LPs) and OpCo GPs (RCP platform) at ${opcoPf}.
 
 Partners cannot save. This is a distribution waterfall on CFADS / cash-if-distributed — not invented AR or delinquency.`;
 }

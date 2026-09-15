@@ -66,6 +66,37 @@ describe("waterfall persist + template apply", () => {
       expect(loaded?.persisted).toBe(true);
       expect(loaded?.config.templateId).toBe("simple_pref_promote");
       expect(loaded?.lpContributedCents).toBe(dollars(10_000_000));
+      expect(loaded?.config.coGpOfPromoteBps).toBe(0);
+    } finally {
+      await deleteSpe(entity.id);
+    }
+  });
+
+  it("saveSpeWaterfall persists Co-GP shares", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
+    const entity = await createEntityWithCoa({
+      code: `SPE-WFCO${Date.now().toString(36).toUpperCase()}`,
+      name: "Co-GP Save LLC",
+      type: "SPE",
+      parentId: opco.id,
+    });
+    try {
+      const tmpl = applyWaterfallTemplate("simple_pref_promote");
+      await saveSpeWaterfall(entity.id, {
+        ...tmpl,
+        coGpName: "JV Partner",
+        coGpOfPromoteBps: 5_000,
+        coGpCoInvestShareBps: 2_500,
+        lpContributedCents: dollars(10_000_000),
+        unreturnedCapitalCents: dollars(10_000_000),
+        unpaidPrefCents: 0n,
+        prefPaidToDateCents: 0n,
+      });
+      const loaded = await loadSpeWaterfall(entity.id);
+      expect(loaded?.config.coGpName).toBe("JV Partner");
+      expect(loaded?.config.coGpOfPromoteBps).toBe(5_000);
+      expect(loaded?.config.coGpCoInvestShareBps).toBe(2_500);
     } finally {
       await deleteSpe(entity.id);
     }

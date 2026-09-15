@@ -67,7 +67,10 @@ export function chromeAlias(label: string, href?: string): string {
   const path = (href ?? "").split("?")[0] || "";
   if (path === "/deals/new" || (/\badd\b/.test(n) && /\bdeal\b/.test(n))) return "add_deal";
   if (path === "/archive" || (/\barchive\b/.test(n) && /\bdeal\b/.test(n))) return "deal_archive";
-  if (path.includes("/waterfall") || (/\bwaterfall\b/.test(n) && /\b(deal|lp|gp|pref|promote)\b/.test(n))) return "deal_waterfall";
+  if (path.includes("/proforma") || (/\bproforma\b/.test(n) && /\b(deal|opco|lp|gp)\b/.test(n))) {
+    return path.includes("opco") ? "opco_proforma" : "deal_proforma";
+  }
+  if (path.includes("/waterfall") || (/\bwaterfall\b/.test(n) && /\b(deal|lp|gp|pref|promote|co.?gp)\b/.test(n))) return "deal_waterfall";
   if (path === "/deals" || (/\bdeals?\b/.test(n) && /\b(open|list)\b/.test(n))) return "deals_list";
   if (path) return `path:${path}`;
   return n;
@@ -140,6 +143,11 @@ function queryChips(q: string): ExpertChip[] | null {
         id: "deal_waterfall",
         label: "Open deal waterfall",
         prompt: "How do I set the deal waterfall? Give the Deals click path for SPE-HMTOS.",
+      },
+      {
+        id: "deal_proforma",
+        label: "Open deal proforma",
+        prompt: "Where do I open the deal proforma for SPE-HMTOS, and how do I set Co-GP?",
       },
     ];
   }
@@ -231,10 +239,16 @@ export function rankSuggestedActions(
         href: dest(`/deals/${spe}/waterfall`, { ...ctx, entityCode: spe }),
       },
       {
-        id: "act_deals",
+        id: "act_deal_proforma",
         kind: "navigate",
-        label: "Open Deals",
-        href: dest("/deals", ctx),
+        label: "Open deal proforma",
+        href: dest(`/deals/${spe}/proforma`, { ...ctx, entityCode: spe }),
+      },
+      {
+        id: "act_opco_proforma",
+        kind: "navigate",
+        label: "Open OpCo proforma",
+        href: dest("/opco/proforma", { ...ctx, entityCode: "RCP-OPCO", view: "combined" }),
       },
     ];
   }

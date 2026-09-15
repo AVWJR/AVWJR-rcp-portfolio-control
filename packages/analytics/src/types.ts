@@ -56,6 +56,7 @@ export const RATIO_IDS = [
   "properties_units",
   "noi_concentration",
   "rcp_after_waterfall",
+  "co_gp_after_waterfall",
   "lp_pref_unpaid",
   "lp_share_not_upstreamed",
 ] as const;

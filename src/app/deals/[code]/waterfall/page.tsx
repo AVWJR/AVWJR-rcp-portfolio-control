@@ -79,6 +79,12 @@ export default async function DealWaterfallPage({
                 </Link>
                 <Link
                   className="text-navy-700 underline"
+                  href={`/deals/${code}/proforma?entity=${code}&period=${period}`}
+                >
+                  Deal proforma
+                </Link>
+                <Link
+                  className="text-navy-700 underline"
                   href={`/dashboard/RCP-OPCO?entity=RCP-OPCO&period=${period}&view=combined`}
                 >
                   OpCo rollup

@@ -1,7 +1,7 @@
 /** Shared matchers so offline coach and chips agree on clear how-to questions. */
 
 export function isWaterfallQuery(q: string): boolean {
-  return /(waterfall|promote|pref(?:erred)? return|lp\s*\/\s*gp|catch-?up|hurdle irr|deal waterfall)/i.test(q);
+  return /(waterfall|promote|pref(?:erred)? return|lp\s*\/\s*gp|catch-?up|hurdle irr|deal waterfall|co-?gp|proforma)/i.test(q);
 }
 
 export function isDeleteDealQuery(q: string): boolean {

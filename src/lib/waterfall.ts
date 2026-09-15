@@ -1,6 +1,7 @@
 import {
   applyWaterfallTemplate,
   defaultWaterfallConfig,
+  hasCoGp,
   isLookThroughTemplate,
   isWaterfallTemplateId,
   lookThroughConfig,
@@ -39,6 +40,9 @@ export type WaterfallSaveInput = {
   catchUpEnabled: boolean;
   catchUpBps: number;
   gpCoInvestBps: number;
+  coGpName?: string;
+  coGpOfPromoteBps?: number;
+  coGpCoInvestShareBps?: number;
   promoteBase: string;
   lookbackClawback: boolean;
   lpContributedCents: bigint | string | number;
@@ -72,6 +76,11 @@ function clampBps(value: unknown, fallback: number): number {
   return Math.min(10_000, Math.max(0, Math.round(n)));
 }
 
+function sanitizeCoGpName(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, 120);
+}
+
 function parseTiers(raw: string | WaterfallTier[] | undefined, fallback: WaterfallTier[]): WaterfallTier[] {
   const rows = typeof raw === "string" ? (JSON.parse(raw || "[]") as unknown) : raw;
   if (!Array.isArray(rows) || rows.length === 0) return fallback;
@@ -100,6 +109,9 @@ export function configFromRow(row: {
   catchUpEnabled: boolean;
   catchUpBps: number;
   gpCoInvestBps: number;
+  coGpName?: string | null;
+  coGpOfPromoteBps?: number | null;
+  coGpCoInvestShareBps?: number | null;
   promoteBase: string;
   lookbackClawback: boolean;
   notes: string | null;
@@ -120,6 +132,9 @@ export function configFromRow(row: {
     catchUpEnabled: row.catchUpEnabled,
     catchUpBps: clampBps(row.catchUpBps, fallback.catchUpBps),
     gpCoInvestBps: clampBps(row.gpCoInvestBps, fallback.gpCoInvestBps),
+    coGpName: sanitizeCoGpName(row.coGpName) || fallback.coGpName,
+    coGpOfPromoteBps: clampBps(row.coGpOfPromoteBps ?? 0, fallback.coGpOfPromoteBps),
+    coGpCoInvestShareBps: clampBps(row.coGpCoInvestShareBps ?? 0, fallback.coGpCoInvestShareBps),
     promoteBase,
     lookbackClawback: row.lookbackClawback,
     notes: row.notes ?? fallback.notes,
@@ -254,12 +269,18 @@ export type SpeWaterfallPools = {
   entityName: string;
   templateId: WaterfallTemplateId;
   lookThrough: boolean;
+  hasCoGp: boolean;
+  coGpName: string;
   cashGrossCents: bigint;
   cfadsGrossCents: bigint;
   cashGpCents: bigint;
   cashLpCents: bigint;
+  cashRcpCents: bigint;
+  cashCoGpCents: bigint;
   cfadsGpCents: bigint;
   cfadsLpCents: bigint;
+  cfadsRcpCents: bigint;
+  cfadsCoGpCents: bigint;
   unpaidPrefAfterCents: bigint;
   prefAccruedThisRunCents: bigint;
   rocLpCents: bigint;
@@ -284,12 +305,18 @@ export function applyWaterfallToPools(
     entityName: record.entityName,
     templateId: record.config.templateId,
     lookThrough: cashRun.lookThrough && cfadsRun.lookThrough,
+    hasCoGp: hasCoGp(record.config),
+    coGpName: record.config.coGpName.trim(),
     cashGrossCents: pools.cashCents > 0n ? pools.cashCents : 0n,
     cfadsGrossCents: pools.cfadsCents,
     cashGpCents: cashRun.gpCents,
     cashLpCents: cashRun.lpCents,
+    cashRcpCents: cashRun.rcpCents,
+    cashCoGpCents: cashRun.coGpCents,
     cfadsGpCents: cfadsRun.gpCents,
     cfadsLpCents: cfadsRun.lpCents,
+    cfadsRcpCents: cfadsRun.rcpCents,
+    cfadsCoGpCents: cfadsRun.coGpCents,
     unpaidPrefAfterCents: cfadsRun.unpaidPrefAfterCents,
     prefAccruedThisRunCents: cfadsRun.prefAccruedThisRunCents,
     rocLpCents: tiers.rocLpCents,
@@ -305,12 +332,17 @@ export type OpCoWaterfallRollup = {
   applied: boolean;
   speCount: number;
   templatedCount: number;
+  hasCoGp: boolean;
   cashGrossCents: bigint;
   cashGpCents: bigint;
   cashLpCents: bigint;
+  cashRcpCents: bigint;
+  cashCoGpCents: bigint;
   cfadsGrossCents: bigint;
   cfadsGpCents: bigint;
   cfadsLpCents: bigint;
+  cfadsRcpCents: bigint;
+  cfadsCoGpCents: bigint;
   unpaidPrefCents: bigint;
   rocLpCents: bigint;
   prefLpCents: bigint;
@@ -337,12 +369,18 @@ export function rollupWaterfallPools(
     spes.push(applyWaterfallToPools(record, pool, gate, periodMonths));
   }
   const templatedCount = spes.filter((s) => !s.lookThrough).length;
-  const cashGross = spes.reduce((acc, s) => acc + s.cashGrossCents, 0n) + (opcoCashCents > 0n ? opcoCashCents : 0n);
-  const cashGp = spes.reduce((acc, s) => acc + s.cashGpCents, 0n) + (opcoCashCents > 0n ? opcoCashCents : 0n);
+  const coGpCount = spes.filter((s) => s.hasCoGp && s.cashCoGpCents + s.cfadsCoGpCents > 0n).length;
+  const opcoOwn = opcoCashCents > 0n ? opcoCashCents : 0n;
+  const cashGross = spes.reduce((acc, s) => acc + s.cashGrossCents, 0n) + opcoOwn;
+  const cashGp = spes.reduce((acc, s) => acc + s.cashGpCents, 0n) + opcoOwn;
   const cashLp = spes.reduce((acc, s) => acc + s.cashLpCents, 0n);
+  const cashRcp = spes.reduce((acc, s) => acc + s.cashRcpCents, 0n) + opcoOwn;
+  const cashCoGp = spes.reduce((acc, s) => acc + s.cashCoGpCents, 0n);
   const cfadsGross = spes.reduce((acc, s) => acc + (s.cfadsGrossCents > 0n ? s.cfadsGrossCents : 0n), 0n);
   const cfadsGp = spes.reduce((acc, s) => acc + s.cfadsGpCents, 0n);
   const cfadsLp = spes.reduce((acc, s) => acc + s.cfadsLpCents, 0n);
+  const cfadsRcp = spes.reduce((acc, s) => acc + s.cfadsRcpCents, 0n);
+  const cfadsCoGp = spes.reduce((acc, s) => acc + s.cfadsCoGpCents, 0n);
   const unpaidPref = spes.reduce((acc, s) => acc + s.unpaidPrefAfterCents, 0n);
   const rocLpCents = spes.reduce((acc, s) => acc + s.rocLpCents, 0n);
   const prefLpCents = spes.reduce((acc, s) => acc + s.prefLpCents, 0n);
@@ -350,19 +388,25 @@ export function rollupWaterfallPools(
   const promoteGpCents = spes.reduce((acc, s) => acc + s.promoteGpCents, 0n);
   const residualLpCents = spes.reduce((acc, s) => acc + s.residualLpCents, 0n);
   const applied = templatedCount > 0;
+  const hasCoGpApplied = coGpCount > 0;
   const note = applied
-    ? `OpCo cash and CFADS are RCP/GP after waterfall (${templatedCount} SPE template(s)). LP share is not look-through. Property NOI stays look-through. Soft-archived SPEs stay out.`
+    ? `OpCo cash and CFADS are RCP after waterfall (${templatedCount} SPE template(s)${hasCoGpApplied ? `; Co-GP stays at the deal` : ""}). LP share is not look-through. Property NOI stays look-through. Soft-archived SPEs stay out.`
     : "No deal waterfall selected — OpCo still 100% look-through of live SPE cash/CFADS (demo default).";
   return {
     applied,
     speCount: spes.length,
     templatedCount,
+    hasCoGp: hasCoGpApplied,
     cashGrossCents: cashGross,
     cashGpCents: cashGp,
     cashLpCents: cashLp,
+    cashRcpCents: cashRcp,
+    cashCoGpCents: cashCoGp,
     cfadsGrossCents: cfadsGross,
     cfadsGpCents: cfadsGp,
     cfadsLpCents: cfadsLp,
+    cfadsRcpCents: cfadsRcp,
+    cfadsCoGpCents: cfadsCoGp,
     unpaidPrefCents: unpaidPref,
     rocLpCents,
     prefLpCents,
@@ -414,6 +458,9 @@ export function parseWaterfallSave(body: Partial<WaterfallSaveInput>): {
     catchUpEnabled: Boolean(body.catchUpEnabled),
     catchUpBps: clampBps(body.catchUpBps, base.catchUpBps),
     gpCoInvestBps: clampBps(body.gpCoInvestBps, base.gpCoInvestBps),
+    coGpName: sanitizeCoGpName(body.coGpName) || base.coGpName,
+    coGpOfPromoteBps: clampBps(body.coGpOfPromoteBps, base.coGpOfPromoteBps),
+    coGpCoInvestShareBps: clampBps(body.coGpCoInvestShareBps, base.coGpCoInvestShareBps),
     promoteBase,
     lookbackClawback: Boolean(body.lookbackClawback),
     notes: typeof body.notes === "string" ? body.notes.slice(0, 4_000) : base.notes,
@@ -446,6 +493,9 @@ export async function saveSpeWaterfall(entityId: string, body: Partial<Waterfall
       catchUpEnabled: parsed.config.catchUpEnabled,
       catchUpBps: parsed.config.catchUpBps,
       gpCoInvestBps: parsed.config.gpCoInvestBps,
+      coGpName: parsed.config.coGpName || null,
+      coGpOfPromoteBps: parsed.config.coGpOfPromoteBps,
+      coGpCoInvestShareBps: parsed.config.coGpCoInvestShareBps,
       promoteBase: parsed.config.promoteBase,
       lookbackClawback: parsed.config.lookbackClawback,
       lpContributedCents: parsed.lpContributedCents,
@@ -462,6 +512,9 @@ export async function saveSpeWaterfall(entityId: string, body: Partial<Waterfall
       catchUpEnabled: parsed.config.catchUpEnabled,
       catchUpBps: parsed.config.catchUpBps,
       gpCoInvestBps: parsed.config.gpCoInvestBps,
+      coGpName: parsed.config.coGpName || null,
+      coGpOfPromoteBps: parsed.config.coGpOfPromoteBps,
+      coGpCoInvestShareBps: parsed.config.coGpCoInvestShareBps,
       promoteBase: parsed.config.promoteBase,
       lookbackClawback: parsed.config.lookbackClawback,
       lpContributedCents: parsed.lpContributedCents,

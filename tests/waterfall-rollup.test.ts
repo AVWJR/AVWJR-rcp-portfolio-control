@@ -56,10 +56,30 @@ describe("OpCo waterfall rollup uses GP/RCP share", () => {
     });
     expect(rolled.applied).toBe(true);
     expect(rolled.cfadsGpCents).toBe(direct.gpCents);
+    expect(rolled.cfadsRcpCents).toBe(direct.rcpCents);
+    expect(rolled.cfadsCoGpCents).toBe(0n);
     expect(rolled.cfadsLpCents).toBe(direct.lpCents);
     expect(rolled.cfadsGpCents).toBe(dollars(240_000));
     expect(rolled.cfadsGpCents + rolled.cfadsLpCents).toBe(cfads);
     expect(rolled.cfadsGpCents).toBeLessThan(rolled.cfadsGrossCents);
+  });
+
+  it("haircuts OpCo CFADS to RCP (not full GP) when Co-GP is set", () => {
+    const spe = record("SPE-HMTOS", "simple_pref_promote");
+    spe.config = { ...spe.config, coGpOfPromoteBps: 5_000, coGpName: "JV" };
+    const cfads = dollars(12_000_000);
+    const rolled = rollupWaterfallPools(
+      [spe],
+      [{ entityCode: "SPE-HMTOS", cashCents: cfads, cfadsCents: cfads }],
+      0n,
+      12,
+    );
+    expect(rolled.applied).toBe(true);
+    expect(rolled.hasCoGp).toBe(true);
+    expect(rolled.cfadsGpCents).toBe(dollars(240_000));
+    expect(rolled.cfadsRcpCents).toBe(dollars(120_000));
+    expect(rolled.cfadsCoGpCents).toBe(dollars(120_000));
+    expect(rolled.cfadsRcpCents + rolled.cfadsCoGpCents).toBe(rolled.cfadsGpCents);
   });
 
   it("does not count archived-missing SPEs (records are live-only)", () => {

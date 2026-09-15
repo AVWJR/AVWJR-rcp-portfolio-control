@@ -16,6 +16,7 @@
  * - Residual / promote: remaining × (lpSplit : gpSplit). LP-class residual is then pari passu with GP co-invest.
  * - European: while the OpCo/portfolio capital+pref gate is closed, CATCH_UP and promote residual are 100% LP-class (no GP promote).
  * - Look-through 100%: entire pool is RCP/GP (legacy demo; no LP).
+ * - Optional Co-GP: GP-side promote vs co-invest split RCP vs third-party Co-GP (0 = two-party).
  */
 
 export const BPS_DENOMINATOR = 10_000;
@@ -59,6 +60,15 @@ export type WaterfallConfig = {
   catchUpBps: number;
   /** GP co-invest as bps of the capital stack (500 = 5%). */
   gpCoInvestBps: number;
+  /**
+   * Optional third-party Co-GP name at this SPE. Empty = no named Co-GP
+   * (share still applies if coGpOfPromoteBps / coGpCoInvestShareBps > 0).
+   */
+  coGpName: string;
+  /** Co-GP share of GP-side promote / catch-up / residual promote (0 = all RCP). */
+  coGpOfPromoteBps: number;
+  /** Co-GP share of GP co-invest (ROC / pref / pari passu) (0 = all RCP). */
+  coGpCoInvestShareBps: number;
   promoteBase: PromoteBase;
   lookbackClawback: boolean;
   notes: string;
@@ -95,7 +105,12 @@ export type WaterfallStep = {
   label: string;
   takenCents: bigint;
   lpCents: bigint;
+  /** Deal GP side (RCP + Co-GP). */
   gpCents: bigint;
+  /** RCP’s share of this step’s GP-side dollars. */
+  rcpCents: bigint;
+  /** Third-party Co-GP share of this step’s GP-side dollars. */
+  coGpCents: bigint;
   note: string;
 };
 
@@ -104,7 +119,12 @@ export type WaterfallRunResult = {
   lookThrough: boolean;
   distributableCents: bigint;
   lpCents: bigint;
+  /** Deal GP side (RCP + optional Co-GP). lpCents + gpCents = allocated. */
   gpCents: bigint;
+  /** RCP platform share of the GP side. Equals gpCents when Co-GP share is 0. */
+  rcpCents: bigint;
+  /** Third-party Co-GP share of the GP side. 0 when no Co-GP. rcpCents + coGpCents = gpCents. */
+  coGpCents: bigint;
   /** LP + GP; equals distributable (negative pools are treated as $0). */
   allocatedCents: bigint;
   unreturnedCapitalAfterCents: bigint;
@@ -128,7 +148,9 @@ export const WATERFALL_FORMULAS = [
   "Multi-hurdle: after ROC, successive promote bands sized as Δhurdle × capital (8% then +4% then +3% on $ capital) then leftover at the last split.",
   "American: deal-level hurdles (same math as simple pref+promote unless edited) with clawback/lookback stored for later true-up — this run does not reverse prior promote.",
   "European: if portfolio capital+pref unpaid (or this SPE has $0 capital entered), residual promote and catch-up are 100% LP-class.",
-  "RCP OpCo entitlement = GP cents (co-invest + promote). LP cents stay at the SPE / LP — they are not look-through to OpCo.",
+  "RCP OpCo entitlement = RCP cents (GP-side co-invest + promote after optional Co-GP split). LP cents stay at the SPE / LP — they are not look-through to OpCo.",
+  "Co-GP (optional, deal/SPE): GP-side promote/catch-up/residual × coGpOfPromoteBps to Co-GP, remainder to RCP. GP co-invest (ROC/pref/pari passu) × coGpCoInvestShareBps to Co-GP. Default 0 / blank name = prior two-party LP vs single GP/RCP.",
+  "Proforma: same engine on a forward hold (annualized period CFADS × years, optional growth, user-entered exit proceeds on the last year). Not a budget and not historical books.",
 ].join("\n");
 
 export function isWaterfallTemplateId(value: string): value is WaterfallTemplateId {
@@ -137,6 +159,35 @@ export function isWaterfallTemplateId(value: string): value is WaterfallTemplate
 
 export function isLookThroughTemplate(id: WaterfallTemplateId): boolean {
   return id === "look_through_100";
+}
+
+export function hasCoGp(config: Pick<WaterfallConfig, "coGpName" | "coGpOfPromoteBps" | "coGpCoInvestShareBps">): boolean {
+  return config.coGpOfPromoteBps > 0 || config.coGpCoInvestShareBps > 0 || Boolean(config.coGpName.trim());
+}
+
+/** Split GP-side dollars: Co-GP takes `coGpBps` of the amount; RCP takes the remainder. */
+export function splitGpSide(gpAmount: bigint, coGpBps: number): { rcp: bigint; coGp: bigint } {
+  const amount = gpAmount > 0n ? gpAmount : 0n;
+  const bps = clampBps(coGpBps);
+  if (amount <= 0n || bps <= 0) return { rcp: amount, coGp: 0n };
+  if (bps >= BPS_DENOMINATOR) return { rcp: 0n, coGp: amount };
+  const coGp = (amount * BigInt(bps)) / BigInt(BPS_DENOMINATOR);
+  return { rcp: amount - coGp, coGp };
+}
+
+/** Promote dollars use coGpOfPromoteBps; co-invest dollars use coGpCoInvestShareBps. */
+export function gpParties(
+  gpPromoteCents: bigint,
+  gpCoInvestCents: bigint,
+  config: Pick<WaterfallConfig, "coGpOfPromoteBps" | "coGpCoInvestShareBps">,
+): { gpCents: bigint; rcpCents: bigint; coGpCents: bigint } {
+  const promote = splitGpSide(gpPromoteCents, config.coGpOfPromoteBps);
+  const coinvest = splitGpSide(gpCoInvestCents, config.coGpCoInvestShareBps);
+  return {
+    gpCents: gpPromoteCents + gpCoInvestCents,
+    rcpCents: promote.rcp + coinvest.rcp,
+    coGpCents: promote.coGp + coinvest.coGp,
+  };
 }
 
 export function splitBps(amount: bigint, lpBps: number, gpBps: number): { lp: bigint; gp: bigint } {
@@ -275,6 +326,8 @@ function residualTier(id: string, label: string, lp: number, gp: number, hurdle:
   return { id, kind: "PROMOTE", label, hurdleIrrBps: hurdle, lpSplitBps: lp, gpSplitBps: gp };
 }
 
+const NO_CO_GP = { coGpName: "", coGpOfPromoteBps: 0, coGpCoInvestShareBps: 0 } as const;
+
 export function lookThroughConfig(): WaterfallConfig {
   return {
     templateId: "look_through_100",
@@ -283,6 +336,7 @@ export function lookThroughConfig(): WaterfallConfig {
     catchUpEnabled: false,
     catchUpBps: 10_000,
     gpCoInvestBps: 0,
+    ...NO_CO_GP,
     promoteBase: "DISTRIBUTABLE_CASH",
     lookbackClawback: false,
     notes: "Default: 100% look-through to RCP/OpCo. Pick a template to apply a deal waterfall.",
@@ -302,6 +356,7 @@ export function applyWaterfallTemplate(id: WaterfallTemplateId): WaterfallConfig
         catchUpEnabled: false,
         catchUpBps: 10_000,
         gpCoInvestBps: 0,
+        ...NO_CO_GP,
         promoteBase: "DISTRIBUTABLE_CASH",
         lookbackClawback: false,
         notes: "Simple pref + straight promote. No GP catch-up.",
@@ -319,6 +374,7 @@ export function applyWaterfallTemplate(id: WaterfallTemplateId): WaterfallConfig
         catchUpEnabled: true,
         catchUpBps: 10_000,
         gpCoInvestBps: 0,
+        ...NO_CO_GP,
         promoteBase: "DISTRIBUTABLE_CASH",
         lookbackClawback: false,
         notes: "Institutional: 100% catch-up so GP reaches 20% of profits above ROC, then 80/20.",
@@ -337,6 +393,7 @@ export function applyWaterfallTemplate(id: WaterfallTemplateId): WaterfallConfig
         catchUpEnabled: false,
         catchUpBps: 10_000,
         gpCoInvestBps: 0,
+        ...NO_CO_GP,
         promoteBase: "DISTRIBUTABLE_CASH",
         lookbackClawback: false,
         notes:
@@ -356,6 +413,7 @@ export function applyWaterfallTemplate(id: WaterfallTemplateId): WaterfallConfig
         catchUpEnabled: false,
         catchUpBps: 10_000,
         gpCoInvestBps: 0,
+        ...NO_CO_GP,
         promoteBase: "DISTRIBUTABLE_CASH",
         lookbackClawback: true,
         notes:
@@ -374,6 +432,7 @@ export function applyWaterfallTemplate(id: WaterfallTemplateId): WaterfallConfig
         catchUpEnabled: false,
         catchUpBps: 10_000,
         gpCoInvestBps: 0,
+        ...NO_CO_GP,
         promoteBase: "DISTRIBUTABLE_CASH",
         lookbackClawback: false,
         notes:
@@ -411,7 +470,7 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
   const lpCapital = input.lpContributedCents > 0n ? input.lpContributedCents : 0n;
   const stack = lpCapital + gpCoInvest;
 
-  let unreturned = input.unreturnedCapitalCents > 0n ? input.unreturnedCapitalCents : stack;
+  let unreturned = input.unreturnedCapitalCents > 0n ? input.unreturnedCapitalCents : 0n;
   if (unreturned > stack && stack > 0n) unreturned = stack;
 
   const european =
@@ -429,8 +488,15 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
   if (config.lookbackClawback) {
     notes.push("Clawback/lookback is flagged for later true-up; this run does not reverse prior promote.");
   }
+  if (hasCoGp(config)) {
+    const who = config.coGpName.trim() || "Co-GP";
+    notes.push(
+      `Co-GP ${who}: ${config.coGpOfPromoteBps / 100}% of GP promote/catch-up · ${config.coGpCoInvestShareBps / 100}% of GP co-invest. Remainder is RCP.`,
+    );
+  }
 
   if (lookThrough) {
+    const parties = gpParties(pool, 0n, config);
     const steps: WaterfallStep[] = [
       {
         tierId: "look_through",
@@ -438,8 +504,10 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
         label: "100% look-through to RCP/GP",
         takenCents: pool,
         lpCents: 0n,
-        gpCents: pool,
-        note: "No LP/GP waterfall selected. OpCo still stacks this SPE at 100%.",
+        gpCents: parties.gpCents,
+        rcpCents: parties.rcpCents,
+        coGpCents: parties.coGpCents,
+        note: "No LP/GP waterfall selected. OpCo still stacks this SPE at 100% (Co-GP share of that GP-side if set).",
       },
     ];
     return {
@@ -447,7 +515,9 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       lookThrough: true,
       distributableCents: pool,
       lpCents: 0n,
-      gpCents: pool,
+      gpCents: parties.gpCents,
+      rcpCents: parties.rcpCents,
+      coGpCents: parties.coGpCents,
       allocatedCents: pool,
       unreturnedCapitalAfterCents: unreturned,
       unpaidPrefAfterCents: input.unpaidPrefCents > 0n ? input.unpaidPrefCents : 0n,
@@ -460,7 +530,7 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
   }
 
   const prefAccrued = prefAccrualCents({
-    capitalCents: stack > 0n ? stack : lpCapital,
+    capitalCents: unreturned > 0n ? unreturned : 0n,
     prefRateBps: config.prefRateBps,
     compounding: config.compounding,
     periodMonths: input.periodMonths,
@@ -497,13 +567,16 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       unreturned -= taken;
       lpTotal += split.lp;
       gpTotal += split.gp;
+      const rocParties = gpParties(0n, split.gp, config);
       steps.push({
         tierId: tier.id,
         kind: tier.kind,
         label: tier.label,
         takenCents: taken,
         lpCents: split.lp,
-        gpCents: split.gp,
+        gpCents: rocParties.gpCents,
+        rcpCents: rocParties.rcpCents,
+        coGpCents: rocParties.coGpCents,
         note: "Pari passu return of unreturned capital (LP + GP co-invest).",
       });
       continue;
@@ -517,13 +590,16 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       lpTotal += split.lp;
       gpTotal += split.gp;
       lpPrefPaid += split.lp;
+      const prefParties = gpParties(0n, split.gp, config);
       steps.push({
         tierId: tier.id,
         kind: tier.kind,
         label: tier.label,
         takenCents: taken,
         lpCents: split.lp,
-        gpCents: split.gp,
+        gpCents: prefParties.gpCents,
+        rcpCents: prefParties.rcpCents,
+        coGpCents: prefParties.coGpCents,
         note: `Pref accrual this run ${prefAccrued.toString()}¢ (${config.compounding}, ${input.periodMonths} mo). Pari passu with GP co-invest.`,
       });
       continue;
@@ -538,6 +614,8 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
           takenCents: 0n,
           lpCents: 0n,
           gpCents: 0n,
+          rcpCents: 0n,
+          coGpCents: 0n,
           note: european ? "Catch-up skipped — European promote blocked." : "Catch-up off.",
         });
         continue;
@@ -554,13 +632,16 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       lpTotal += lpClass.lp;
       gpTotal += lpClass.gp + toGp;
       gpPromoteSoFar += toGp;
+      const catchParties = gpParties(toGp, lpClass.gp, config);
       steps.push({
         tierId: tier.id,
         kind: tier.kind,
         label: tier.label,
         takenCents: taken,
         lpCents: lpClass.lp,
-        gpCents: lpClass.gp + toGp,
+        gpCents: catchParties.gpCents,
+        rcpCents: catchParties.rcpCents,
+        coGpCents: catchParties.coGpCents,
         note: `Catch-up target ${target.toString()}¢ = LP pref paid × GP/LP split. ${clampBps(config.catchUpBps) / 100}% of catch-up dollars to GP.`,
       });
       continue;
@@ -588,13 +669,16 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       const split = pariPassu(taken, lpCapital, gpCoInvest);
       lpTotal += split.lp;
       gpTotal += split.gp;
+      const euroParties = gpParties(0n, split.gp, config);
       steps.push({
         tierId: tier.id,
         kind: tier.kind,
         label: `${tier.label} (European — LP-class only)`,
         takenCents: taken,
         lpCents: split.lp,
-        gpCents: split.gp,
+        gpCents: euroParties.gpCents,
+        rcpCents: euroParties.rcpCents,
+        coGpCents: euroParties.coGpCents,
         note: "Promote blocked. Residual stays LP-class (GP co-invest pari passu only).",
       });
       continue;
@@ -605,16 +689,19 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
     lpTotal += lpClass.lp;
     gpTotal += lpClass.gp + promote.gp;
     gpPromoteSoFar += promote.gp;
+    const promoteParties = gpParties(promote.gp, lpClass.gp, config);
     steps.push({
       tierId: tier.id,
       kind: tier.kind,
       label: tier.label,
       takenCents: taken,
       lpCents: lpClass.lp,
-      gpCents: lpClass.gp + promote.gp,
+      gpCents: promoteParties.gpCents,
+      rcpCents: promoteParties.rcpCents,
+      coGpCents: promoteParties.coGpCents,
       note: isBanded
         ? `Hurdle band ${tier.hurdleIrrBps ?? 0} bps · split ${lpBps}/${gpBps}. Dollar-pref proxy — not XIRR.`
-        : `Residual split ${lpBps}/${gpBps} bps. GP promote is extra to RCP; LP-class includes GP co-invest.`,
+        : `Residual split ${lpBps}/${gpBps} bps. GP promote is extra to the GP side; LP-class includes GP co-invest.`,
     });
   }
 
@@ -626,25 +713,31 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       const split = pariPassu(remaining, lpCapital, gpCoInvest);
       lpTotal += split.lp;
       gpTotal += split.gp;
+      const overflowEuro = gpParties(0n, split.gp, config);
       steps.push({
         tierId: "overflow_lp",
         kind: "PROMOTE",
         label: "Unallocated residual (European LP-class)",
         takenCents: remaining,
         lpCents: split.lp,
-        gpCents: split.gp,
+        gpCents: overflowEuro.gpCents,
+        rcpCents: overflowEuro.rcpCents,
+        coGpCents: overflowEuro.coGpCents,
         note: "Leftover after listed tiers — LP-class because promote is blocked.",
       });
     } else {
       lpTotal += lpClass.lp;
       gpTotal += lpClass.gp + promote.gp;
+      const overflowParties = gpParties(promote.gp, lpClass.gp, config);
       steps.push({
         tierId: "overflow",
         kind: "PROMOTE",
         label: "Unallocated residual",
         takenCents: remaining,
         lpCents: lpClass.lp,
-        gpCents: lpClass.gp + promote.gp,
+        gpCents: overflowParties.gpCents,
+        rcpCents: overflowParties.rcpCents,
+        coGpCents: overflowParties.coGpCents,
         note: "Leftover after listed tiers, at last promote split.",
       });
     }
@@ -652,12 +745,16 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
   }
 
   const allocated = lpTotal + gpTotal;
+  const rcpTotal = steps.reduce((acc, s) => acc + s.rcpCents, 0n);
+  const coGpTotal = steps.reduce((acc, s) => acc + s.coGpCents, 0n);
   return {
     templateId: config.templateId,
     lookThrough: false,
     distributableCents: pool,
     lpCents: lpTotal,
     gpCents: gpTotal,
+    rcpCents: rcpTotal,
+    coGpCents: coGpTotal,
     allocatedCents: allocated,
     unreturnedCapitalAfterCents: unreturned < 0n ? 0n : unreturned,
     unpaidPrefAfterCents: unpaidPref < 0n ? 0n : unpaidPref,
@@ -723,9 +820,17 @@ export function gpShareBps(result: WaterfallRunResult): number {
 
 export function applyGpShare(amountCents: bigint, result: WaterfallRunResult): bigint {
   if (amountCents <= 0n) return 0n;
-  if (result.lookThrough) return amountCents;
+  if (result.lookThrough && result.coGpCents === 0n) return amountCents;
   if (result.distributableCents <= 0n) return 0n;
   return (amountCents * result.gpCents) / result.distributableCents;
+}
+
+/** Scale an amount by RCP’s share of the pool (OpCo entitlement after Co-GP). */
+export function applyRcpShare(amountCents: bigint, result: WaterfallRunResult): bigint {
+  if (amountCents <= 0n) return 0n;
+  if (result.lookThrough && result.coGpCents === 0n) return amountCents;
+  if (result.distributableCents <= 0n) return 0n;
+  return (amountCents * result.rcpCents) / result.distributableCents;
 }
 
 export function scaleByShare(amountCents: bigint, numerator: bigint, denominator: bigint): bigint {

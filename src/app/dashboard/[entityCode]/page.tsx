@@ -93,6 +93,9 @@ function PropertyView({
           <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/waterfall?${q}`}>
             LP/GP waterfall
           </Link>
+          <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/proforma?${q}`}>
+            Deal proforma
+          </Link>
           <Link className="text-navy-700 underline" href={`/dashboard/ratios?${q}`}>
             Ratio dictionary
           </Link>
@@ -118,8 +121,8 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
         <p className="mt-2 max-w-3xl text-sm text-ink-700">
           {dash.lookThroughLabel}. Operating KPIs stack wholly owned SPE books. The navy header
           combined view is a <strong>combined roll-up</strong> — it is not a GAAP consolidation.
-          Cash, CFADS, and liquidity use <strong>RCP/GP after waterfall</strong> when a deal template
-          is saved; property NOI stays look-through. Default remains 100% look-through until you
+          Cash, CFADS, and liquidity use <strong>RCP after waterfall</strong> when a deal template
+          is saved (Co-GP stays at the deal); property NOI stays look-through. Default remains 100% look-through until you
           choose a template on Deals.
         </p>
         <p className="mt-2 max-w-3xl text-sm text-ink-500">{dash.combinedNote}</p>
@@ -135,6 +138,9 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
           </Link>
           <Link className="text-navy-700 underline" href={`/narratives?${q}`}>
             Narratives / packs
+          </Link>
+          <Link className="text-navy-700 underline" href={`/opco/proforma?${q}`}>
+            OpCo proforma
           </Link>
         </div>
       </div>
@@ -169,7 +175,7 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                     <td className="py-2 text-ink-700">{p.strategy?.replaceAll("_", " ") ?? "—"}</td>
                     <td className="tabular py-2 text-right">{formatUsd(p.noiCents)}</td>
                     <td className="tabular py-2 text-right">
-                      {formatUsd(p.cfadsGpCents)}
+                      {formatUsd(p.cfadsRcpCents)}
                       {p.afterWaterfall ? (
                         <span className="ml-1 text-[10px] uppercase tracking-[0.08em] text-gold-700">after waterfall</span>
                       ) : (

@@ -41,15 +41,21 @@ export function audienceCfads(snap: PeriodSnapshot, audience: AudienceId): Audie
     case "gp":
     case "mgmt":
       return {
-        cents: snap.gpShareOfDistributableCents,
-        label: "GP/RCP after waterfall",
-        hint: `GP/RCP promote + co-invest of the CFADS pool ${formatUsd(pool)}.`,
+        cents: snap.rcpShareOfDistributableCents,
+        label: snap.coGpShareOfDistributableCents > 0n ? "RCP after waterfall" : "GP/RCP after waterfall",
+        hint:
+          snap.coGpShareOfDistributableCents > 0n
+            ? `RCP of the CFADS pool ${formatUsd(pool)} after Co-GP ${formatUsd(snap.coGpShareOfDistributableCents)}.`
+            : `GP/RCP promote + co-invest of the CFADS pool ${formatUsd(pool)}.`,
       };
     case "ic":
       return {
         cents: pool,
         label: "CFADS pool after waterfall",
-        hint: `Then LP share ${formatUsd(snap.lpShareOfDistributableCents)} vs GP/RCP ${formatUsd(snap.gpShareOfDistributableCents)}.`,
+        hint:
+          snap.coGpShareOfDistributableCents > 0n
+            ? `Then Deal LP ${formatUsd(snap.lpShareOfDistributableCents)} vs RCP ${formatUsd(snap.rcpShareOfDistributableCents)} vs Co-GP ${formatUsd(snap.coGpShareOfDistributableCents)}.`
+            : `Then LP share ${formatUsd(snap.lpShareOfDistributableCents)} vs GP/RCP ${formatUsd(snap.gpShareOfDistributableCents)}.`,
       };
     case "lender":
       return {
@@ -80,15 +86,18 @@ export function audienceCash(snap: PeriodSnapshot, audience: AudienceId): Audien
     case "gp":
     case "mgmt":
       return {
-        cents: snap.cashGpCents,
-        label: "GP/RCP cash after waterfall",
+        cents: snap.cashRcpCents,
+        label: snap.cashCoGpCents > 0n ? "RCP cash after waterfall" : "GP/RCP cash after waterfall",
         hint: `RCP entitlement of SPE cash-if-distributed ${formatUsd(pool)}.`,
       };
     case "ic":
       return {
         cents: pool,
         label: "SPE book cash (pool)",
-        hint: `Then LP ${formatUsd(snap.cashLpCents)} vs GP/RCP ${formatUsd(snap.cashGpCents)}.`,
+        hint:
+          snap.cashCoGpCents > 0n
+            ? `Then LP ${formatUsd(snap.cashLpCents)} vs RCP ${formatUsd(snap.cashRcpCents)} vs Co-GP ${formatUsd(snap.cashCoGpCents)}.`
+            : `Then LP ${formatUsd(snap.cashLpCents)} vs GP/RCP ${formatUsd(snap.cashGpCents)}.`,
       };
     case "lender":
       return {
@@ -104,10 +113,15 @@ export function waterfallSplitSentence(snap: PeriodSnapshot): string {
     return "No deal waterfall is saved — CFADS and cash are 100% look-through (demo default).";
   }
   const tmpl = snap.waterfallTemplateId ? ` Template ${snap.waterfallTemplateId.replaceAll("_", " ")}.` : "";
+  const coGp =
+    snap.coGpShareOfDistributableCents > 0n
+      ? ` Co-GP ${formatUsd(snap.coGpShareOfDistributableCents)}${snap.coGpName ? ` (${snap.coGpName})` : ""}; RCP ${formatUsd(snap.rcpShareOfDistributableCents)}.`
+      : "";
   return (
-    `After waterfall: CFADS pool ${formatUsd(poolCfads(snap))} splits LP share ${formatUsd(snap.lpShareOfDistributableCents)} vs GP/RCP ${formatUsd(snap.gpShareOfDistributableCents)}` +
+    `After waterfall: CFADS pool ${formatUsd(poolCfads(snap))} splits LP share ${formatUsd(snap.lpShareOfDistributableCents)} vs GP side ${formatUsd(snap.gpShareOfDistributableCents)}` +
     ` (ROC to LP ${formatUsd(snap.waterfallRocLpCents)}, pref paid to LP ${formatUsd(snap.waterfallPrefPaidLpCents)}, catch-up GP ${formatUsd(snap.waterfallCatchUpGpCents)}, residual promote GP ${formatUsd(snap.waterfallPromoteGpCents)}, residual LP ${formatUsd(snap.waterfallResidualLpCents)}).` +
     ` LP pref unpaid ${formatUsd(snap.lpPrefUnpaidCents)}.` +
+    coGp +
     tmpl
   );
 }
@@ -121,7 +135,10 @@ export function lpDistributionParagraph(snap: PeriodSnapshot): string {
   return (
     `No investor distribution subledger and no capital-call notice are posted for ${snap.period}. ` +
     `The same SPE waterfall that amends OpCo cash flow splits this period’s CFADS pool of ${formatUsd(poolCfads(snap))} into ` +
-    `**LP share after waterfall** ${formatUsd(cfads.cents)} versus **GP/RCP after waterfall** ${formatUsd(snap.gpShareOfDistributableCents)} ` +
+    `**LP share after waterfall** ${formatUsd(cfads.cents)} versus **GP/RCP after waterfall** ${formatUsd(snap.rcpShareOfDistributableCents)}` +
+    (snap.coGpShareOfDistributableCents > 0n
+      ? ` and **Co-GP** ${formatUsd(snap.coGpShareOfDistributableCents)}${snap.coGpName ? ` (${snap.coGpName})` : ""} `
+      : " ") +
     `(ROC to LP ${formatUsd(snap.waterfallRocLpCents)}, pref paid to LP ${formatUsd(snap.waterfallPrefPaidLpCents)}, GP catch-up ${formatUsd(snap.waterfallCatchUpGpCents)}, GP residual promote ${formatUsd(snap.waterfallPromoteGpCents)}, LP residual ${formatUsd(snap.waterfallResidualLpCents)}). ` +
     `LP pref unpaid ${formatUsd(snap.lpPrefUnpaidCents)}. ` +
     `LP cash-if-distributed ${formatUsd(cash.cents)} of SPE book cash ${formatUsd(poolCash(snap))}. ` +
@@ -134,5 +151,5 @@ export function gpDistributionSentence(snap: PeriodSnapshot): string {
   if (!snap.waterfallApplied) {
     return `CFADS ${formatUsd(cfads.cents)} (100% look-through until a deal waterfall is saved).`;
   }
-  return `GP/RCP after waterfall ${formatUsd(cfads.cents)} of CFADS pool ${formatUsd(poolCfads(snap))} (promote ${formatUsd(snap.waterfallPromoteGpCents + snap.waterfallCatchUpGpCents)}; LP share not upstreamed ${formatUsd(snap.lpShareOfDistributableCents)}).`;
+  return `GP/RCP after waterfall ${formatUsd(cfads.cents)} of CFADS pool ${formatUsd(poolCfads(snap))} (promote ${formatUsd(snap.waterfallPromoteGpCents + snap.waterfallCatchUpGpCents)}; LP share not upstreamed ${formatUsd(snap.lpShareOfDistributableCents)}${snap.coGpShareOfDistributableCents > 0n ? `; Co-GP ${formatUsd(snap.coGpShareOfDistributableCents)}` : ""}).`;
 }

@@ -502,8 +502,21 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
     status: "ready",
     phase: "F+",
     description:
-      "OpCo entitlement after each live SPE’s LP/GP waterfall. Default with no template is 100% look-through. Not a GAAP minority-interest line.",
-    contributors: [{ kind: "account", code: "1010", label: "GP/RCP cash after waterfall", statement: "bs" }],
+      "OpCo entitlement after each live SPE’s LP/GP waterfall and optional Co-GP split. Default with no template is 100% look-through. Not a GAAP minority-interest line.",
+    contributors: [{ kind: "account", code: "1010", label: "RCP cash after waterfall", statement: "bs" }],
+  },
+  {
+    id: "co_gp_after_waterfall",
+    label: "Co-GP after waterfall",
+    formula: "Σ SPE Co-GP share of CFADS (GP-side promote/co-invest × Co-GP bps)",
+    unit: "usd_cents",
+    noiDefinition: "period",
+    source: "mixed",
+    status: "ready",
+    phase: "F+",
+    description:
+      "Third-party Co-GP at the deal/SPE. Not upstreamed to RCP OpCo. $0 when Co-GP share is 0 (two-party LP vs single GP/RCP).",
+    contributors: [{ kind: "entity", field: "coGpShare", label: "Co-GP CFADS after waterfall" }],
   },
   {
     id: "lp_pref_unpaid",

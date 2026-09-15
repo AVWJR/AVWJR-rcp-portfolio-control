@@ -30,11 +30,15 @@ describe("Expert deal waterfall coaching", () => {
     expect(reply.content).toMatch(/100% look-through/);
     expect(reply.content).toMatch(/Save waterfall/);
     expect(reply.content).toMatch(/after waterfall/);
+    expect(reply.content).toMatch(/Co-GP/);
+    expect(reply.content).toMatch(/\/deals\/SPE-HMTOS\/proforma/);
+    expect(reply.content).toMatch(/\/opco\/proforma/);
     expect(reply.content).not.toMatch(/invent AR|delinquency rate/i);
 
     const chips = rankChips(ctx, emptyBundle, "How do I set the deal waterfall?");
     expect(chips.some((c) => /waterfall/i.test(c.id) || /waterfall/i.test(c.label))).toBe(true);
     const actions = rankSuggestedActions(ctx, emptyBundle, "How do I set the deal waterfall?");
     expect(actions.some((a) => a.href?.includes("/waterfall"))).toBe(true);
+    expect(actions.some((a) => a.href?.includes("/proforma"))).toBe(true);
   });
 });

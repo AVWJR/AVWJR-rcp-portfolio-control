@@ -267,10 +267,10 @@ function citationCatalog(snap: PeriodSnapshot, audience: AudienceId): Record<Aud
     gp_promote: cite(
       "gp_promote",
       snap.waterfallApplied ? "GP/RCP after waterfall" : "GP/RCP look-through",
-      formatUsd(snap.gpShareOfDistributableCents),
+      snap.waterfallApplied ? formatUsd(snap.rcpShareOfDistributableCents) : formatUsd(snap.gpShareOfDistributableCents),
       "USD",
       snap.waterfallApplied
-        ? `Promote ${formatUsd(snap.waterfallPromoteGpCents)} + catch-up ${formatUsd(snap.waterfallCatchUpGpCents)} (plus co-invest in the GP total).`
+        ? `Promote ${formatUsd(snap.waterfallPromoteGpCents)} + catch-up ${formatUsd(snap.waterfallCatchUpGpCents)} (plus co-invest in the GP total).${snap.coGpShareOfDistributableCents > 0n ? ` Co-GP ${formatUsd(snap.coGpShareOfDistributableCents)}; RCP ${formatUsd(snap.rcpShareOfDistributableCents)}.` : ""}`
         : "100% look-through until a deal waterfall is saved.",
     ),
     lp_pref_unpaid: cite(

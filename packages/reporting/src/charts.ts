@@ -253,7 +253,7 @@ export function buildCapexVsReserves(snap: PeriodSnapshot): ChartSuite["capexVsR
     ],
     footnote: `CFADS pool ${formatUsd(snap.cfadsLookThroughCents || snap.cfadsCents)} = period NOI − PPE additions − reserve requirement${
       snap.waterfallApplied
-        ? ` — then LP share ${formatUsd(snap.lpShareOfDistributableCents)} vs GP/RCP ${formatUsd(snap.gpShareOfDistributableCents)} after waterfall`
+        ? ` — then LP share ${formatUsd(snap.lpShareOfDistributableCents)} vs RCP ${formatUsd(snap.rcpShareOfDistributableCents)}${snap.coGpShareOfDistributableCents > 0n ? ` vs Co-GP ${formatUsd(snap.coGpShareOfDistributableCents)}` : ""} after waterfall`
         : ""
     }. Not an actual distribution.`,
   };

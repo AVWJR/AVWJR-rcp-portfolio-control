@@ -101,6 +101,8 @@ export type OpCoDashboard = {
     templateId: string;
     cfadsGpCents: bigint;
     cfadsLpCents: bigint;
+    cfadsRcpCents: bigint;
+    cfadsCoGpCents: bigint;
     afterWaterfall: boolean;
   }[];
   t12: TrailingNoi;
@@ -112,6 +114,8 @@ export type OpCoDashboard = {
   cfadsAfterWaterfallCents: bigint;
   lpShareCfadsCents: bigint;
   cashLpCents: bigint;
+  cashCoGpCents: bigint;
+  cfadsCoGpCents: bigint;
   lpPrefUnpaidCents: bigint;
   waterfallRocLpCents: bigint;
   waterfallPrefPaidLpCents: bigint;
@@ -356,7 +360,7 @@ export async function buildPropertyDashboard(opts: {
       id: "cfads",
       display: formatUsd(cfads),
       hint: wfApplied
-        ? `SPE CFADS pool (book). LP share ${formatUsd(wfPools!.cfadsLpCents)} · GP/RCP ${formatUsd(wfPools!.cfadsGpCents)} after waterfall.`
+        ? `SPE CFADS pool (book). LP share ${formatUsd(wfPools!.cfadsLpCents)} · RCP ${formatUsd(wfPools!.cfadsRcpCents)}${wfPools!.cfadsCoGpCents > 0n ? ` · Co-GP ${formatUsd(wfPools!.cfadsCoGpCents)}` : ""} after waterfall.`
         : "Period NOI − PPE additions − reserve requirement",
       contributors: [
         contributor({ kind: "account", code: "NOI", label: "Period NOI", statement: "os" }, entity.code, period, actual.noi),
@@ -512,12 +516,24 @@ export async function buildPropertyDashboard(opts: {
           }),
           live({
             id: "rcp_after_waterfall",
-            display: formatUsd(wfPools.cfadsGpCents),
-            hint: "GP/RCP share after waterfall (promote + co-invest). OpCo cash/CFADS use this share.",
+            display: formatUsd(wfPools.cfadsRcpCents),
+            hint: "RCP share after waterfall (promote + co-invest, after Co-GP). OpCo cash/CFADS use this share.",
             contributors: [
-              contributor({ kind: "entity", field: "gpShare", label: "GP/RCP CFADS after waterfall" }, entity.code, period, wfPools.cfadsGpCents),
+              contributor({ kind: "entity", field: "rcpShare", label: "RCP CFADS after waterfall" }, entity.code, period, wfPools.cfadsRcpCents),
             ],
           }),
+          ...(wfPools.cfadsCoGpCents > 0n || wfPools.hasCoGp
+            ? [
+                live({
+                  id: "co_gp_after_waterfall",
+                  display: formatUsd(wfPools.cfadsCoGpCents),
+                  hint: `Deal Co-GP${wfPools.coGpName ? ` (${wfPools.coGpName})` : ""} share of GP-side CFADS. Stays at the SPE — not OpCo.`,
+                  contributors: [
+                    contributor({ kind: "entity", field: "coGpShare", label: "Co-GP CFADS after waterfall" }, entity.code, period, wfPools.cfadsCoGpCents),
+                  ],
+                }),
+              ]
+            : []),
           live({
             id: "lp_pref_unpaid",
             display: formatUsd(wfPools.unpaidPrefAfterCents),
@@ -631,6 +647,8 @@ export async function buildOpCoDashboard(opts: {
       templateId: "look_through_100",
       cfadsGpCents: 0n,
       cfadsLpCents: 0n,
+      cfadsRcpCents: 0n,
+      cfadsCoGpCents: 0n,
       afterWaterfall: false,
     });
   }
@@ -677,10 +695,12 @@ export async function buildOpCoDashboard(opts: {
     row.templateId = speWf.templateId;
     row.cfadsGpCents = speWf.cfadsGpCents;
     row.cfadsLpCents = speWf.cfadsLpCents;
+    row.cfadsRcpCents = speWf.cfadsRcpCents;
+    row.cfadsCoGpCents = speWf.cfadsCoGpCents;
     row.afterWaterfall = !speWf.lookThrough;
   }
-  const displayCash = waterfall.cashGpCents;
-  const displayCfads = waterfall.cfadsGpCents;
+  const displayCash = waterfall.cashRcpCents;
+  const displayCfads = waterfall.cfadsRcpCents;
   const lookThroughCovenants = computeCovenants({
     noiCents: lookThroughNoi,
     interestCents: loans.reduce((acc, l) => acc + l.interestCents, 0n),
@@ -761,7 +781,7 @@ export async function buildOpCoDashboard(opts: {
       id: "cash",
       display: formatUsd(displayCash),
       hint: waterfall.applied
-        ? "RCP/GP cash after waterfall (not gross SPE cash as if wholly owned). Liquidity proxy, not a bank rec."
+        ? "RCP cash after waterfall (not gross SPE cash; Co-GP stays at the deal). Liquidity proxy, not a bank rec."
         : "OpCo + SPE cash (1010–1040). Liquidity proxy, not a bank rec. 100% look-through until a deal waterfall is saved.",
       contributors: [
         contributor({ kind: "account", code: "1010", label: waterfall.applied ? "Cash after waterfall" : "Stacked cash", statement: "bs" }, opco.code, period, displayCash, undefined, "combined"),
@@ -771,7 +791,7 @@ export async function buildOpCoDashboard(opts: {
       id: "liquidity_months",
       display: formatMonthsHundredths(liquidityMonthsHundredths(displayCash, lookThroughOpex)),
       hint: waterfall.applied
-        ? "RCP/GP cash after waterfall ÷ look-through SPE OpEx"
+        ? "RCP cash after waterfall ÷ look-through SPE OpEx"
         : "Stacked cash ÷ look-through SPE OpEx",
       contributors: [
         contributor({ kind: "account", code: "1010", label: waterfall.applied ? "Cash after waterfall" : "Stacked cash", statement: "bs" }, opco.code, period, displayCash, undefined, "combined"),
@@ -808,7 +828,7 @@ export async function buildOpCoDashboard(opts: {
       id: "cfads",
       display: formatUsd(displayCfads),
       hint: waterfall.applied
-        ? "CFADS after waterfall — RCP/GP share of distributable cash. Not gross SPE CFADS."
+        ? "CFADS after waterfall — RCP share of distributable cash (after Co-GP). Not gross SPE CFADS."
         : "Look-through NOI − stacked PPE additions − stacked reserve req. 100% look-through until a deal waterfall is saved.",
       contributors: [
         contributor({ kind: "account", code: "NOI", label: "Look-through period NOI", statement: "os" }, opco.code, period, lookThroughNoi, undefined, "combined"),
@@ -839,12 +859,24 @@ export async function buildOpCoDashboard(opts: {
       ? [
           live({
             id: "rcp_after_waterfall",
-            display: formatUsd(waterfall.cashGpCents),
-            hint: "RCP/GP cash after waterfall (same as Cash tile when a template is saved)",
+            display: formatUsd(waterfall.cashRcpCents),
+            hint: "RCP cash after waterfall (same as Cash tile when a template is saved). Co-GP stays at the deal.",
             contributors: waterfall.spes.map((s) =>
-              contributor({ kind: "entity", field: "gpShare", label: `${s.entityCode} GP/RCP cash` }, s.entityCode, period, s.cashGpCents),
+              contributor({ kind: "entity", field: "rcpShare", label: `${s.entityCode} RCP cash` }, s.entityCode, period, s.cashRcpCents),
             ),
           }),
+          ...(waterfall.hasCoGp
+            ? [
+                live({
+                  id: "co_gp_after_waterfall",
+                  display: formatUsd(waterfall.cfadsCoGpCents),
+                  hint: "Third-party Co-GP CFADS at the deal — not upstreamed to OpCo.",
+                  contributors: waterfall.spes.map((s) =>
+                    contributor({ kind: "entity", field: "coGpShare", label: `${s.entityCode} Co-GP CFADS` }, s.entityCode, period, s.cfadsCoGpCents),
+                  ),
+                }),
+              ]
+            : []),
           live({
             id: "lp_share_not_upstreamed",
             display: formatUsd(waterfall.cfadsLpCents),
@@ -903,6 +935,8 @@ export async function buildOpCoDashboard(opts: {
     cfadsAfterWaterfallCents: displayCfads,
     lpShareCfadsCents: waterfall.cfadsLpCents,
     cashLpCents: waterfall.cashLpCents,
+    cashCoGpCents: waterfall.cashCoGpCents,
+    cfadsCoGpCents: waterfall.cfadsCoGpCents,
     lpPrefUnpaidCents: waterfall.unpaidPrefCents,
     waterfallRocLpCents: waterfall.rocLpCents,
     waterfallPrefPaidLpCents: waterfall.prefLpCents,

@@ -201,8 +201,13 @@ export type PeriodSnapshot = {
   cfadsLookThroughCents: bigint;
   cashLpCents: bigint;
   cashGpCents: bigint;
+  cashRcpCents: bigint;
+  cashCoGpCents: bigint;
   lpShareOfDistributableCents: bigint;
   gpShareOfDistributableCents: bigint;
+  rcpShareOfDistributableCents: bigint;
+  coGpShareOfDistributableCents: bigint;
+  coGpName: string | null;
   lpPrefUnpaidCents: bigint;
   waterfallRocLpCents: bigint;
   waterfallPrefPaidLpCents: bigint;

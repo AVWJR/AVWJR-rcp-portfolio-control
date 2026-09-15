@@ -457,7 +457,10 @@ function appendixTables(snap: PeriodSnapshot, suite: ChartSuite, leftover: Chart
       rows: [
         ["CFADS pool (look-through)", formatUsd(snap.cfadsLookThroughCents)],
         ["LP share after waterfall", formatUsd(snap.lpShareOfDistributableCents)],
-        ["GP/RCP after waterfall", formatUsd(snap.gpShareOfDistributableCents)],
+        ["GP/RCP after waterfall", formatUsd(snap.rcpShareOfDistributableCents)],
+        ...(snap.coGpShareOfDistributableCents > 0n
+          ? ([["Co-GP after waterfall", formatUsd(snap.coGpShareOfDistributableCents)]] as [string, string][])
+          : []),
         ["ROC to LP", formatUsd(snap.waterfallRocLpCents)],
         ["Pref paid to LP", formatUsd(snap.waterfallPrefPaidLpCents)],
         ["GP catch-up", formatUsd(snap.waterfallCatchUpGpCents)],

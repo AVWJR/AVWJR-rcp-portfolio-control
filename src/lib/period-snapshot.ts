@@ -378,12 +378,21 @@ async function loadSpeSnapshot(opts: {
     cfadsLookThroughCents: cfads,
     cashLpCents: wfPools?.cashLpCents ?? 0n,
     cashGpCents: wfPools?.cashGpCents ?? (cash.total > 0n ? cash.total : 0n),
+    cashRcpCents: wfPools?.cashRcpCents ?? (cash.total > 0n ? cash.total : 0n),
+    cashCoGpCents: wfPools?.cashCoGpCents ?? 0n,
     lpShareOfDistributableCents: wfApplied ? (wfPools?.cfadsLpCents ?? 0n) : 0n,
     gpShareOfDistributableCents: wfApplied
       ? (wfPools?.cfadsGpCents ?? 0n)
       : cfads > 0n
         ? cfads
         : 0n,
+    rcpShareOfDistributableCents: wfApplied
+      ? (wfPools?.cfadsRcpCents ?? 0n)
+      : cfads > 0n
+        ? cfads
+        : 0n,
+    coGpShareOfDistributableCents: wfApplied ? (wfPools?.cfadsCoGpCents ?? 0n) : 0n,
+    coGpName: wfApplied && wfPools?.coGpName ? wfPools.coGpName : null,
     lpPrefUnpaidCents: wfPools?.unpaidPrefAfterCents ?? 0n,
     waterfallRocLpCents: wfApplied ? (wfPools?.rocLpCents ?? 0n) : 0n,
     waterfallPrefPaidLpCents: wfApplied ? (wfPools?.prefLpCents ?? 0n) : 0n,
@@ -789,8 +798,13 @@ async function loadOpCoSnapshot(opts: {
     cfadsLookThroughCents: dash.cfadsLookThroughCents,
     cashLpCents: dash.cashLpCents,
     cashGpCents: dash.cashAfterWaterfallCents,
+    cashRcpCents: dash.cashAfterWaterfallCents,
+    cashCoGpCents: dash.cashCoGpCents,
     lpShareOfDistributableCents: dash.lpShareCfadsCents,
-    gpShareOfDistributableCents: dash.cfadsAfterWaterfallCents,
+    gpShareOfDistributableCents: dash.cfadsAfterWaterfallCents + dash.cfadsCoGpCents,
+    rcpShareOfDistributableCents: dash.cfadsAfterWaterfallCents,
+    coGpShareOfDistributableCents: dash.cfadsCoGpCents,
+    coGpName: dash.cfadsCoGpCents > 0n ? "Co-GP (deal-level)" : null,
     lpPrefUnpaidCents: dash.lpPrefUnpaidCents,
     waterfallRocLpCents: dash.waterfallRocLpCents,
     waterfallPrefPaidLpCents: dash.waterfallPrefPaidLpCents,

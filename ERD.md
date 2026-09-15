@@ -54,6 +54,10 @@ erDiagram
     int prefRateBps
     string compounding "NONE | ANNUAL"
     bool catchUpEnabled
+    int gpCoInvestBps
+    string coGpName "optional third-party Co-GP"
+    int coGpOfPromoteBps "0 = all RCP"
+    int coGpCoInvestShareBps "0 = all RCP"
     bigint lpContributedCents
     string tiersJson
   }
