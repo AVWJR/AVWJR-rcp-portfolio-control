@@ -1,4 +1,5 @@
 import type { ExpertClientContext, OfflineBundle } from "./types";
+import { howToAnswerForQuery, matchHowTo } from "./how-to-playbook";
 import { EXPERT_SYSTEM_PROMPT } from "./system-prompt";
 
 function isErr(value: unknown): value is { ok: false; error: string } {
@@ -90,10 +91,22 @@ export function summarizeExpertSnapshot(ctx: ExpertClientContext, bundle: Offlin
   };
 }
 
-export function buildSystemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle): string {
+export function buildSystemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle, userText = ""): string {
+  const matched = userText.trim() ? matchHowTo(userText) : null;
+  const howToBlock =
+    matched && howToAnswerForQuery(userText, ctx)
+      ? `
+
+## This turn is a how-to (authoritative)
+The user asked a process / navigation question. Answer from this playbook. Do **not** talk about Monthly Investor Pack PDF/PPTX, LP narrative, thesis, or pack export unless they asked about packs.
+
+${howToAnswerForQuery(userText, ctx)}
+`
+      : "";
+
   return `${EXPERT_SYSTEM_PROMPT}
 
-Current page (authoritative for where they are):
+Current page (where they are — not what they asked unless they asked about this page):
 ${JSON.stringify({
     pathname: ctx.pathname,
     pageTitle: ctx.pageTitle,
@@ -104,5 +117,5 @@ ${JSON.stringify({
   })}
 
 Preloaded tool snapshot (summary — call tools if you need full rows):
-${JSON.stringify(summarizeExpertSnapshot(ctx, bundle))}`;
+${JSON.stringify(summarizeExpertSnapshot(ctx, bundle))}${howToBlock}`;
 }

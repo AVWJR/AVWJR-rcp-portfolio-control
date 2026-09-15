@@ -1,5 +1,6 @@
 import { composeExpertChrome, pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
-import { isClearHowToQuery, isDeleteDealQuery, isVagueQuery } from "./feature-intents";
+import { isClearHowToQuery, isVagueQuery } from "./feature-intents";
+import { howToAnswerForQuery } from "./how-to-playbook";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
@@ -442,8 +443,9 @@ export function answerOffline(
   if (!q || q === "open" || q === "hello" || q === "hi") {
     return buildOpener(ctx, bundle);
   }
-  if (isDeleteDealQuery(q)) {
-    content = deleteDealCopy(ctx);
+  const playbook = howToAnswerForQuery(userText, ctx);
+  if (playbook) {
+    content = playbook;
   } else if (/tour|this page|controls|lost|where am i/.test(q) && !/wrong/.test(q)) {
     content = tour(ctx);
   } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
