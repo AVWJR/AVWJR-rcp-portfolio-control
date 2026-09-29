@@ -15,9 +15,11 @@ import {
   type TierPartyTotals,
   type WaterfallPosition,
 } from "@rcp/ledger";
+import { isArchivedSpe } from "@/lib/archive";
 import { prisma } from "@/lib/prisma";
 import { dealsVisibleToLp, lpCanSeeDeal } from "@/lib/lp-scope";
 import { isMissingDistributionTable, ledgerCapitalByEntity } from "@/lib/distribution-read";
+import type { Prisma } from "@prisma/client";
 import {
   configFromRow,
   europeanPromoteOpen,
@@ -67,6 +69,7 @@ type StoredEvent = {
   memo: string | null;
   waterfallSnapshotJson: string;
   actor: string | null;
+  sequence: number;
   reversesEventId: string | null;
   monthsAccrued: number;
   capitalContributedCents: bigint;
@@ -156,16 +159,85 @@ function stateFromRow(row: StoredEvent): DistributionRunningTotals {
   };
 }
 
-async function loadRows(entityId: string): Promise<StoredEvent[]> {
+type LedgerDb = Prisma.TransactionClient | typeof prisma;
+
+async function loadRows(entityId: string, db: LedgerDb = prisma): Promise<StoredEvent[]> {
   try {
-    return await prisma.distributionEvent.findMany({
+    return await db.distributionEvent.findMany({
       where: { entityId },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ sequence: "asc" }, { periodLabel: "asc" }],
       include: { lines: { orderBy: { sortOrder: "asc" } } },
     });
   } catch (error) {
     if (isMissingDistributionTable(error)) return [];
     throw error;
+  }
+}
+
+function latestSequence(rows: { sequence: number }[]): number {
+  return rows.reduce((max, row) => (row.sequence > max ? row.sequence : max), 0);
+}
+
+function assertNoConcurrentPost(before: { sequence: number }[], inside: { sequence: number }[]): void {
+  if (latestSequence(before) !== latestSequence(inside)) {
+    throw new DistributionLedgerError(CONCURRENT_POST, 409);
+  }
+}
+
+function isUniqueClash(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ("code" in error && (error as { code: unknown }).code === "P2002") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /unique constraint failed/i.test(message);
+}
+
+const CONCURRENT_POST = "Another distribution was just recorded. Refresh and preview again.";
+
+/** Lets a concurrent post read the current sequence before this one locks the row. */
+function yieldToConcurrentPost(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+export function parseWholeCents(value: unknown): bigint {
+  if (typeof value === "number" && Number.isInteger(value)) return BigInt(value);
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return BigInt(value.trim());
+  throw new DistributionLedgerError("Amount must be whole cents", 400);
+}
+
+export function assertPreviewGrossMatches(grossCents: bigint, previewGrossCents: unknown): void {
+  let preview: bigint;
+  try {
+    preview = parseWholeCents(previewGrossCents);
+  } catch {
+    throw new DistributionLedgerError("Preview this amount before confirming.", 409);
+  }
+  if (preview !== grossCents) {
+    throw new DistributionLedgerError("Preview this amount before confirming.", 409);
+  }
+}
+
+function assertPeriodNotBefore(anchor: { year: number; month: number } | null, year: number, month: number): void {
+  if (!anchor) return;
+  const earlier = year < anchor.year || (year === anchor.year && month < anchor.month);
+  if (!earlier) return;
+  const label = `${anchor.year}-${String(anchor.month).padStart(2, "0")}`;
+  throw new DistributionLedgerError(
+    `That period is before the latest distribution (${label}). Pick that month or a later one.`,
+    409,
+  );
+}
+
+async function assertSpeOpen(entityId: string): Promise<void> {
+  const entity = await prisma.entity.findUnique({
+    where: { id: entityId },
+    select: { type: true, lifecycleStatus: true },
+  });
+  if (!entity || entity.type !== "SPE") throw new DistributionLedgerError("Unknown SPE.", 404);
+  if (isArchivedSpe(entity)) {
+    throw new DistributionLedgerError(
+      "This SPE is soft-archived. Restore it from Deal Archive before recording a distribution.",
+      409,
+    );
   }
 }
 
@@ -229,6 +301,7 @@ export type DistributionBoardEvent = {
   source: DistributionSource;
   memo: string | null;
   actor: string | null;
+  sequence: number;
   reversesEventId: string | null;
   reversed: boolean;
   monthsAccrued: number;
@@ -261,6 +334,7 @@ function toBoardEvent(row: StoredEvent, reversed: Set<string>): DistributionBoar
     source: isDistributionSource(row.source) ? row.source : "OPERATING_CASH",
     memo: row.memo,
     actor: row.actor,
+    sequence: row.sequence,
     reversesEventId: row.reversesEventId,
     reversed: reversed.has(row.id),
     monthsAccrued: row.monthsAccrued,
@@ -337,7 +411,31 @@ function snapshotJson(record: SpeWaterfallRecord): string {
     coGpName: record.config.coGpName,
     tiers: record.config.tiers,
     lpContributedCents: record.lpContributedCents.toString(),
+    openingUnreturnedCents: record.unreturnedCapitalCents == null ? null : record.unreturnedCapitalCents.toString(),
+    openingUnpaidPrefCents: record.unpaidPrefCents == null ? null : record.unpaidPrefCents.toString(),
   });
+}
+
+function openingFromSnapshot(json: string, fallback: SpeWaterfallRecord): DistributionRunningTotals {
+  try {
+    const raw = JSON.parse(json) as Record<string, unknown>;
+    if (raw && typeof raw === "object" && "lpContributedCents" in raw && "openingUnreturnedCents" in raw) {
+      const optional = (value: unknown): bigint | null => {
+        if (value == null || value === "") return null;
+        return BigInt(String(value));
+      };
+      return openingDistributionState({
+        config: fallback.config,
+        lpContributedCents: BigInt(String(raw.lpContributedCents)),
+        openingUnreturnedCents: optional(raw.openingUnreturnedCents),
+        openingUnpaidPrefCents: optional(raw.openingUnpaidPrefCents),
+        europeanPromoteOpen: fallback.config.templateId !== "european_fund",
+      });
+    }
+  } catch {
+    // Older snapshots fall back to the waterfall row saved on the deal.
+  }
+  return openingDistributionState(seedFrom(fallback));
 }
 
 function dataFromApplied(applied: AppliedDistribution, extras: {
@@ -388,6 +486,24 @@ function dataFromApplied(applied: AppliedDistribution, extras: {
   };
 }
 
+async function seedFor(record: SpeWaterfallRecord, entityId: string) {
+  const seed = seedFrom(record);
+  const parent = await prisma.entity.findUnique({ where: { id: entityId }, select: { parentId: true } });
+  if (parent?.parentId) {
+    seed.europeanPromoteOpen = europeanPromoteOpen(await loadLiveSpeWaterfalls(parent.parentId), 1);
+  }
+  return seed;
+}
+
+function mapLedgerWriteError(error: unknown): never {
+  if (error instanceof DistributionLedgerError) throw error;
+  if (isUniqueClash(error)) throw new DistributionLedgerError(CONCURRENT_POST, 409);
+  if (isMissingDistributionTable(error)) {
+    throw new DistributionLedgerError("The distribution ledger is not on this database yet.", 503);
+  }
+  throw error;
+}
+
 export async function previewDistribution(opts: {
   entityId: string;
   year: number;
@@ -395,18 +511,16 @@ export async function previewDistribution(opts: {
   grossCents: bigint;
   source: DistributionSource;
 }): Promise<{ applied: AppliedDistribution; position: WaterfallPosition; dpiBps: number | null }> {
+  await assertSpeOpen(opts.entityId);
   const record = await rawWaterfall(opts.entityId);
   if (!record) throw new DistributionLedgerError("Unknown SPE.", 404);
   const rows = await loadRows(opts.entityId);
   const active = activeRows(rows);
-  const seed = seedFrom(record);
-  const parent = await prisma.entity.findUnique({ where: { id: opts.entityId }, select: { parentId: true } });
-  if (parent?.parentId) {
-    seed.europeanPromoteOpen = europeanPromoteOpen(await loadLiveSpeWaterfalls(parent.parentId), 1);
-  }
+  const seed = await seedFor(record, opts.entityId);
   const opening = openingDistributionState(seed);
   const prior = rows.length ? stateFromRow(rows[rows.length - 1]!) : opening;
   const anchor = active.length ? { year: active[active.length - 1]!.year, month: active[active.length - 1]!.month } : null;
+  assertPeriodNotBefore(anchor, opts.year, opts.month);
   const posting: DistributionPosting = {
     year: opts.year,
     month: opts.month,
@@ -417,6 +531,7 @@ export async function previewDistribution(opts: {
   try {
     applied = applyDistribution(seed, prior, anchor, posting);
   } catch (error) {
+    if (error instanceof DistributionLedgerError) throw error;
     throw new DistributionLedgerError(error instanceof Error ? error.message : "Could not preview the distribution.");
   }
   return {
@@ -438,33 +553,57 @@ export async function postDistribution(opts: {
   role: "principal" | "viewer";
 }): Promise<DistributionBoard> {
   assertCanMutateDistributions(opts.role);
+  await assertSpeOpen(opts.entityId);
   const record = await rawWaterfall(opts.entityId);
   if (!record) throw new DistributionLedgerError("Unknown SPE.", 404);
-  const preview = await previewDistribution(opts);
+  const seed = await seedFor(record, opts.entityId);
+  const priorRows = await loadRows(opts.entityId);
+  await yieldToConcurrentPost();
   try {
-    const created = await prisma.distributionEvent.create({
-      data: dataFromApplied(preview.applied, {
-        entityId: opts.entityId,
-        eventDate: opts.eventDate,
-        memo: opts.memo,
-        actor: opts.actor,
-        snapshot: snapshotJson(record),
-      }),
-    });
-    await prisma.distributionAudit.create({
-      data: {
-        entityId: opts.entityId,
-        eventId: created.id,
-        action: "POST",
-        actor: opts.actor,
-        detail: `Posted ${preview.applied.periodLabel} ${opts.source === "CAPITAL_EVENT" ? "capital event" : "operating cash"} distribution.`,
-      },
+    await prisma.$transaction(async (tx) => {
+      const rows = await loadRows(opts.entityId, tx);
+      assertNoConcurrentPost(priorRows, rows);
+      const active = activeRows(rows);
+      const anchor = active.length ? { year: active[active.length - 1]!.year, month: active[active.length - 1]!.month } : null;
+      assertPeriodNotBefore(anchor, opts.year, opts.month);
+      const opening = openingDistributionState(seed);
+      const prior = rows.length ? stateFromRow(rows[rows.length - 1]!) : opening;
+      let applied: AppliedDistribution;
+      try {
+        applied = applyDistribution(seed, prior, anchor, {
+          year: opts.year,
+          month: opts.month,
+          grossCents: opts.grossCents,
+          source: opts.source,
+        });
+      } catch (error) {
+        if (error instanceof DistributionLedgerError) throw error;
+        throw new DistributionLedgerError(error instanceof Error ? error.message : "Could not record the distribution.");
+      }
+      const created = await tx.distributionEvent.create({
+        data: {
+          ...dataFromApplied(applied, {
+            entityId: opts.entityId,
+            eventDate: opts.eventDate,
+            memo: opts.memo,
+            actor: opts.actor,
+            snapshot: snapshotJson(record),
+          }),
+          sequence: latestSequence(rows) + 1,
+        },
+      });
+      await tx.distributionAudit.create({
+        data: {
+          entityId: opts.entityId,
+          eventId: created.id,
+          action: "POST",
+          actor: opts.actor,
+          detail: `Posted ${applied.periodLabel} ${opts.source === "CAPITAL_EVENT" ? "capital event" : "operating cash"} distribution.`,
+        },
+      });
     });
   } catch (error) {
-    if (isMissingDistributionTable(error)) {
-      throw new DistributionLedgerError("The distribution ledger is not on this database yet.", 503);
-    }
-    throw error;
+    mapLedgerWriteError(error);
   }
   const board = await loadDistributionBoard(opts.entityId);
   if (!board) throw new DistributionLedgerError("Unknown SPE.", 404);
@@ -479,69 +618,75 @@ export async function reverseDistribution(opts: {
   memo?: string | null;
 }): Promise<DistributionBoard> {
   assertCanMutateDistributions(opts.role);
+  await assertSpeOpen(opts.entityId);
   const record = await rawWaterfall(opts.entityId);
   if (!record) throw new DistributionLedgerError("Unknown SPE.", 404);
-  const rows = await loadRows(opts.entityId);
-  const target = rows.find((row) => row.id === opts.eventId);
-  if (!target) throw new DistributionLedgerError("That distribution is not on this deal.", 404);
-  if (target.reversesEventId) {
-    throw new DistributionLedgerError("A reversing row cannot be edited or reversed again.", 409);
-  }
-  const reversed = reversedIds(rows);
-  if (reversed.has(target.id)) {
-    throw new DistributionLedgerError("That distribution is already reversed.", 409);
-  }
-  const active = activeRows(rows);
-  const latest = active[active.length - 1];
-  if (!latest || latest.id !== target.id) {
-    throw new DistributionLedgerError("Reverse the latest distribution first so the running totals stay in order.", 409);
-  }
-  const seed = seedFrom(record);
-  const opening = openingDistributionState(seed);
-  const priorIndex = active.length - 2;
-  const restored = priorIndex >= 0 ? stateFromRow(active[priorIndex]!) : opening;
-  const applied: AppliedDistribution = {
-    year: target.year,
-    month: target.month,
-    periodLabel: target.periodLabel,
-    grossCents: target.grossCents < 0n ? -target.grossCents : target.grossCents,
-    source: isDistributionSource(target.source) ? target.source : "OPERATING_CASH",
-    monthsAccrued: 0,
-    lines: target.lines.map((line) => ({
-      tierKind: line.tierKind === "ROC" || line.tierKind === "PREF" || line.tierKind === "CATCH_UP" || line.tierKind === "PROMOTE" ? line.tierKind : "PROMOTE",
-      tierLabel: line.tierLabel,
-      lpCents: line.lpCents,
-      rcpCents: line.rcpCents,
-      coGpCents: line.coGpCents,
-    })),
-    state: restored,
-    run: null as unknown as AppliedDistribution["run"],
-  };
+  const priorRows = await loadRows(opts.entityId);
+  const seen = priorRows.find((row) => row.id === opts.eventId);
+  if (!seen) throw new DistributionLedgerError("That distribution is not on this deal.", 404);
+  await yieldToConcurrentPost();
   try {
-    const created = await prisma.distributionEvent.create({
-      data: dataFromApplied(applied, {
-        entityId: opts.entityId,
-        eventDate: new Date(),
-        memo: opts.memo?.trim() || `Reverses the ${target.periodLabel} distribution.`,
-        actor: opts.actor,
-        reversesEventId: target.id,
-        snapshot: target.waterfallSnapshotJson,
-      }),
-    });
-    await prisma.distributionAudit.create({
-      data: {
-        entityId: opts.entityId,
-        eventId: created.id,
-        action: "REVERSE",
-        actor: opts.actor,
-        detail: `Reversed ${target.periodLabel} distribution ${target.id}. Running totals restored to the prior distribution.`,
-      },
+    await prisma.$transaction(async (tx) => {
+      const rows = await loadRows(opts.entityId, tx);
+      assertNoConcurrentPost(priorRows, rows);
+      const target = rows.find((row) => row.id === opts.eventId);
+      if (!target) throw new DistributionLedgerError("That distribution is not on this deal.", 404);
+      if (target.reversesEventId) {
+        throw new DistributionLedgerError("A reversing row cannot be edited or reversed again.", 409);
+      }
+      const reversed = reversedIds(rows);
+      if (reversed.has(target.id)) {
+        throw new DistributionLedgerError("That distribution is already reversed.", 409);
+      }
+      const active = activeRows(rows);
+      const latest = active[active.length - 1];
+      if (!latest || latest.id !== target.id) {
+        throw new DistributionLedgerError("Reverse the latest distribution first so the running totals stay in order.", 409);
+      }
+      const priorIndex = active.length - 2;
+      const restored = priorIndex >= 0 ? stateFromRow(active[priorIndex]!) : openingFromSnapshot(target.waterfallSnapshotJson, record);
+      const applied: AppliedDistribution = {
+        year: target.year,
+        month: target.month,
+        periodLabel: target.periodLabel,
+        grossCents: target.grossCents < 0n ? -target.grossCents : target.grossCents,
+        source: isDistributionSource(target.source) ? target.source : "OPERATING_CASH",
+        monthsAccrued: 0,
+        lines: target.lines.map((line) => ({
+          tierKind: line.tierKind === "ROC" || line.tierKind === "PREF" || line.tierKind === "CATCH_UP" || line.tierKind === "PROMOTE" ? line.tierKind : "PROMOTE",
+          tierLabel: line.tierLabel,
+          lpCents: line.lpCents,
+          rcpCents: line.rcpCents,
+          coGpCents: line.coGpCents,
+        })),
+        state: restored,
+        run: null as unknown as AppliedDistribution["run"],
+      };
+      const created = await tx.distributionEvent.create({
+        data: {
+          ...dataFromApplied(applied, {
+            entityId: opts.entityId,
+            eventDate: new Date(),
+            memo: opts.memo?.trim() || `Reverses the ${target.periodLabel} distribution.`,
+            actor: opts.actor,
+            reversesEventId: target.id,
+            snapshot: target.waterfallSnapshotJson,
+          }),
+          sequence: latestSequence(rows) + 1,
+        },
+      });
+      await tx.distributionAudit.create({
+        data: {
+          entityId: opts.entityId,
+          eventId: created.id,
+          action: "REVERSE",
+          actor: opts.actor,
+          detail: `Reversed ${target.periodLabel} distribution ${target.id}. Running totals restored to the prior distribution.`,
+        },
+      });
     });
   } catch (error) {
-    if (isMissingDistributionTable(error)) {
-      throw new DistributionLedgerError("The distribution ledger is not on this database yet.", 503);
-    }
-    throw error;
+    mapLedgerWriteError(error);
   }
   const board = await loadDistributionBoard(opts.entityId);
   if (!board) throw new DistributionLedgerError("Unknown SPE.", 404);

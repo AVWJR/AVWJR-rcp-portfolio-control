@@ -2,8 +2,10 @@ import { currentAccessRole } from "@/lib/access-server";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import {
   DistributionLedgerError,
+  assertPreviewGrossMatches,
   distributionCsv,
   loadDistributionBoard,
+  parseWholeCents,
   postDistribution,
   previewDistribution,
 } from "@/lib/distribution-ledger";
@@ -63,11 +65,13 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       memo?: string;
       period?: string;
       eventDate?: string;
+      previewGrossCents?: string | number;
     };
     if (!body.source || !isDistributionSource(body.source)) {
       return NextResponse.json({ error: "Source must be operating cash or a capital event." }, { status: 400 });
     }
-    const gross = BigInt(String(body.grossCents ?? "0"));
+    const gross = parseWholeCents(body.grossCents);
+    if (body.confirm) assertPreviewGrossMatches(gross, body.previewGrossCents);
     const period = /^\d{4}-\d{2}$/.test(body.period ?? "") ? body.period! : null;
     if (!period) return NextResponse.json({ error: "Pick a period such as 2026-08." }, { status: 400 });
     const [yearText, monthText] = period.split("-");

@@ -137,9 +137,23 @@ export function lpDpiBps(lpDistributedCents: bigint, contributedCents: bigint): 
   return Number((paid * 10_000n) / contributedCents);
 }
 
+/** Capital already back is contributed minus what is still out. The gap above ledger ROC was returned before this ledger. */
+export function capitalBackCents(
+  contributedCents: bigint,
+  unreturnedCents: bigint,
+  ledgerReturnedCents: bigint,
+): { returnedCents: bigint; beforeLedgerCents: bigint } {
+  const contributed = contributedCents > 0n ? contributedCents : 0n;
+  const stillOut = unreturnedCents > 0n ? unreturnedCents : 0n;
+  const returned = contributed > stillOut ? contributed - stillOut : 0n;
+  const ledger = ledgerReturnedCents > 0n ? ledgerReturnedCents : 0n;
+  return { returnedCents: returned, beforeLedgerCents: returned > ledger ? returned - ledger : 0n };
+}
+
 export function waterfallPosition(state: DistributionRunningTotals, config: WaterfallConfig): WaterfallPosition {
   if (state.unreturnedCapitalCents > 0n) return "ROC";
   if (state.prefUnpaidCents > 0n) return "PREF";
+  // catchUpPaidCents is the GP's catch-up, compared with the GP target.
   if (config.catchUpEnabled && state.catchUpPaidCents < state.catchUpTargetCents) return "CATCH_UP";
   return "PROMOTE";
 }
@@ -202,6 +216,8 @@ export function applyDistribution(
     europeanPromoteOpen: seed.europeanPromoteOpen,
     priorLpPrefPaidCents: prior.byTier.pref.lpCents,
     priorCatchUpGpCents: prior.byTier.catchUp.rcpCents + prior.byTier.catchUp.coGpCents,
+    priorCatchUpGrossCents:
+      prior.byTier.catchUp.lpCents + prior.byTier.catchUp.rcpCents + prior.byTier.catchUp.coGpCents,
   });
   const byTier = {
     roc: { ...prior.byTier.roc },
@@ -227,10 +243,9 @@ export function applyDistribution(
   const returnedNow = byTier.roc.lpCents + byTier.roc.rcpCents + byTier.roc.coGpCents - (prior.byTier.roc.lpCents + prior.byTier.roc.rcpCents + prior.byTier.roc.coGpCents);
   const prefPaidNow = byTier.pref.lpCents + byTier.pref.rcpCents + byTier.pref.coGpCents - (prior.byTier.pref.lpCents + prior.byTier.pref.rcpCents + prior.byTier.pref.coGpCents);
   const catchPaidNow =
-    byTier.catchUp.lpCents +
     byTier.catchUp.rcpCents +
     byTier.catchUp.coGpCents -
-    (prior.byTier.catchUp.lpCents + prior.byTier.catchUp.rcpCents + prior.byTier.catchUp.coGpCents);
+    (prior.byTier.catchUp.rcpCents + prior.byTier.catchUp.coGpCents);
   const promoteNow = byTier.promote.rcpCents + byTier.promote.coGpCents - (prior.byTier.promote.rcpCents + prior.byTier.promote.coGpCents);
   const state: DistributionRunningTotals = {
     capitalContributedCents: prior.capitalContributedCents,

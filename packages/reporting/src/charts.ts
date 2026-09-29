@@ -1,5 +1,6 @@
 import { emptyDistributionActuals, type PeriodSnapshot } from "./snapshot-types";
-import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatMonthsCoverage, formatUsd } from "./formatters";
+import { capitalBackCents } from "@rcp/ledger";
+import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatMonthsCoverage, formatUsd, shortPeriodLabel } from "./formatters";
 import { icRecommendation } from "./ic-recommendation";
 
 export const CHART_IDS = [
@@ -672,8 +673,10 @@ const TIER_LABEL: Record<(typeof TIER_ORDER)[number], string> = {
 export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distribution"] {
   const actuals = snap.distributionActuals ?? emptyDistributionActuals();
   const contributed = actuals.capitalContributedCents;
-  const returned = actuals.capitalReturnedCents;
   const unreturned = actuals.unreturnedCapitalCents;
+  const back = capitalBackCents(contributed, unreturned, actuals.capitalReturnedCents);
+  const returned = back.returnedCents;
+  const beforeLedger = back.beforeLedgerCents;
   const index = TIER_ORDER.indexOf(actuals.position);
   const points = actuals.points.length
     ? actuals.points
@@ -688,10 +691,11 @@ export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distr
           coGpCents: actuals.cumulativeCoGpCents,
         },
       ];
+  const beforeNote = beforeLedger > 0n ? `, including ${formatUsd(beforeLedger)} returned before this ledger` : "";
   const capitalFoot =
     contributed <= 0n
       ? "No LP capital is entered yet, so the bar stays empty until a contribution is saved on the waterfall."
-      : `${formatUsd(returned)} of ${formatUsd(contributed)} contributed capital is back.`;
+      : `${formatUsd(returned)} of ${formatUsd(contributed)} contributed capital is back${beforeNote}.`;
   const prefFoot =
     actuals.prefUnpaidCents > 0n
       ? `${formatUsd(actuals.prefUnpaidCents)} of preferred return is still unpaid after what has actually been distributed.`
@@ -708,7 +712,7 @@ export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distr
       title: CHART_TITLES.dist_pref_over_time,
       footnote: prefFoot,
       points: points.map((point) => ({
-        period: point.period,
+        period: shortPeriodLabel(point.period),
         accruedUsd: centsToUsdNumber(point.accruedCents),
         paidUsd: centsToUsdNumber(point.paidCents),
         unpaidUsd: centsToUsdNumber(point.unpaidCents),
@@ -718,7 +722,7 @@ export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distr
       title: CHART_TITLES.dist_by_party,
       footnote: `Deal LPs have received ${formatUsd(actuals.cumulativeLpCents)}; RCP has received ${formatUsd(actuals.cumulativeRcpCents)}.`,
       points: points.map((point) => ({
-        period: point.period,
+        period: shortPeriodLabel(point.period),
         lpUsd: centsToUsdNumber(point.lpCents),
         rcpUsd: centsToUsdNumber(point.rcpCents),
         coGpUsd: centsToUsdNumber(point.coGpCents),
@@ -736,7 +740,7 @@ export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distr
     },
     dpi: {
       title: CHART_TITLES.dist_dpi,
-      footnote: `LP multiple to date is ${formatBpsAsMultiple(actuals.dpiBps)} — distributions divided by capital contributed.`,
+      footnote: `LP multiple to date is ${formatBpsAsMultiple(actuals.dpiBps)} — distributions divided by capital contributed. ${formatUsd(returned)} of capital is back${beforeNote}.`,
       display: formatBpsAsMultiple(actuals.dpiBps),
     },
   };

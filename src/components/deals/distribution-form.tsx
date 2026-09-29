@@ -24,10 +24,12 @@ export function DistributionForm({
   entityCode,
   period,
   canPost,
+  lockedCopy,
 }: {
   entityCode: string;
   period: string;
   canPost: boolean;
+  lockedCopy?: string;
 }) {
   const router = useRouter();
   const [amount, setAmount] = useState<bigint | null>(null);
@@ -37,6 +39,12 @@ export function DistributionForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"preview" | "post" | null>(null);
   const [preview, setPreview] = useState<{ lines: PreviewLine[]; state: PreviewState; position: string } | null>(null);
+  const [previewedCents, setPreviewedCents] = useState<string | null>(null);
+
+  function clearPreview() {
+    setPreview(null);
+    setPreviewedCents(null);
+  }
 
   async function submit(confirm: boolean) {
     setError(null);
@@ -59,6 +67,7 @@ export function DistributionForm({
         memo,
         period,
         eventDate: date,
+        previewGrossCents: confirm ? previewedCents : undefined,
       }),
     });
     const json = (await res.json().catch(() => ({}))) as {
@@ -72,9 +81,10 @@ export function DistributionForm({
     }
     if (!confirm && json.preview) {
       setPreview(json.preview);
+      setPreviewedCents(amount.toString());
       return;
     }
-    setPreview(null);
+    clearPreview();
     setAmount(null);
     setMemo("");
     router.refresh();
@@ -83,7 +93,7 @@ export function DistributionForm({
   if (!canPost) {
     return (
       <p className="border border-cream-300 bg-white px-5 py-4 text-sm text-ink-700 shadow-ledger">
-        Partner view is read-only. Recording a distribution is a Principal action.
+        {lockedCopy ?? "Partner view is read-only. Recording a distribution is a Principal action."}
       </p>
     );
   }
@@ -103,7 +113,10 @@ export function DistributionForm({
             nullable
             placeholder="blank = not entered"
             value={amount}
-            onValue={setAmount}
+            onValue={(next) => {
+              setAmount(next);
+              clearPreview();
+            }}
           />
           <span className="mt-1 block text-xs text-ink-500">Blank means nothing entered. A typed 0 stays 0.</span>
         </label>
@@ -112,7 +125,10 @@ export function DistributionForm({
           <select
             className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2"
             value={source}
-            onChange={(event) => setSource(event.target.value as DistributionSource)}
+            onChange={(event) => {
+              setSource(event.target.value as DistributionSource);
+              clearPreview();
+            }}
           >
             <option value="OPERATING_CASH">Operating cash</option>
             <option value="CAPITAL_EVENT">Capital event</option>
@@ -124,7 +140,10 @@ export function DistributionForm({
             type="date"
             className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2"
             value={date}
-            onChange={(event) => setDate(event.target.value)}
+            onChange={(event) => {
+              setDate(event.target.value);
+              clearPreview();
+            }}
           />
         </label>
         <label className="text-sm text-ink-700">
@@ -137,7 +156,10 @@ export function DistributionForm({
         <input
           className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2"
           value={memo}
-          onChange={(event) => setMemo(event.target.value)}
+          onChange={(event) => {
+            setMemo(event.target.value);
+            clearPreview();
+          }}
           placeholder="Optional — quarterly operating distribution, refinance, sale"
         />
       </label>

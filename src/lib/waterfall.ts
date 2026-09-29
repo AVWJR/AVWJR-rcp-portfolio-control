@@ -605,9 +605,12 @@ export async function saveSpeWaterfall(entityId: string, body: Partial<Waterfall
   }
   const parsed = parseWaterfallSave(body);
   const ledger = (await ledgerCapitalByEntity([entityId])).get(entityId);
-  const unreturnedCapitalCents = ledger?.hasEvents ? ledger.unreturnedCapitalCents : parsed.unreturnedCapitalCents;
-  const unpaidPrefCents = ledger?.hasEvents ? ledger.unpaidPrefCents : parsed.unpaidPrefCents;
-  const prefPaidToDateCents = ledger?.hasEvents ? ledger.prefPaidCents : parsed.prefPaidToDateCents;
+  const existing = await prisma.speWaterfall.findUnique({ where: { entityId } });
+  const keepOpening = Boolean(ledger?.hasEvents && existing);
+  const storedOpening = existing ? waterfallAmountsFromStored(existing) : null;
+  const unreturnedCapitalCents = keepOpening ? storedOpening!.unreturnedCapitalCents : parsed.unreturnedCapitalCents;
+  const unpaidPrefCents = keepOpening ? storedOpening!.unpaidPrefCents : parsed.unpaidPrefCents;
+  const prefPaidToDateCents = keepOpening ? existing!.prefPaidToDateCents : parsed.prefPaidToDateCents;
   const tiersJson = encodeTiersJson(parsed.config.tiers, {
     unreturnedCapitalCents,
     unpaidPrefCents,

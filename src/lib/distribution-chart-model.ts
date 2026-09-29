@@ -1,7 +1,7 @@
 import type { DistributionChartModel } from "@/components/deals/distribution-charts";
 import type { DistributionBoard } from "@/lib/distribution-ledger";
-import { formatUsd } from "@rcp/ledger";
-import { formatBpsAsMultiple } from "@rcp/reporting";
+import { capitalBackCents, formatUsd } from "@rcp/ledger";
+import { formatBpsAsMultiple, shortPeriodLabel } from "@rcp/reporting";
 
 const TIER_LABEL = {
   ROC: "Return of capital",
@@ -13,9 +13,12 @@ const TIER_LABEL = {
 export function chartModelFromBoard(board: DistributionBoard): DistributionChartModel {
   const order = ["ROC", "PREF", "CATCH_UP", "PROMOTE"] as const;
   const index = order.indexOf(board.position);
-  const returned = board.current.capitalReturnedCents;
   const contributed = board.current.capitalContributedCents;
+  const back = capitalBackCents(contributed, board.current.unreturnedCapitalCents, board.current.capitalReturnedCents);
+  const returned = back.returnedCents;
+  const beforeLedger = back.beforeLedgerCents;
   const unpaid = board.current.prefUnpaidCents;
+  const beforeNote = beforeLedger > 0n ? `, including ${formatUsd(beforeLedger)} returned before this ledger` : "";
   return {
     contributedCents: contributed,
     returnedCents: returned,
@@ -30,7 +33,7 @@ export function chartModelFromBoard(board: DistributionBoard): DistributionChart
     points: board.events
       .filter((event) => !event.reversesEventId && !event.reversed)
       .map((event) => ({
-        period: event.periodLabel,
+        period: shortPeriodLabel(event.periodLabel),
         accruedCents: event.state.prefAccruedCents,
         paidCents: event.state.prefPaidCents,
         unpaidCents: event.state.prefUnpaidCents,
@@ -42,14 +45,14 @@ export function chartModelFromBoard(board: DistributionBoard): DistributionChart
       capital:
         contributed <= 0n
           ? "No LP capital is entered yet, so the bar stays empty until a contribution is saved on the waterfall."
-          : `${formatUsd(returned)} of ${formatUsd(contributed)} contributed capital is back.`,
+          : `${formatUsd(returned)} of ${formatUsd(contributed)} contributed capital is back${beforeNote}.`,
       pref:
         unpaid > 0n
           ? `${formatUsd(unpaid)} of preferred return is still unpaid after what has actually been distributed.`
           : "Preferred return accrued so far has been paid. The unpaid line is the balance still owed.",
       parties: `Deal LPs have received ${formatUsd(board.current.cumulativeLpCents)}; RCP has received ${formatUsd(board.current.cumulativeRcpCents)}.`,
       tier: `The deal is in ${TIER_LABEL[board.position]}. Later tiers wait until this one is satisfied.`,
-      dpi: `LP multiple to date is ${formatBpsAsMultiple(board.dpiBps)} — distributions divided by capital contributed.`,
+      dpi: `LP multiple to date is ${formatBpsAsMultiple(board.dpiBps)} — distributions divided by capital contributed. ${formatUsd(returned)} of capital is back${beforeNote}.`,
     },
   };
 }

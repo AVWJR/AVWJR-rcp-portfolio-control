@@ -28,7 +28,11 @@ export default async function DistributionsPage({
         if (!board) notFound();
         const role = await currentAccessRole();
         const period = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
-        const latestActive = [...board.events].reverse().find((event) => !event.reversesEventId && !event.reversed);
+        const history = [...board.events].sort(
+          (a, b) => a.sequence - b.sequence || a.periodLabel.localeCompare(b.periodLabel),
+        );
+        const latestActive = history.filter((event) => !event.reversesEventId && !event.reversed).at(-1);
+        const archived = Boolean(ctx.archived);
         const sourceLabel = (source: string) => (source === "CAPITAL_EVENT" ? "Capital event" : "Operating cash");
         return (
           <div className="space-y-8">
@@ -78,7 +82,16 @@ export default async function DistributionsPage({
             </section>
 
             <DistributionCharts model={chartModelFromBoard(board)} />
-            <DistributionForm entityCode={code} period={period} canPost={role === "principal" && board.ready} />
+            <DistributionForm
+              entityCode={code}
+              period={period}
+              canPost={role === "principal" && board.ready && !archived}
+              lockedCopy={
+                archived
+                  ? "This SPE is soft-archived. Restore it from Deal Archive before recording a distribution."
+                  : undefined
+              }
+            />
             {!board.ready ? (
               <p className="text-sm text-ink-600">
                 The ledger tables are not on this database yet, so this page shows the starting point only. Do not post
@@ -109,7 +122,7 @@ export default async function DistributionsPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {board.events.map((event) => (
+                      {history.map((event) => (
                         <tr key={event.id} className="border-b border-cream-200">
                           <td className="py-2">
                             {event.periodLabel}

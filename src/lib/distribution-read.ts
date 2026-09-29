@@ -12,7 +12,7 @@ export type LedgerCapitalRow = {
 
 function missingTable(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /does not exist|no such table|P2021|unknown field/i.test(message);
+  return /does not exist|no such table|no such column|P2021|P2022|unknown field/i.test(message);
 }
 
 /** Latest running totals per SPE. Empty map when the ledger tables are not on this database yet. */
@@ -22,7 +22,7 @@ export async function ledgerCapitalByEntity(entityIds: string[]): Promise<Map<st
   try {
     const rows = await prisma.distributionEvent.findMany({
       where: { entityId: { in: entityIds } },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ sequence: "asc" }, { periodLabel: "asc" }],
       select: {
         id: true,
         entityId: true,

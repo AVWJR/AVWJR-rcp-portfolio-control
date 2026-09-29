@@ -744,6 +744,8 @@ model DistributionEvent {
   memo                  String?
   waterfallSnapshotJson String
   actor                 String?
+  /// Monotonic per deal. The unique pair is the lock for concurrent posts.
+  sequence              Int
   /// Set only on a reversing row. Unique so an event is reversed at most once.
   reversesEventId       String?  @unique
   reversesEvent         DistributionEvent?  @relation("DistributionReversal", fields: [reversesEventId], references: [id], onDelete: SetNull)
@@ -767,6 +769,7 @@ model DistributionEvent {
   lines  DistributionAllocation[]
   audits DistributionAudit[]
 
+  @@unique([entityId, sequence])
   @@index([entityId, createdAt])
 }
 

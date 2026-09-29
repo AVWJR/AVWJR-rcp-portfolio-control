@@ -9,6 +9,10 @@ export function ReverseDistributionButton({ entityCode, eventId }: { entityCode:
   const [busy, setBusy] = useState(false);
 
   async function reverse() {
+    const ok = window.confirm(
+      "Reverse this distribution? The row stays, and the running totals go back to the prior distribution.",
+    );
+    if (!ok) return;
     setBusy(true);
     setError(null);
     const res = await fetch(`/api/deals/${entityCode}/distributions/${eventId}/reverse`, { method: "POST" });
