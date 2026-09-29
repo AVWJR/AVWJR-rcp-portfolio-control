@@ -27,12 +27,17 @@ function isAfter<T extends { id: string; createdAt: Date }>(candidate: T, curren
   return candidate.id > current.id;
 }
 
+export const MISSING_INCOME_SOURCE_MESSAGE =
+  "The saved income source is no longer in this package. Choose an income file before posting.";
+
 export type ChooseSourceOptions<T> = {
   /** Posted choice for this SPE and period. Blank means no explicit choice yet. */
   savedUploadId?: string | null;
   isBlocked?: (upload: T) => boolean;
   /** Posting throws when the saved file is blocked. The close page falls back so a blocked file is not selected. */
   blockedSaved?: "throw" | "ignore";
+  /** Posting throws when the saved upload id is gone. The close page asks the user to choose. */
+  missingSaved?: "throw" | "ignore";
 };
 
 /**
@@ -53,6 +58,7 @@ export function chooseIncomeUpload<T extends { id: string; classification: strin
       missingMessage: "Choose an income statement, T12, or other income file from this month.",
       blockedMessage: "That income file is blocked and cannot be chosen.",
       savedBlockedMessage: "The saved income source is blocked and cannot be posted. Choose another file.",
+      missingSavedMessage: MISSING_INCOME_SOURCE_MESSAGE,
       prefer: (upload) => upload.classification === "income_statement",
     },
   );
@@ -102,6 +108,7 @@ type PoolOptions<T> = ChooseSourceOptions<T> & {
   missingMessage: string;
   blockedMessage: string;
   savedBlockedMessage: string;
+  missingSavedMessage: string;
   prefer?: (upload: T) => boolean;
 };
 
@@ -121,6 +128,9 @@ function chooseFromPool<T extends { id: string; createdAt: Date }>(
   const savedId = options.savedUploadId?.trim();
   if (savedId) {
     const saved = pool.find((upload) => upload.id === savedId);
+    if (!saved && options.missingSaved === "throw") {
+      throw new Error(options.missingSavedMessage);
+    }
     if (saved && blocked(saved) && options.blockedSaved === "throw") {
       throw new Error(options.savedBlockedMessage);
     }

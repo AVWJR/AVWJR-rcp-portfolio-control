@@ -216,23 +216,31 @@ export default async function MonthEndClosePage({
                     {workspace.incomeSourceSummary ? (
                       <p className="text-sm text-ink-700">{workspace.incomeSourceSummary}</p>
                     ) : null}
-                    {workspace.defaultIncomeUploadId ? (
+                    {workspace.missingIncomeNotice ? (
+                      <p className="text-sm font-medium text-red-800">{workspace.missingIncomeNotice}</p>
+                    ) : null}
+                    {incomeFiles.length && (workspace.defaultIncomeUploadId || workspace.missingIncomeNotice) ? (
                       <IncomeSourcePicker
                         files={incomeFiles}
-                        selectedId={workspace.defaultIncomeUploadId}
+                        selectedId={workspace.defaultIncomeUploadId ?? ""}
                         automaticId={workspace.automaticIncomeUploadId}
                         newerNotice={workspace.newerIncomeNotice}
+                        requireChoice={Boolean(workspace.missingIncomeNotice)}
                       />
                     ) : null}
                     {workspace.balanceSourceSummary ? (
                       <p className="text-sm text-ink-700">{workspace.balanceSourceSummary}</p>
                     ) : null}
-                    {workspace.defaultBalanceUploadId ? (
+                    {workspace.missingBalanceNotice ? (
+                      <p className="text-sm font-medium text-red-800">{workspace.missingBalanceNotice}</p>
+                    ) : null}
+                    {balanceFiles.length && (workspace.defaultBalanceUploadId || workspace.missingBalanceNotice) ? (
                       <BalanceSourcePicker
                         files={balanceFiles}
-                        selectedId={workspace.defaultBalanceUploadId}
+                        selectedId={workspace.defaultBalanceUploadId ?? ""}
                         automaticId={workspace.automaticBalanceUploadId}
                         newerNotice={workspace.newerBalanceNotice}
+                        requireChoice={Boolean(workspace.missingBalanceNotice)}
                       />
                     ) : null}
                     <ControllerOverrideFields active={softClosed} includeReason />

@@ -20,6 +20,7 @@ export function CloseSourcePicker({
   automaticId,
   automaticLabel,
   newerNotice,
+  requireChoice = false,
 }: {
   legend: string;
   name: string;
@@ -29,11 +30,16 @@ export function CloseSourcePicker({
   automaticId: string | null;
   automaticLabel: string | null;
   newerNotice: string | null;
+  requireChoice?: boolean;
 }) {
   const selectable = files.filter((file) => !file.blocksPosting);
-  const initial = selectable.some((file) => file.id === selectedId) ? selectedId : (selectable[0]?.id ?? "");
+  const initial = selectable.some((file) => file.id === selectedId)
+    ? selectedId
+    : requireChoice
+      ? ""
+      : (selectable[0]?.id ?? "");
   const [selected, setSelected] = useState(initial);
-  if (files.length < 2) {
+  if (files.length < 2 && !requireChoice) {
     return newerNotice ? <p className="text-sm font-medium text-navy-900">{newerNotice}</p> : null;
   }
   return (
@@ -71,11 +77,13 @@ export function IncomeSourcePicker({
   selectedId,
   automaticId,
   newerNotice,
+  requireChoice = false,
 }: {
   files: SourceFile[];
   selectedId: string;
   automaticId: string | null;
   newerNotice: string | null;
+  requireChoice?: boolean;
 }) {
   const automatic = files.find((file) => file.id === automaticId);
   const automaticLabel =
@@ -94,6 +102,7 @@ export function IncomeSourcePicker({
       automaticId={automaticId}
       automaticLabel={automaticLabel}
       newerNotice={newerNotice}
+      requireChoice={requireChoice}
     />
   );
 }
@@ -103,11 +112,13 @@ export function BalanceSourcePicker({
   selectedId,
   automaticId,
   newerNotice,
+  requireChoice = false,
 }: {
   files: SourceFile[];
   selectedId: string;
   automaticId: string | null;
   newerNotice: string | null;
+  requireChoice?: boolean;
 }) {
   return (
     <CloseSourcePicker
@@ -119,6 +130,7 @@ export function BalanceSourcePicker({
       automaticId={automaticId}
       automaticLabel={automaticId ? DEFAULT_BALANCE_SHEET_LABEL : null}
       newerNotice={newerNotice}
+      requireChoice={requireChoice}
     />
   );
 }

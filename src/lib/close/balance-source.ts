@@ -1,5 +1,8 @@
 import { newerFileNotice, SUPERSEDED_INCOME_LABEL, type ChooseSourceOptions } from "./income-source";
 
+export const MISSING_BALANCE_SOURCE_MESSAGE =
+  "The saved balance sheet is no longer in this package. Choose a balance sheet before posting.";
+
 export const DEFAULT_BALANCE_SHEET_LABEL = "Default, most recent balance sheet";
 export const SUPERSEDED_BALANCE_LABEL = SUPERSEDED_INCOME_LABEL;
 
@@ -38,6 +41,9 @@ export function chooseBalanceUpload<T extends { id: string; classification: stri
   const savedId = options?.savedUploadId?.trim();
   if (savedId) {
     const saved = sheets.find((upload) => upload.id === savedId);
+    if (!saved && options?.missingSaved === "throw") {
+      throw new Error(MISSING_BALANCE_SOURCE_MESSAGE);
+    }
     if (saved && blocked(saved) && options?.blockedSaved === "throw") {
       throw new Error("The saved balance sheet is blocked and cannot be posted. Choose another file.");
     }

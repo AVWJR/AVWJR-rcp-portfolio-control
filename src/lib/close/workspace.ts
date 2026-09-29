@@ -42,6 +42,7 @@ import {
   balanceSourceSummary,
   chooseBalanceUpload,
   isBalanceSource,
+  MISSING_BALANCE_SOURCE_MESSAGE,
   newerBalanceNotice,
 } from "./balance-source";
 import {
@@ -49,12 +50,15 @@ import {
   incomePostingLabel,
   incomeSourceSummary,
   isIncomeSource,
+  MISSING_INCOME_SOURCE_MESSAGE,
   newerFileNotice,
   newerSelectableUpload,
 } from "./income-source";
 import {
   applyRememberedMaps,
+  balanceSheetLacksUsableAmount,
   classifyCloseFile,
+  EMPTY_BALANCE_SHEET_MESSAGE,
   parseCloseFile,
   type CloseFileClass,
   type ParsedCloseLine,
@@ -331,6 +335,12 @@ function postingBlockAfterMaps(
   lines: ParsedCloseLine[],
   saved: { note: string; blocksPosting: boolean },
 ): { note: string; blocksPosting: boolean } {
+  if (classification === "balance_sheet" && balanceSheetLacksUsableAmount(lines)) {
+    return {
+      blocksPosting: true,
+      note: /posting is blocked/i.test(saved.note) ? saved.note : `${saved.note} ${EMPTY_BALANCE_SHEET_MESSAGE}`.trim(),
+    };
+  }
   if (saved.blocksPosting) return saved;
   if (classification !== "t12" && classification !== "income_statement") return saved;
   if (!lines.some((line) => !line.flag) || mappedIncomeLines(lines).length > 0) return saved;
@@ -441,11 +451,13 @@ export async function postCloseToBooks(opts: {
     savedUploadId: period.incomeSourceUploadId,
     isBlocked: blocked,
     blockedSaved: "throw",
+    missingSaved: "throw",
   });
   const chosenBalance = chooseBalanceUpload(uploads, opts.balanceUploadId, {
     savedUploadId: period.balanceSourceUploadId,
     isBlocked: blocked,
     blockedSaved: "throw",
+    missingSaved: "throw",
   });
   const income: ImportAmount[] = [];
   const balanceDesired = new Map<string, bigint>();
@@ -458,6 +470,9 @@ export async function postCloseToBooks(opts: {
     const control = uploadControl(upload.parsedJson);
     if (control?.blocksPosting) throw new Error(control.detail || "Import control totals do not tie. Posting is blocked.");
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
+    if (isBalanceSource(kind) && balanceSheetLacksUsableAmount(lines)) {
+      throw new Error(`${upload.filename} has no usable balance-sheet amount, so posting is blocked.`);
+    }
     if (incomeFile && mappedIncomeLines(lines).length === 0) {
       throw new Error(
         `${upload.filename} has no mapped income lines for this close month, so posting is blocked. Remember an RCP account for each line, then post again.`,
@@ -590,15 +605,48 @@ export async function postCloseToBooks(opts: {
   });
   const explicitIncome = opts.incomeUploadId?.trim();
   const explicitBalance = opts.balanceUploadId?.trim();
-  if ((explicitIncome && chosen) || (explicitBalance && chosenBalance)) {
+  const incomeToSave =
+    explicitIncome && chosen
+      ? chosen.id
+      : !period.incomeSourceUploadId && chosen && onlyPostableUploadId(uploads, isIncomeSource, blocked) === chosen.id
+        ? chosen.id
+        : null;
+  const balanceToSave =
+    explicitBalance && chosenBalance
+      ? chosenBalance.id
+      : !period.balanceSourceUploadId &&
+          chosenBalance &&
+          onlyPostableUploadId(uploads, isBalanceSource, blocked) === chosenBalance.id
+        ? chosenBalance.id
+        : null;
+  if (incomeToSave || balanceToSave) {
     await prisma.period.update({
       where: { id: period.id },
       data: {
-        ...(explicitIncome && chosen ? { incomeSourceUploadId: chosen.id } : {}),
-        ...(explicitBalance && chosenBalance ? { balanceSourceUploadId: chosenBalance.id } : {}),
+        ...(incomeToSave ? { incomeSourceUploadId: incomeToSave } : {}),
+        ...(balanceToSave ? { balanceSourceUploadId: balanceToSave } : {}),
       },
     });
   }
+}
+
+function onlyPostableUploadId<T extends { id: string; classification: string }>(
+  uploads: T[],
+  matches: (classification: string) => boolean,
+  isBlocked: (upload: T) => boolean,
+): string | null {
+  const postable = uploads.filter((upload) => matches(upload.classification) && !isBlocked(upload));
+  return postable.length === 1 ? postable[0]!.id : null;
+}
+
+function savedSourceMissing(
+  uploads: { id: string; classification: string }[],
+  savedId: string | null,
+  matches: (classification: string) => boolean,
+): boolean {
+  const id = savedId?.trim();
+  if (!id) return false;
+  return !uploads.some((upload) => upload.id === id && matches(upload.classification));
 }
 
 export async function loadCloseWorkspace(entityId: string, year: number, month: number) {
@@ -740,18 +788,26 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
   const blocked = (upload: (typeof uploads)[number]) => uploadIsBlocked(upload, maps);
   const savedIncomeUploadId = period?.incomeSourceUploadId ?? null;
   const savedBalanceUploadId = period?.balanceSourceUploadId ?? null;
+  const incomeMissing = savedSourceMissing(uploads, savedIncomeUploadId, isIncomeSource);
+  const balanceMissing = savedSourceMissing(uploads, savedBalanceUploadId, isBalanceSource);
   const automaticIncome = chooseIncomeUpload(uploads, null, { isBlocked: blocked });
-  const effectiveIncome = chooseIncomeUpload(uploads, null, {
-    savedUploadId: savedIncomeUploadId,
-    isBlocked: blocked,
-    blockedSaved: "ignore",
-  });
+  const effectiveIncome = incomeMissing
+    ? null
+    : chooseIncomeUpload(uploads, null, {
+        savedUploadId: savedIncomeUploadId,
+        isBlocked: blocked,
+        blockedSaved: "ignore",
+        missingSaved: "ignore",
+      });
   const automaticBalance = chooseBalanceUpload(uploads, null, { isBlocked: blocked });
-  const effectiveBalance = chooseBalanceUpload(uploads, null, {
-    savedUploadId: savedBalanceUploadId,
-    isBlocked: blocked,
-    blockedSaved: "ignore",
-  });
+  const effectiveBalance = balanceMissing
+    ? null
+    : chooseBalanceUpload(uploads, null, {
+        savedUploadId: savedBalanceUploadId,
+        isBlocked: blocked,
+        blockedSaved: "ignore",
+        missingSaved: "ignore",
+      });
   const incomeSaved = Boolean(savedIncomeUploadId && effectiveIncome?.id === savedIncomeUploadId);
   const balanceSaved = Boolean(savedBalanceUploadId && effectiveBalance?.id === savedBalanceUploadId);
   const newerIncome = incomeSaved
@@ -811,11 +867,13 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     savedIncomeUploadId,
     incomeSourceSummary: incomeSourceSummary(effectiveIncome, incomeSaved),
     newerIncomeNotice: newerIncome ? newerFileNotice("income", newerIncome.filename) : null,
+    missingIncomeNotice: incomeMissing ? MISSING_INCOME_SOURCE_MESSAGE : null,
     defaultBalanceUploadId: effectiveBalance?.id ?? null,
     automaticBalanceUploadId: automaticBalance?.id ?? null,
     savedBalanceUploadId,
     balanceSourceSummary: balanceSourceSummary(effectiveBalance, balanceSaved),
     newerBalanceNotice: newerBalance ? newerBalanceNotice(newerBalance.filename) : null,
+    missingBalanceNotice: balanceMissing ? MISSING_BALANCE_SOURCE_MESSAGE : null,
     uploads: fileViews,
     events: [
       ...events.map((event) => ({ at: event.createdAt.toISOString(), action: event.action, detail: event.detail })),

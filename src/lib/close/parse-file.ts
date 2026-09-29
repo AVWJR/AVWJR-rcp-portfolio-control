@@ -100,6 +100,66 @@ function splitAccount(label: string): { sourceAccountNo: string; rest: string } 
   return { sourceAccountNo: match[1] ?? "", rest: (match[2] ?? label).trim() };
 }
 
+const MIRROR_CODES = new Set(["1310", "2310", "6310", "7010"]);
+
+function contentWords(value: string): string[] {
+  return normalizeVendorLabel(value)
+    .split(" ")
+    .filter((word) => word.length > 2 && word !== "and");
+}
+
+function chartNameAgrees(accountName: string, text: string): boolean {
+  const name = normalizeVendorLabel(accountName);
+  const label = normalizeVendorLabel(text);
+  return Boolean(label) && label === name;
+}
+
+/** A vendor caption that shares no word with the RCP account is a different line. */
+function captionSharesNoWord(accountName: string, text: string): boolean {
+  const labelWords = contentWords(text);
+  if (!labelWords.length) return false;
+  const nameWords = new Set(contentWords(accountName));
+  return labelWords.every((word) => !nameWords.has(word));
+}
+
+function balanceSheetAccount(account: { type: string } | undefined): boolean {
+  return account != null && account.type !== "REVENUE" && account.type !== "EXPENSE";
+}
+
+/**
+ * A leading RCP number maps only when the words agree with that account, or
+ * when no label rule matches and the account is an ordinary balance-sheet
+ * account. Vendor numbers that collide (payroll 6110, management-fee 6310,
+ * roof 2020, capital 2030, suspense 1999) stay on the label rules.
+ */
+function fromLeadingAccount(
+  sourceAccountNo: string,
+  text: string,
+): { accountCode: string; confidence: MapConfidence; balanceSheet: boolean } | null {
+  if (!sourceAccountNo || !MASTER_COA_BY_CODE.has(sourceAccountNo)) return null;
+  const account = MASTER_COA_BY_CODE.get(sourceAccountNo);
+  if (!account) return null;
+  const rule = mapNormalizedLabel(text);
+  const agrees = chartNameAgrees(account.name, text) || rule.accountCode === sourceAccountNo;
+  if (agrees) {
+    return {
+      accountCode: sourceAccountNo,
+      confidence: "EXACT",
+      balanceSheet: balanceSheetAccount(account),
+    };
+  }
+  if (
+    !rule.accountCode &&
+    balanceSheetAccount(account) &&
+    !MIRROR_CODES.has(sourceAccountNo) &&
+    sourceAccountNo !== "1999" &&
+    !captionSharesNoWord(account.name, text)
+  ) {
+    return { accountCode: sourceAccountNo, confidence: "EXACT", balanceSheet: true };
+  }
+  return null;
+}
+
 export function mapStatementLabel(
   label: string,
   client?: { accountCode: string } | null,
@@ -108,19 +168,29 @@ export function mapStatementLabel(
     return { accountCode: client.accountCode, confidence: "CLIENT_MAP", balanceSheet: false };
   }
   const { sourceAccountNo, rest } = splitAccount(label);
-  if (sourceAccountNo && MASTER_COA_BY_CODE.has(sourceAccountNo)) {
-    const account = MASTER_COA_BY_CODE.get(sourceAccountNo);
-    return {
-      accountCode: sourceAccountNo,
-      confidence: "EXACT",
-      balanceSheet: account != null && account.type !== "REVENUE" && account.type !== "EXPENSE",
-    };
-  }
+  const text = rest || label;
   if (MASTER_COA_BY_CODE.has(rest)) {
     return { accountCode: rest, confidence: "EXACT", balanceSheet: false };
   }
-  const hit = mapNormalizedLabel(rest || label);
+  const fromNumber = fromLeadingAccount(sourceAccountNo, text);
+  if (fromNumber) return fromNumber;
+  const hit = mapNormalizedLabel(text);
   return { accountCode: hit.accountCode, confidence: hit.confidence, balanceSheet: hit.balanceSheet };
+}
+
+export const EMPTY_BALANCE_SHEET_MESSAGE =
+  "This balance sheet has no usable amount, so posting is blocked.";
+
+/** A balance sheet with no lines, or only zeros and unreadable amounts, cannot post. */
+export function balanceSheetLacksUsableAmount(lines: ParsedCloseLine[]): boolean {
+  return !lines.some((line) => {
+    if (line.flag) return false;
+    try {
+      return BigInt(line.signedCents) !== 0n;
+    } catch {
+      return false;
+    }
+  });
 }
 
 const MONTH_NAMES = [
@@ -408,6 +478,11 @@ function fileHasNoCloseMonthColumn(lines: ParsedCloseLine[]): boolean {
 
 function finish(kind: CloseFileClass, lines: ParsedCloseLine[], note: string, controlRows: { kind: "noi" | "net_income"; cents: bigint }[] = []): ClassifiedCloseFile {
   const control = importControl(lines, controlRows);
+  if (kind === "balance_sheet" && balanceSheetLacksUsableAmount(lines)) {
+    control.blocksPosting = true;
+    const plain = EMPTY_BALANCE_SHEET_MESSAGE;
+    control.detail = /posting is blocked/i.test(control.detail) ? control.detail : `${control.detail} ${plain}`.trim();
+  }
   if ((kind === "t12" || kind === "income_statement") && fileHasNoCloseMonthColumn(lines)) {
     control.blocksPosting = true;
     const plain = "No income lines were mapped from this file, so posting is blocked.";
