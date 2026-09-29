@@ -14,6 +14,7 @@ export async function postJournal(input: {
   source?: string;
   lines: JournalDraftLine[];
   allowControllerAdjustment?: boolean;
+  reversesJournalId?: string;
 }) {
   assertJournalBalanced(input.lines);
 
@@ -45,6 +46,7 @@ export async function postJournal(input: {
       source: input.source ?? "manual",
       status: "POSTED",
       postedAt: new Date(),
+      reversesJournalId: input.reversesJournalId,
       lines: {
         create: input.lines.map((line) => ({
           accountId: byCode.get(line.accountCode)!.id,

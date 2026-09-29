@@ -235,7 +235,7 @@ export function rowsFromMatrix(
       flag = "No Actual, month, or period column was found. Budget, variance, and YTD were not used.";
     }
     if (isNoi || isNet) {
-      if (amount != null) controlRows.push({ kind: isNoi ? "noi" : "net_income", cents: amount < 0n ? -amount : amount });
+      if (amount != null) controlRows.push({ kind: isNoi ? "noi" : "net_income", cents: amount });
       return;
     }
     if (isStatementTotalLabel(labelCell)) return;

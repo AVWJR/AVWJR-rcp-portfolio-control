@@ -232,12 +232,16 @@ model Journal {
   memo        String
   source      String        @default("manual")
   status      JournalStatus @default(DRAFT)
-  postedAt    DateTime?
-  createdAt   DateTime      @default(now())
+  postedAt          DateTime?
+  reversesJournalId String?
+  reversesJournal   Journal?  @relation("JournalReversal", fields: [reversesJournalId], references: [id], onDelete: SetNull)
+  reversedBy        Journal[] @relation("JournalReversal")
+  createdAt         DateTime  @default(now())
 
   lines JournalLine[]
 
   @@index([entityId, periodId, status])
+  @@index([reversesJournalId])
 }
 
 model JournalLine {

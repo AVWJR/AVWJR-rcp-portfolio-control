@@ -23,6 +23,7 @@ import {
 } from "@rcp/ledger";
 import {
   normalizeVendorLabel,
+  isNonRevenueSubstatus,
   rentRollGpr,
   rentRollNonRevenue,
   rentRollVacancyLoss,
@@ -43,15 +44,29 @@ import {
   type ParsedCloseLine,
 } from "./parse-file";
 
-export function isLiveRentRollMonth(year: number, month: number, now = new Date()): boolean {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "numeric",
-  }).formatToParts(now);
-  const liveYear = Number(parts.find((part) => part.type === "year")?.value);
-  const liveMonth = Number(parts.find((part) => part.type === "month")?.value);
-  return liveYear === year && liveMonth === month;
+function periodRank(year: number, month: number): number {
+  return year * 12 + month;
+}
+
+/**
+ * Replace the live Unit table when the upload is the SPE's most recent period
+ * or its latest open period that has not been reopened. Earlier months and
+ * reopened months write the lease snapshot only.
+ */
+export async function shouldReplaceLiveUnits(entityId: string, year: number, month: number): Promise<boolean> {
+  const periods = await prisma.period.findMany({
+    where: { entityId },
+    select: { year: true, month: true, status: true, reopenedAt: true },
+  });
+  const current = periods.find((row) => row.year === year && row.month === month);
+  if (current?.reopenedAt) return false;
+  const target = periodRank(year, month);
+  const latest = periods.reduce((best, row) => Math.max(best, periodRank(row.year, row.month)), 0);
+  if (target === latest && latest > 0) return true;
+  const latestOpen = periods
+    .filter((row) => row.status === "OPEN" && !row.reopenedAt)
+    .reduce((best, row) => Math.max(best, periodRank(row.year, row.month)), 0);
+  return latestOpen > 0 && target === latestOpen;
 }
 
 function periodEndIso(year: number, month: number): string {
@@ -192,7 +207,7 @@ export async function storeCloseUpload(opts: {
         }),
       },
     });
-    if (isLiveRentRollMonth(opts.year, opts.month)) {
+    if (await shouldReplaceLiveUnits(opts.entityId, opts.year, opts.month)) {
       await importRentRollSource({
         entityId: opts.entityId,
         filename: opts.filename,
@@ -358,8 +373,13 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
     where: { entityId: opts.entityId, periodId: period.id, status: "POSTED" },
     include: { lines: { include: { account: true } } },
   });
+  const reversedIds = new Set(
+    existing.map((row) => row.reversesJournalId).filter((id): id is string => Boolean(id)),
+  );
   const foreignPnl = existing.filter(
     (journal) =>
+      !journal.reversesJournalId &&
+      !reversedIds.has(journal.id) &&
       !journal.source.startsWith("month_end_") &&
       journal.lines.some((line) => line.account.type === "REVENUE" || line.account.type === "EXPENSE"),
   );
@@ -368,14 +388,19 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
       `This month already has ${foreignPnl.length} operating journal(s). Posting the package would count NOI twice. Reverse those journals before posting the close.`,
     );
   }
+  const importSources = ["month_end_is", "month_end_bs"] as const;
   if (period.status === "SOFT_CLOSED") {
-    for (const journal of existing.filter((row) => row.source === "month_end_is" || row.source === "month_end_bs")) {
+    const stillInEffect = existing.filter(
+      (row) => (row.source === "month_end_is" || row.source === "month_end_bs") && !reversedIds.has(row.id),
+    );
+    for (const journal of stillInEffect) {
       await postJournal({
         entityId: opts.entityId,
         periodId: period.id,
         date: new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`),
         memo: `Reversal of ${journal.memo}`,
         source: `${journal.source}_reversal`,
+        reversesJournalId: journal.id,
         allowControllerAdjustment: true,
         lines: journal.lines.map((line) => ({
           accountCode: line.account.code,
@@ -387,7 +412,14 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
     }
   } else {
     await prisma.journal.deleteMany({
-      where: { entityId: opts.entityId, periodId: period.id, source: { in: ["month_end_is", "month_end_bs"] } },
+      where: {
+        entityId: opts.entityId,
+        periodId: period.id,
+        source: { in: ["month_end_is_reversal", "month_end_bs_reversal"] },
+      },
+    });
+    await prisma.journal.deleteMany({
+      where: { entityId: opts.entityId, periodId: period.id, source: { in: [...importSources] } },
     });
   }
   const date = new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`);
@@ -516,9 +548,11 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
         .reduce((acc, unit) => acc + (unit.concessionCents ?? 0n), 0n)
     : liveUnits.reduce((acc, unit) => acc + unit.concessionCents, 0n);
   const nonRevenueCents = fromSnapshot ? nonRevenue(leaseUnits) : rentRollNonRevenue(live);
+  const revenueOccupied = (unit: LeaseUnit) =>
+    unit.status === "OCCUPIED" && !isNonRevenueSubstatus(unit.substatus);
   const signedLtlCents = fromSnapshot
     ? leaseUnits
-        .filter((unit) => unit.status === "OCCUPIED")
+        .filter(revenueOccupied)
         .reduce((acc, unit) => acc + (unit.marketRentCents - unit.leaseRentCents), 0n)
     : signedLossToLease(live);
   const toleranceRows = await prisma.tieOutTolerance.findMany({ where: { entityId } });
@@ -539,7 +573,7 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     downCount: leaseUnits.filter((unit) => unit.status === "DOWN").length,
     gprCents: gpr,
     scheduledRentCents: leaseUnits
-      .filter((unit) => unit.status === "OCCUPIED")
+      .filter(revenueOccupied)
       .reduce((acc, unit) => acc + unit.leaseRentCents, 0n),
     signedLtlCents,
     vacancyCents,
@@ -593,7 +627,103 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     tieOuts,
     summary,
     suspense: fileViews.reduce((acc, file) => acc + file.unmapped.length, 0),
+    tolerances: toleranceRows.map((row) => ({
+      key: row.key,
+      cents: row.cents?.toString() ?? null,
+      bps: row.bps,
+      days: row.days,
+    })),
   };
+}
+
+export async function setTieOutTolerance(opts: {
+  entityId: string;
+  key: string;
+  cents?: bigint | null;
+  bps?: number | null;
+  days?: number | null;
+  year?: number;
+  month?: number;
+}) {
+  const key = opts.key.trim();
+  if (!key) throw new Error("Name the tie-out tolerance.");
+  await prisma.tieOutTolerance.upsert({
+    where: { entityId_key: { entityId: opts.entityId, key } },
+    update: { cents: opts.cents ?? null, bps: opts.bps ?? null, days: opts.days ?? null },
+    create: {
+      entityId: opts.entityId,
+      key,
+      cents: opts.cents ?? null,
+      bps: opts.bps ?? null,
+      days: opts.days ?? null,
+    },
+  });
+  await prisma.monthEndEvent.create({
+    data: {
+      entityId: opts.entityId,
+      year: opts.year ?? 0,
+      month: opts.month ?? 0,
+      action: "TOLERANCE",
+      detail: `${key} · cents ${opts.cents ?? "—"} · bps ${opts.bps ?? "—"} · days ${opts.days ?? "—"}`,
+    },
+  });
+}
+
+/** Reverse posted operating journals that would make a month-end package count NOI twice. */
+export async function reverseOperatingJournals(opts: {
+  entityId: string;
+  year: number;
+  month: number;
+  reason: string;
+}) {
+  const reason = opts.reason.trim();
+  if (!reason) throw new Error("A reason is required to reverse operating journals.");
+  const period = await openPeriod(opts.entityId, opts.year, opts.month);
+  if (period.status === "CLOSED") {
+    throw new PeriodLockedError("Closed months are not overwritten. Reopen with a reason and a ticket.");
+  }
+  const existing = await prisma.journal.findMany({
+    where: { entityId: opts.entityId, periodId: period.id, status: "POSTED" },
+    include: { lines: { include: { account: true } } },
+  });
+  const reversedIds = new Set(
+    existing.map((row) => row.reversesJournalId).filter((id): id is string => Boolean(id)),
+  );
+  const blocking = existing.filter(
+    (journal) =>
+      !journal.reversesJournalId &&
+      !reversedIds.has(journal.id) &&
+      !journal.source.startsWith("month_end_") &&
+      journal.lines.some((line) => line.account.type === "REVENUE" || line.account.type === "EXPENSE"),
+  );
+  if (!blocking.length) throw new Error("No operating journals are blocking this month.");
+  for (const journal of blocking) {
+    await postJournal({
+      entityId: opts.entityId,
+      periodId: period.id,
+      date: new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`),
+      memo: `Reversal of ${journal.memo}`,
+      source: "operating_reversal",
+      reversesJournalId: journal.id,
+      allowControllerAdjustment: period.status === "SOFT_CLOSED",
+      lines: journal.lines.map((line) => ({
+        accountCode: line.account.code,
+        debit: line.credit,
+        credit: line.debit,
+        memo: `Reversal: ${line.memo ?? journal.memo}`,
+      })),
+    });
+  }
+  await prisma.monthEndEvent.create({
+    data: {
+      entityId: opts.entityId,
+      year: opts.year,
+      month: opts.month,
+      action: "REVERSE_OPERATING",
+      detail: `${reason} · ${blocking.length} journal(s)`,
+    },
+  });
+  return { reversed: blocking.length };
 }
 
 export async function transitionClose(opts: {
@@ -621,21 +751,35 @@ export async function transitionClose(opts: {
   await hardLockPeriod(period.id);
 }
 
+function textField(value: unknown): string {
+  if (value == null) return "";
+  return String(value);
+}
+
+/** Boolean true and the text values true / yes / y / 1 / mtm count as month-to-month. */
+export function readMtmFlag(value: unknown): boolean {
+  if (value === true) return true;
+  if (value === false || value == null) return false;
+  if (typeof value === "number") return value === 1;
+  const text = String(value).trim().toLowerCase();
+  return text === "true" || text === "yes" || text === "y" || text === "1" || text === "mtm";
+}
+
 function snapshotToLease(payloadJson: string, unitCode: string): LeaseUnit {
-  const payload = JSON.parse(payloadJson) as Record<string, string>;
+  const payload = JSON.parse(payloadJson) as Record<string, unknown>;
   return {
     unitCode,
-    status: (payload.unit_status as LeaseUnit["status"]) || "OCCUPIED",
-    marketRentCents: BigInt(payload.market_rent || "0"),
-    leaseRentCents: BigInt(payload.lease_rent || "0"),
-    leaseStart: payload.lease_start || null,
-    leaseEnd: payload.lease_end || null,
-    moveIn: payload.move_in_date || null,
-    moveOut: payload.move_out_date || null,
-    mtm: payload.mtm_flag === "true",
-    balanceCents: BigInt(payload.balance_total || "0"),
-    depositCents: BigInt(payload.security_deposit_held || "0"),
-    concessionCents: BigInt(payload.concession_amount || "0"),
-    substatus: payload.unit_substatus,
+    status: (textField(payload.unit_status) as LeaseUnit["status"]) || "OCCUPIED",
+    marketRentCents: BigInt(textField(payload.market_rent) || "0"),
+    leaseRentCents: BigInt(textField(payload.lease_rent) || "0"),
+    leaseStart: textField(payload.lease_start) || null,
+    leaseEnd: textField(payload.lease_end) || null,
+    moveIn: textField(payload.move_in_date) || null,
+    moveOut: textField(payload.move_out_date) || null,
+    mtm: readMtmFlag(payload.mtm_flag),
+    balanceCents: BigInt(textField(payload.balance_total) || "0"),
+    depositCents: BigInt(textField(payload.security_deposit_held) || "0"),
+    concessionCents: BigInt(textField(payload.concession_amount) || "0"),
+    substatus: textField(payload.unit_substatus),
   };
 }

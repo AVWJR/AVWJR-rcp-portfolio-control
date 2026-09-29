@@ -1,5 +1,5 @@
 import { PeriodBanner } from "@/components/period-banner";
-import { resolveReportingPeriod } from "@/lib/period-default";
+import { resolveReportingPeriod, spesStillOpen } from "@/lib/period-default";
 import { Shell } from "@/components/shell";
 import { isArchivedSpe } from "@/lib/archive";
 import { listPeriodLabels } from "@/lib/deals/periods";
@@ -38,7 +38,7 @@ export async function loadReportContext(searchParams: ReportSearch) {
   const month = Number(monthStr);
   const consolidated = searchParams.view === "consolidated" || searchParams.view === "combined";
 
-  const [statements, periodLabels] = await Promise.all([
+  const [statements, periodLabels, openSpes] = await Promise.all([
     buildAllStatements({
       entityId: entity.id,
       year,
@@ -46,6 +46,7 @@ export async function loadReportContext(searchParams: ReportSearch) {
       consolidated,
     }),
     listPeriodLabels(),
+    entity.type === "SPE" ? Promise.resolve([]) : spesStillOpen(entity.code, periodLabel),
   ]);
 
   return {
@@ -58,6 +59,7 @@ export async function loadReportContext(searchParams: ReportSearch) {
     canConsolidate: statements.canConsolidate,
     archived: isArchivedSpe(entity),
     statements,
+    openSpes,
   };
 }
 
@@ -114,6 +116,15 @@ export async function ReportShell({
         entityCode={ctx.entity.code}
         period={`${ctx.year}-${String(ctx.month).padStart(2, "0")}`}
       />
+      {ctx.entity.type !== "SPE" ? (
+        <p className="mb-4 text-sm text-ink-700">
+          {ctx.openSpes.length
+            ? `Still open for ${ctx.year}-${String(ctx.month).padStart(2, "0")}: ${ctx.openSpes
+                .map((spe) => `${spe.code} (${spe.status.replaceAll("_", " ")})`)
+                .join(", ")}.`
+            : `Every live SPE is hard-closed for ${ctx.year}-${String(ctx.month).padStart(2, "0")}.`}
+        </p>
+      ) : null}
       {await children(ctx)}
     </Shell>
   );

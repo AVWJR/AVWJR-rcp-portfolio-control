@@ -18,6 +18,7 @@ import {
   classifyChargeCode,
   hardTieFailures,
   leaseExpirationSummary,
+  lossToLease,
   mapNormalizedLabel,
   mapT12LabelToAccount,
   rentRollGpr,
@@ -169,7 +170,8 @@ describe("rent roll tie-outs and lease summary", () => {
     ];
     expect(rentRollGpr(units)).toBe(dollars(1_700));
     expect(rentRollNonRevenue(units)).toBe(dollars(700));
-    expect(signedLossToLease(units)).toBe(dollars(800));
+    expect(signedLossToLease(units)).toBe(dollars(100));
+    expect(lossToLease(units)).toBe(dollars(100));
   });
 
   it("hard-fails a unit-count break and a missing rent roll, and warns when no tolerance is set", () => {

@@ -292,9 +292,10 @@ function monthEndUploadCopy(ctx: ExpertClientContext): string {
 4. Drop the manager’s package on **Drop the manager’s package**. You can drop several files at once: monthly P&L, balance sheet, T12, GL detail, and the rent roll (Yardi Lease Charges, RealPage, Entrata, AppFolio, redIQ, Excel, or CSV).
 5. Read the classification under each file. A Hampton rent roll still lands as **511 units**. Floorplans **1PW** and **2PW** are beds, not a second unit count.
 6. If a line says it is unmapped, type the RCP account (for example 4015 for loss-to-lease) and click **Remember mapping**. That choice is kept for this SPE and vendor. Unmapped lines post to suspense **1999** and **block hard lock**.
-7. Click **Post this period into the SPE books**. You should see the income statement with Actual, Budget, Var, Prior, and YTD, the balance sheet with prior-year earnings and current-year earnings on separate lines, and the rent-roll tie-out list (RR-1 through RR-13).
-8. Click **Soft close**, finish anything still flagged, then **Hard lock**. To undo a lock, enter a reason and a ticket and click **Reopen**. A hard-locked month will not take another upload until you reopen it.
-9. The original files stay in the vault. Dashboards, the waterfall, proformas, and LP packs follow the latest hard-locked period unless you pick another month in the header.
+7. If the month already has operating journals, enter a reason and click **Reverse operating journals**. Seeded **SPE-WBG 2026-08** does. Reversing those journals is what lets the package post without counting NOI twice. Then click **Post this period into the SPE books**. You should see the income statement with Actual, Budget, Var, Prior, and YTD, the balance sheet with prior-year earnings and current-year earnings on separate lines, and the rent-roll tie-out list (RR-1 through RR-13).
+8. Tie-out limits for this SPE are set on the same page under **Tie-out tolerance** (key, cents, bps, days).
+9. Click **Soft close**, finish anything still flagged, then **Hard lock**. To undo a lock, enter a reason and a ticket and click **Reopen**. A hard-locked month will not take another upload until you reopen it.
+10. The original files stay in the vault. OpCo and HoldCo default to the latest month hard-closed by every live SPE, and the header lists the SPEs still open. Dashboards, the waterfall, proformas, and LP packs follow that period unless you pick another month.
 
 Loss-to-lease is its own line (4015), not a concession. Model, employee, and admin units stay inside GPR and come out on 4040. Offline down units stay out of GPR. Cash flow before debt service is the same number the waterfall already calls CFADS. Cash flow after debt service on the property chart is NOI − interest − principal.`;
 }

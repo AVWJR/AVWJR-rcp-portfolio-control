@@ -1,8 +1,31 @@
-import { rememberMap, postCloseToBooks, storeCloseUpload, transitionClose } from "@/lib/close/workspace";
+import {
+  postCloseToBooks,
+  rememberMap,
+  reverseOperatingJournals,
+  setTieOutTolerance,
+  storeCloseUpload,
+  transitionClose,
+} from "@/lib/close/workspace";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+
+function optionalBigint(value: unknown): bigint | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  return BigInt(text);
+}
+
+function optionalInt(value: unknown): number | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const parsed = Number(text);
+  if (!Number.isInteger(parsed)) throw new Error("Tolerance bps and days must be whole numbers.");
+  return parsed;
+}
 
 async function speOrThrow(code: string) {
   const entity = await prisma.entity.findUnique({ where: { code } });
@@ -38,10 +61,30 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         accountCode?: string;
         reason?: string;
         ticket?: string;
+        filename?: string;
+        text?: string;
+        mimeType?: string;
+        key?: string;
+        cents?: string | number | null;
+        bps?: string | number | null;
+        days?: string | number | null;
       };
       year = Number(body.year);
       month = Number(body.month);
       if (!year || !month) throw new Error("Pick a period first.");
+      if (body.action === "upload") {
+        if (!body.filename || body.text == null) throw new Error("Drop at least one file.");
+        const stored = await storeCloseUpload({
+          entityId: entity.id,
+          entityCode: code,
+          year,
+          month,
+          filename: body.filename,
+          mimeType: body.mimeType || "text/csv",
+          bytes: Buffer.from(body.text, "utf8"),
+        });
+        return NextResponse.json({ ok: true, files: [stored] });
+      }
       if (body.action === "map") {
         if (!body.label || !body.accountCode) throw new Error("Choose an RCP account.");
         await rememberMap({
@@ -57,6 +100,27 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       }
       if (body.action === "post") {
         await postCloseToBooks({ entityId: entity.id, year, month });
+        return NextResponse.json({ ok: true });
+      }
+      if (body.action === "reverse-operating") {
+        const reversed = await reverseOperatingJournals({
+          entityId: entity.id,
+          year,
+          month,
+          reason: body.reason ?? "",
+        });
+        return NextResponse.json({ ok: true, ...reversed });
+      }
+      if (body.action === "set-tolerance") {
+        await setTieOutTolerance({
+          entityId: entity.id,
+          key: body.key ?? "",
+          cents: optionalBigint(body.cents),
+          bps: optionalInt(body.bps),
+          days: optionalInt(body.days),
+          year,
+          month,
+        });
         return NextResponse.json({ ok: true });
       }
       if (body.action === "soft" || body.action === "hard" || body.action === "reopen") {
@@ -92,6 +156,27 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     }
     if (action === "post") {
       await postCloseToBooks({ entityId: entity.id, year, month });
+      return wantsHtml ? back() : NextResponse.json({ ok: true });
+    }
+    if (action === "reverse-operating") {
+      await reverseOperatingJournals({
+        entityId: entity.id,
+        year,
+        month,
+        reason: String(form.get("reason") ?? ""),
+      });
+      return wantsHtml ? back() : NextResponse.json({ ok: true });
+    }
+    if (action === "set-tolerance") {
+      await setTieOutTolerance({
+        entityId: entity.id,
+        key: String(form.get("key") ?? ""),
+        cents: optionalBigint(form.get("cents")),
+        bps: optionalInt(form.get("bps")),
+        days: optionalInt(form.get("days")),
+        year,
+        month,
+      });
       return wantsHtml ? back() : NextResponse.json({ ok: true });
     }
     if (action === "soft" || action === "hard" || action === "reopen") {

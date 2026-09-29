@@ -324,6 +324,16 @@ function parseMetaLabelRows(
   }
 }
 
+/** Resident name / id tokens for model, employee, admin, and down, mapped onto the sub-status. */
+function nonRevenueIdentity(raw: string): { status: UnitStatus; substatus: string } | null {
+  const sub = parseUnitSubstatus(raw);
+  if (sub === "DOWN") return { status: "DOWN", substatus: "DOWN" };
+  if (sub === "MODEL" || sub === "EMPLOYEE" || sub === "ADMIN") return { status: "OCCUPIED", substatus: sub };
+  const status = parseRentRollStatus(raw);
+  if (status === "DOWN") return { status: "DOWN", substatus: "DOWN" };
+  return null;
+}
+
 function inferStatus(opts: {
   section: string | null;
   residentId: string;
@@ -338,6 +348,10 @@ function inferStatus(opts: {
   }
   const fromStatus = parseRentRollStatus(opts.statusCell);
   if (fromStatus) return { status: fromStatus, substatus: fromStatus === "DOWN" ? "DOWN" : "" };
+  for (const raw of [opts.residentName, opts.residentId]) {
+    const named = nonRevenueIdentity(raw);
+    if (named) return named;
+  }
   if (/^(vacant|vac|empty|n\/a|-)$/i.test(opts.residentName) || /^(vacant|vac)$/i.test(opts.residentId)) {
     return { status: "VACANT", substatus: "" };
   }

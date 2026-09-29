@@ -104,14 +104,31 @@ export default async function MonthEndClosePage({
                 ))}
               </datalist>
               {workspace.periodStatus !== "CLOSED" ? (
-                <form action={`/api/deals/${code}/close`} method="post">
-                  <input type="hidden" name="action" value="post" />
-                  <input type="hidden" name="year" value={ctx.year} />
-                  <input type="hidden" name="month" value={ctx.month} />
-                  <button className="rounded bg-navy-900 px-4 py-2 text-sm text-white" type="submit">
-                    Post this period into the SPE books
-                  </button>
-                </form>
+                <div className="space-y-3">
+                  <form className="flex flex-wrap items-end gap-2" action={`/api/deals/${code}/close`} method="post">
+                    <input type="hidden" name="action" value="reverse-operating" />
+                    <input type="hidden" name="year" value={ctx.year} />
+                    <input type="hidden" name="month" value={ctx.month} />
+                    <label className="text-xs">
+                      Reason
+                      <input name="reason" required className="mt-1 block rounded border px-2 py-1" placeholder="Why these journals reverse" />
+                    </label>
+                    <button className="rounded border border-navy-900 px-3 py-2" type="submit">
+                      Reverse operating journals
+                    </button>
+                  </form>
+                  <p className="max-w-3xl text-ink-700">
+                    Seeded months such as SPE-WBG 2026-08 already have operating journals. Reverse them with a reason, then post the package. A hard-locked month still needs a reopen first.
+                  </p>
+                  <form action={`/api/deals/${code}/close`} method="post">
+                    <input type="hidden" name="action" value="post" />
+                    <input type="hidden" name="year" value={ctx.year} />
+                    <input type="hidden" name="month" value={ctx.month} />
+                    <button className="rounded bg-navy-900 px-4 py-2 text-sm text-white" type="submit">
+                      Post this period into the SPE books
+                    </button>
+                  </form>
+                </div>
               ) : (
                 <p className="text-sm text-ink-700">This month is hard-locked. Reopen it before posting again.</p>
               )}
@@ -180,6 +197,48 @@ export default async function MonthEndClosePage({
                   ))}
                 </tbody>
               </table>
+            </section>
+
+            <section className="space-y-3 text-sm">
+              <h2 className="font-display text-2xl text-navy-900">Tie-out tolerance</h2>
+              <p className="max-w-3xl text-ink-700">
+                Saved for this SPE. Cents and basis points are optional. A blank field clears that limit.
+              </p>
+              {workspace.tolerances.length ? (
+                <ul>
+                  {workspace.tolerances.map((row) => (
+                    <li key={row.key}>
+                      {row.key}: cents {row.cents ?? "—"} · bps {row.bps ?? "—"} · days {row.days ?? "—"}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-ink-500">No tolerance saved for this SPE.</p>
+              )}
+              <form className="flex flex-wrap items-end gap-2" action={`/api/deals/${code}/close`} method="post">
+                <input type="hidden" name="action" value="set-tolerance" />
+                <input type="hidden" name="year" value={ctx.year} />
+                <input type="hidden" name="month" value={ctx.month} />
+                <label className="text-xs">
+                  Key
+                  <input name="key" required placeholder="gpr" className="mt-1 block rounded border px-2 py-1" />
+                </label>
+                <label className="text-xs">
+                  Cents
+                  <input name="cents" inputMode="numeric" className="mt-1 block rounded border px-2 py-1" />
+                </label>
+                <label className="text-xs">
+                  Bps
+                  <input name="bps" inputMode="numeric" className="mt-1 block rounded border px-2 py-1" />
+                </label>
+                <label className="text-xs">
+                  Days
+                  <input name="days" inputMode="numeric" className="mt-1 block rounded border px-2 py-1" />
+                </label>
+                <button className="rounded bg-navy-900 px-3 py-2 text-white" type="submit">
+                  Save tolerance
+                </button>
+              </form>
             </section>
 
             <section>

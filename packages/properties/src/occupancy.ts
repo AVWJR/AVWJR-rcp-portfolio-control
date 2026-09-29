@@ -29,8 +29,17 @@ export function vacantUnits(units: UnitSnapshot[]): UnitSnapshot[] {
 
 const NON_REVENUE_SUBSTATUS = new Set(["MODEL", "EMPLOYEE", "ADMIN"]);
 
-export function unitSubstatus(unit: UnitSnapshot): string {
+export function unitSubstatus(unit: { substatus?: string | null }): string {
   return (unit.substatus ?? "").trim().toUpperCase();
+}
+
+/** Model, employee, and admin units are deducted on 4040 only. They are not loss-to-lease. */
+export function isNonRevenueSubstatus(substatus: string | null | undefined): boolean {
+  return NON_REVENUE_SUBSTATUS.has((substatus ?? "").trim().toUpperCase());
+}
+
+function revenueOccupied(units: UnitSnapshot[]): UnitSnapshot[] {
+  return occupiedUnits(units).filter((unit) => !isNonRevenueSubstatus(unit.substatus));
 }
 
 /**
@@ -48,8 +57,9 @@ export function rentRollNonRevenue(units: UnitSnapshot[]): bigint {
     .reduce((acc, u) => acc + u.marketRent, 0n);
 }
 
+/** Scheduled rent of revenue occupied units. Model, employee, and admin are excluded. */
 export function rentRollInPlace(units: UnitSnapshot[]): bigint {
-  return occupiedUnits(units).reduce((acc, u) => acc + u.inPlaceRent, 0n);
+  return revenueOccupied(units).reduce((acc, u) => acc + u.inPlaceRent, 0n);
 }
 
 /** Vacancy loss from the rent roll = market rent of VACANT units. */
@@ -62,23 +72,24 @@ export function rentRollConcessions(units: UnitSnapshot[]): bigint {
 }
 
 /**
- * Loss-to-lease (monthly) = Σ max(0, market − in-place) on OCCUPIED units.
- * Vacant and DOWN units do not contribute. In-place above market is ignored (no
- * negative LTL). This is not loan-to-value (Phase C).
+ * Loss-to-lease (monthly) = Σ max(0, market − in-place) on revenue occupied units.
+ * Vacant, DOWN, model, employee, and admin units do not contribute. In-place above
+ * market is ignored (no negative LTL). This is not loan-to-value (Phase C).
  */
 export function lossToLease(units: UnitSnapshot[]): bigint {
-  return occupiedUnits(units).reduce((acc, u) => {
+  return revenueOccupied(units).reduce((acc, u) => {
     const gap = u.marketRent - u.inPlaceRent;
     return acc + (gap > 0n ? gap : 0n);
   }, 0n);
 }
 
 /**
- * Signed loss-to-lease on occupied units. Positive = loss, negative = gain-to-lease.
+ * Signed loss-to-lease on revenue occupied units. Positive = loss, negative = gain-to-lease.
+ * Model, employee, and admin units are omitted so they hit 4040 only.
  * The floored KPI remains `lossToLease`.
  */
 export function signedLossToLease(units: UnitSnapshot[]): bigint {
-  return occupiedUnits(units).reduce((acc, u) => acc + (u.marketRent - u.inPlaceRent), 0n);
+  return revenueOccupied(units).reduce((acc, u) => acc + (u.marketRent - u.inPlaceRent), 0n);
 }
 
 /**

@@ -7,20 +7,32 @@ import {
 import {
   leaseExpirationSummary,
   leaseMasterRecord,
+  lossToLease,
+  parseYardiLeaseCharges,
   rentRollEconomicOccupancyBps,
   rentRollGpr,
+  rentRollNonRevenue,
+  signedLossToLease,
   type UnitSnapshot,
 } from "@rcp/properties";
 import { parseCloseFile } from "@/lib/close/parse-file";
-import { loadCloseWorkspace, postCloseToBooks, storeCloseUpload, transitionClose } from "@/lib/close/workspace";
+import {
+  loadCloseWorkspace,
+  postCloseToBooks,
+  reverseOperatingJournals,
+  storeCloseUpload,
+  transitionClose,
+} from "@/lib/close/workspace";
 import { loadYtdBudgetMap } from "@/lib/budgets";
+import { openPeriod } from "@/lib/deals/periods";
 import { createEntityWithCoa } from "@/lib/entities";
 import { completeChecklist, hardLockPeriod, softClosePeriod } from "@/lib/period-close";
-import { resolveReportingPeriod } from "@/lib/period-default";
+import { resolveReportingPeriod, spesStillOpen } from "@/lib/period-default";
 import { priorYearSameMonth } from "@/lib/operating";
 import { postJournal } from "@/lib/post-journal";
 import { prisma } from "@/lib/prisma";
-import { hamptonLeaseChargesWorkbook } from "./fixtures/hampton-lease-charges";
+import { loadPostedLines } from "@/lib/queries";
+import { hamptonLeaseChargesRows, hamptonLeaseChargesWorkbook } from "./fixtures/hampton-lease-charges";
 import { afterAll, describe, expect, it } from "vitest";
 
 const ids: string[] = [];
@@ -317,9 +329,11 @@ function leaseChargesWorkbook(count: number, asOf: string): Buffer {
 describe("close upload, posting, and tie-outs", () => {
   it("resolves the latest closed period for a SPE, OpCo, and HoldCo", async () => {
     expect(await resolveReportingPeriod("SPE-WBG", null)).toBe("2026-07");
-    expect(await resolveReportingPeriod("RCP-OPCO", null)).toBe("2026-07");
-    expect(await resolveReportingPeriod("RCP-HOLD", null)).toBe("2026-07");
+    expect(await resolveReportingPeriod("RCP-OPCO", null)).toBe("2026-08");
+    expect(await resolveReportingPeriod("RCP-HOLD", null)).toBe("2026-08");
     expect(await resolveReportingPeriod("SPE-WBG", "2026-08")).toBe("2026-08");
+    const stillOpen = await spesStillOpen("RCP-OPCO", "2026-07");
+    expect(stillOpen.map((spe) => spe.code)).toEqual(["SPE-CVC", "SPE-HCR"]);
   });
 
   it("runs the close path on a 511-unit Lease Charges file without replacing a past month or the SPE unit count", async () => {
@@ -333,6 +347,7 @@ describe("close upload, posting, and tie-outs", () => {
       unitCount: 999,
     });
     ids.push(entity.id);
+    await openPeriod(entity.id, 2026, 9);
     const past = await storeCloseUpload({
       entityId: entity.id,
       entityCode: entity.code,
@@ -379,6 +394,7 @@ describe("close upload, posting, and tie-outs", () => {
       unitCount: 1,
     });
     ids.push(entity.id);
+    await openPeriod(entity.id, 2026, 9);
     const csv = Buffer.from(
       "As of 2026-03-15\nunit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent,concession\n101,A1,1,1,700,OCCUPIED,500.00,400.00,25.00\n",
       "utf8",
@@ -629,4 +645,309 @@ describe("close upload, posting, and tie-outs", () => {
     const reopened = await prisma.period.findUnique({ where: { id: julyPeriod.id } });
     expect(reopened?.status).toBe("OPEN");
   });
+
+  it("keeps file NOI across three soft-closed reposts", async () => {
+    const entity = await freshSpe("SPE-QREP", "QC Repost LLC");
+    const file = Buffer.from(
+      ["Account,Actual", 'Gross Potential Rent,"100,000.00"', 'Payroll,"29,500.00"', 'Net Operating Income,"70,500.00"'].join("\n"),
+      "utf8",
+    );
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "repost-pnl.csv",
+      mimeType: "text/csv",
+      bytes: file,
+    });
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    await transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" });
+    for (let i = 0; i < 3; i += 1) {
+      await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+      expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    }
+    const reversals = await prisma.journal.findMany({
+      where: { entityId: entity.id, source: "month_end_is_reversal" },
+    });
+    expect(reversals).toHaveLength(3);
+    expect(new Set(reversals.map((row) => row.reversesJournalId)).size).toBe(3);
+    expect(reversals.every((row) => row.reversesJournalId)).toBe(true);
+  });
+
+  it("ties and posts a loss NOI without taking the absolute value", async () => {
+    const file = Buffer.from(
+      ["Account,Actual", 'Gross Potential Rent,"10,000.00"', 'Payroll,"29,500.00"', 'Net Operating Income,"(19,500.00)"'].join("\n"),
+      "utf8",
+    );
+    const parsed = parseCloseFile("loss-pnl.csv", file, { year: 2026, month: 8 });
+    expect(parsed.control.noiTies).toBe(true);
+    expect(parsed.control.blocksPosting).toBe(false);
+    expect(parsed.control.sourceNoiCents).toBe(dollars(-19_500).toString());
+    const entity = await freshSpe("SPE-QLOS", "QC Loss NOI LLC");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "loss-pnl.csv",
+      mimeType: "text/csv",
+      bytes: file,
+    });
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(-19_500));
+  });
+
+  it("reads MODEL and DOWN from the Hampton resident name and keeps model out of loss-to-lease", async () => {
+    const rows = hamptonLeaseChargesRows();
+    const summary = rows.findIndex((row) => row[0] === "Summary of Charges by Charge Code");
+    rows.splice(
+      summary,
+      0,
+      ["171L799-1", "1P/V", "540", "MODEL", "MODEL", "1220.00", "r-rent", "0.00", "0.00", "0.00", "", "", "", "0.00"],
+      ["", "", "", "", "", "", "Total", "0.00"],
+      ["171L799-2", "1P/V", "540", "DOWN", "DOWN", "1220.00", "", "", "0.00", "0.00", "", "", "", "0.00"],
+    );
+    const parsed = parseYardiLeaseCharges(rows);
+    const model = parsed.units.find((unit) => unit.unitCode === "171L799-1");
+    const down = parsed.units.find((unit) => unit.unitCode === "171L799-2");
+    expect(model?.status).toBe("OCCUPIED");
+    expect(model?.extras.unit_substatus).toBe("MODEL");
+    expect(down?.status).toBe("DOWN");
+    expect(down?.extras.unit_substatus).toBe("DOWN");
+    const snaps = parsed.units.map((unit) =>
+      snap({
+        unitCode: unit.unitCode,
+        status: unit.status,
+        marketRent: unit.marketRentCents,
+        inPlaceRent: unit.inPlaceRentCents,
+        substatus: unit.extras.unit_substatus,
+      }),
+    );
+    const withoutSpecial = snaps.filter((unit) => unit.unitCode !== "171L799-1" && unit.unitCode !== "171L799-2");
+    expect(rentRollGpr(snaps) - rentRollGpr(withoutSpecial)).toBe(dollars(1_220));
+    expect(rentRollNonRevenue(snaps)).toBe(dollars(1_220));
+    const explicit = parseYardiLeaseCharges([
+      ["Unit", "Resident", "Name", "Status", "Market", "Charge", "Amount"],
+      ["", "", "", "", "", "Code", ""],
+      ["101", "t1", "Model", "Down", "1000.00", "r-rent", "0.00"],
+      ["", "", "", "", "", "Total", "0.00"],
+    ]);
+    expect(explicit.units[0]?.status).toBe("DOWN");
+    expect(explicit.units[0]?.extras.unit_substatus).toBe("DOWN");
+
+    const entity = await freshSpe("SPE-QMOD", "QC Model LLC");
+    const only = [snap({ unitCode: "MOD", status: "OCCUPIED", marketRent: dollars(1_220), inPlaceRent: 0n, substatus: "MODEL" })];
+    expect(rentRollNonRevenue(only)).toBe(dollars(1_220));
+    expect(signedLossToLease(only)).toBe(0n);
+    expect(lossToLease(only)).toBe(0n);
+    await prisma.leasePeriodSnapshot.create({
+      data: {
+        entityId: entity.id,
+        year: 2026,
+        month: 3,
+        unitCode: "MOD",
+        payloadJson: JSON.stringify({
+          unit_status: "OCCUPIED",
+          unit_substatus: "MODEL",
+          market_rent: dollars(1_220).toString(),
+          lease_rent: "0",
+        }),
+      },
+    });
+    const workspace = await loadCloseWorkspace(entity.id, 2026, 3);
+    expect(workspace.tieOuts.find((row) => row.id === "RR-6")?.rentRollCents).toBe(dollars(1_220));
+    expect(workspace.tieOuts.find((row) => row.id === "RR-3")?.rentRollCents).toBe(0n);
+    expect(workspace.tieOuts.find((row) => row.id === "RR-2")?.rentRollCents).toBe(0n);
+  });
+
+  it("counts an MTM flag saved as a boolean or as text", async () => {
+    const entity = await freshSpe("SPE-QMTM", "QC MTM LLC");
+    await prisma.leasePeriodSnapshot.createMany({
+      data: [
+        { entityId: entity.id, year: 2026, month: 8, unitCode: "B", payloadJson: JSON.stringify({ unit_status: "OCCUPIED", market_rent: "100", lease_rent: "100", mtm_flag: true }) },
+        { entityId: entity.id, year: 2026, month: 8, unitCode: "T", payloadJson: JSON.stringify({ unit_status: "OCCUPIED", market_rent: "100", lease_rent: "100", mtm_flag: "yes" }) },
+        { entityId: entity.id, year: 2026, month: 8, unitCode: "F", payloadJson: JSON.stringify({ unit_status: "OCCUPIED", market_rent: "100", lease_rent: "100", mtm_flag: false }) },
+        { entityId: entity.id, year: 2026, month: 8, unitCode: "S", payloadJson: JSON.stringify({ unit_status: "OCCUPIED", market_rent: "100", lease_rent: "100", mtm_flag: "false" }) },
+      ],
+    });
+    const workspace = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(workspace.summary.mtmCount).toBe(2);
+    expect(workspace.summary.buckets.find((bucket) => bucket.key === "mtm")?.count).toBe(2);
+  });
+
+  it("replaces live units for the latest open month and writes only a snapshot for earlier or reopened months", async () => {
+    const entity = await freshSpe("SPE-QLIV", "QC Live Roll LLC");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "rent-roll.csv",
+      mimeType: "text/csv",
+      bytes: rollCsv("2026-08-31", "AUG", "OCCUPIED", "500.00", "500.00"),
+    });
+    expect(await prisma.unit.count({ where: { entityId: entity.id } })).toBe(1);
+    expect((await prisma.unit.findFirst({ where: { entityId: entity.id } }))?.unitCode).toBe("AUG");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 7,
+      filename: "rent-roll.csv",
+      mimeType: "text/csv",
+      bytes: rollCsv("2026-07-31", "JUL", "OCCUPIED", "400.00", "400.00"),
+    });
+    expect(await prisma.unit.count({ where: { entityId: entity.id } })).toBe(1);
+    expect((await prisma.unit.findFirst({ where: { entityId: entity.id } }))?.unitCode).toBe("AUG");
+    expect(await prisma.leasePeriodSnapshot.count({ where: { entityId: entity.id, year: 2026, month: 7 } })).toBe(1);
+    await transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" });
+    await transitionClose({
+      entityId: entity.id,
+      year: 2026,
+      month: 8,
+      action: "reopen",
+      reason: "Replace the August roll",
+      ticket: "QC-LIVE",
+    });
+    await prisma.unit.deleteMany({ where: { entityId: entity.id } });
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "rent-roll.csv",
+      mimeType: "text/csv",
+      bytes: rollCsv("2026-08-31", "AUG2", "OCCUPIED", "500.00", "500.00"),
+    });
+    expect(await prisma.unit.count({ where: { entityId: entity.id } })).toBe(0);
+    expect(await prisma.leasePeriodSnapshot.count({ where: { entityId: entity.id, year: 2026, month: 8, unitCode: "AUG2" } })).toBe(1);
+  });
+
+  it("reverses blocking operating journals so the package can post", async () => {
+    const entity = await freshSpe("SPE-QREV", "QC Reverse LLC");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "august-pnl.csv",
+      mimeType: "text/csv",
+      bytes: pnlCsv(),
+    });
+    const period = await openPeriod(entity.id, 2026, 8);
+    await postJournal({
+      entityId: entity.id,
+      periodId: period.id,
+      date: new Date("2026-08-31T16:00:00.000Z"),
+      memo: "Seeded GPR",
+      source: "seed",
+      lines: [
+        { accountCode: "1110", debit: dollars(100), credit: 0n },
+        { accountCode: "4010", debit: 0n, credit: dollars(100) },
+      ],
+    });
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(/NOI twice/);
+    await expect(reverseOperatingJournals({ entityId: entity.id, year: 2026, month: 8, reason: "   " })).rejects.toThrow(/reason/i);
+    const reversed = await reverseOperatingJournals({
+      entityId: entity.id,
+      year: 2026,
+      month: 8,
+      reason: "Replace seeded August books with the manager package",
+    });
+    expect(reversed.reversed).toBe(1);
+    const reversal = await prisma.journal.findFirst({ where: { entityId: entity.id, source: "operating_reversal" } });
+    expect(reversal?.reversesJournalId).toBeTruthy();
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(4_000));
+  });
+
+  it("uses the latest month closed by every live SPE", async () => {
+    const hold = await prisma.entity.findUnique({ where: { code: "RCP-HOLD" } });
+    if (!hold) throw new Error("Seed RCP-HOLD first");
+    const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+    const left = await createEntityWithCoa({
+      code: `SPE-QL${suffix}`,
+      name: "QC Left LLC",
+      type: "SPE",
+      parentId: hold.id,
+      unitCount: 1,
+    });
+    const right = await createEntityWithCoa({
+      code: `SPE-QR${suffix}`,
+      name: "QC Right LLC",
+      type: "SPE",
+      parentId: hold.id,
+      unitCount: 1,
+    });
+    const opco = await createEntityWithCoa({
+      code: `OPC-Q${suffix}`,
+      name: "QC OpCo LLC",
+      type: "OPCO",
+      parentId: hold.id,
+    });
+    await prisma.entity.update({ where: { id: left.id }, data: { parentId: opco.id } });
+    await prisma.entity.update({ where: { id: right.id }, data: { parentId: opco.id } });
+    ids.push(left.id, right.id, opco.id);
+    await lockMonth(left.id, 2026, 5);
+    await lockMonth(left.id, 2026, 4);
+    await lockMonth(right.id, 2026, 4);
+    expect(await resolveReportingPeriod(opco.code, null)).toBe("2026-04");
+    expect(await resolveReportingPeriod(opco.code, "2026-05")).toBe("2026-05");
+    const open = await spesStillOpen(opco.code, "2026-05");
+    expect(open.map((spe) => spe.code)).toEqual([right.code]);
+  });
 });
+
+async function freshSpe(prefix: string, name: string) {
+  const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+  if (!opco) throw new Error("Seed RCP-OPCO first");
+  const entity = await createEntityWithCoa({
+    code: `${prefix}${Date.now().toString(36).slice(-4).toUpperCase()}`,
+    name,
+    type: "SPE",
+    parentId: opco.id,
+    unitCount: 1,
+  });
+  ids.push(entity.id);
+  return entity;
+}
+
+async function periodNoi(entityId: string, year: number, month: number) {
+  const lines = await loadPostedLines({
+    entityIds: [entityId],
+    from: new Date(Date.UTC(year, month - 1, 1)),
+    to: new Date(Date.UTC(year, month, 0, 23, 59, 59)),
+  });
+  return buildIncomeStatement({ throughEnd: lines, inPeriod: lines, eliminate: false }).noi;
+}
+
+function rollCsv(asOf: string, unit: string, status: string, market: string, inplace: string) {
+  return Buffer.from(
+    `As of ${asOf}\nunit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent\n${unit},A1,1,1,700,${status},${market},${inplace}\n`,
+    "utf8",
+  );
+}
+
+function snap(partial: Partial<UnitSnapshot> & Pick<UnitSnapshot, "unitCode" | "status">): UnitSnapshot {
+  return {
+    floorplan: "A",
+    beds: 1,
+    bathsTenths: 10,
+    sqft: 700,
+    marketRent: 0n,
+    inPlaceRent: 0n,
+    leaseStart: null,
+    leaseEnd: null,
+    concessionCents: 0n,
+    ...partial,
+  };
+}
+
+async function lockMonth(entityId: string, year: number, month: number) {
+  const period = await openPeriod(entityId, year, month);
+  await softClosePeriod(period.id);
+  await completeChecklist(period.id);
+  await hardLockPeriod(period.id);
+}
