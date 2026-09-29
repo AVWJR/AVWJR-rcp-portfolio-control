@@ -71,12 +71,20 @@ function sha256(bytes: Buffer): string {
 
 export { sha256 };
 
+/** Underscores are separators, so WBG_PnL_Aug and WBG_P&L_Aug match after lowercasing. */
+function looksLikeIncomeStatementName(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  if (/t-?12|trailing/.test(lower)) return false;
+  const hay = lower.replace(/_+/g, " ");
+  return /income statement|profit|p&l|p-l|\bpnl\b|\bp l\b|operating statement/.test(hay);
+}
+
 export function classifyCloseFile(filename: string, bytes?: Buffer): CloseFileClass {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".pdf")) return "pdf";
   if (/balance[\s_-]*sheet|\btrial balance\b/.test(lower)) return "balance_sheet";
   if (/general ledger|gl detail|gl_detail|transaction detail/.test(lower)) return "gl_detail";
-  if (/income statement|profit|p&l|p_l|p-l|\bpnl\b|operating statement/.test(lower) && !/t-?12|trailing/.test(lower)) {
+  if (looksLikeIncomeStatementName(filename)) {
     return "income_statement";
   }
   const role = inferFileRole(filename, bytes);
@@ -382,10 +390,17 @@ export function importControl(lines: ParsedCloseLine[], controlRows: { kind: "no
   };
 }
 
+/** Empty file, or every row is flagged because the close month has no column. Unmapped labels are not this case. */
+function fileHasNoCloseMonthColumn(lines: ParsedCloseLine[]): boolean {
+  if (lines.length === 0) return true;
+  return lines.every(
+    (line) => line.flag != null && /no column for |no actual, month, or period column/i.test(line.flag),
+  );
+}
+
 function finish(kind: CloseFileClass, lines: ParsedCloseLine[], note: string, controlRows: { kind: "noi" | "net_income"; cents: bigint }[] = []): ClassifiedCloseFile {
   const control = importControl(lines, controlRows);
-  const mappedCount = lines.filter((line) => line.accountCode && !line.flag).length;
-  if ((kind === "t12" || kind === "income_statement") && mappedCount === 0) {
+  if ((kind === "t12" || kind === "income_statement") && fileHasNoCloseMonthColumn(lines)) {
     control.blocksPosting = true;
     const plain = "No income lines were mapped from this file, so posting is blocked.";
     const columnFlag = lines.find((line) => line.flag && /column for /i.test(line.flag))?.flag;

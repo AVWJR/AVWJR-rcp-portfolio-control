@@ -23,6 +23,7 @@ import {
   loadCloseWorkspace,
   postCloseToBooks,
   previewOperatingReversals,
+  rememberMap,
   reverseOperatingJournals,
   setTieOutTolerance,
   storeCloseUpload,
@@ -203,6 +204,8 @@ describe("close file parser", () => {
     expect(classifyCloseFile("pnl.csv")).toBe("income_statement");
     expect(classifyCloseFile("P&L.csv")).toBe("income_statement");
     expect(classifyCloseFile("p-l.csv")).toBe("income_statement");
+    expect(classifyCloseFile("WBG_PnL_Aug.csv")).toBe("income_statement");
+    expect(classifyCloseFile("WBG_P&L_Aug.xlsx")).toBe("income_statement");
     const file = Buffer.from(
       [
         "Account,Aug Actual,YTD Actual",
@@ -1135,6 +1138,49 @@ describe("close upload, posting, and tie-outs", () => {
     expect(t12?.blocksPosting).toBe(true);
     expect(t12?.note).toMatch(/May 2026/);
     expect(t12?.note).toMatch(/posting is blocked/i);
+  });
+
+  it("posts an all-unmapped income statement after both labels are remembered, without uploading again", async () => {
+    const entity = await freshSpe("SPE-QMAP", "QC Remember Map LLC");
+    const file = Buffer.from(["Account,Aug Actual", "Zork Revenue Widget,1000", "Frobnicator Cost,200"].join("\n"), "utf8");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "august-profit.csv",
+      mimeType: "text/csv",
+      bytes: file,
+    });
+    const blocked = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(blocked.uploads[0]?.classification).toBe("income_statement");
+    expect(blocked.uploads[0]?.unmapped).toEqual(["Zork Revenue Widget", "Frobnicator Cost"]);
+    expect(blocked.uploads[0]?.blocksPosting).toBe(true);
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(/no mapped income lines/i);
+    await rememberMap({
+      entityId: entity.id,
+      sourceSystem: entity.code,
+      sourceAccountNo: "",
+      label: "Zork Revenue Widget",
+      accountCode: "4010",
+      year: 2026,
+      month: 8,
+    });
+    await rememberMap({
+      entityId: entity.id,
+      sourceSystem: entity.code,
+      sourceAccountNo: "",
+      label: "Frobnicator Cost",
+      accountCode: "5110",
+      year: 2026,
+      month: 8,
+    });
+    const ready = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(ready.uploads[0]?.unmapped).toEqual([]);
+    expect(ready.uploads[0]?.blocksPosting).toBe(false);
+    expect(await prisma.monthEndUpload.count({ where: { entityId: entity.id, year: 2026, month: 8 } })).toBe(1);
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(800));
   });
 
   it("keeps SPE-WBG interest, depreciation, and the AM fee when a P&L package replaces above-NOI journals", async () => {

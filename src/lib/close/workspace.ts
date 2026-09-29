@@ -303,6 +303,28 @@ function uploadNote(parsedJson: string): { note: string; blocksPosting: boolean 
   }
 }
 
+function mappedIncomeLines(lines: ParsedCloseLine[]): ParsedCloseLine[] {
+  return lines.filter((line) => line.accountCode && !line.flag && !line.balanceSheet);
+}
+
+/**
+ * Unmapped labels are not frozen at upload. After remembered maps, zero mapped
+ * income lines still block; a file that now maps does not.
+ */
+function postingBlockAfterMaps(
+  classification: string,
+  lines: ParsedCloseLine[],
+  saved: { note: string; blocksPosting: boolean },
+): { note: string; blocksPosting: boolean } {
+  if (saved.blocksPosting) return saved;
+  if (classification !== "t12" && classification !== "income_statement") return saved;
+  if (!lines.some((line) => !line.flag) || mappedIncomeLines(lines).length > 0) return saved;
+  return {
+    blocksPosting: true,
+    note: "No income lines are mapped yet, so posting is blocked. Remember an RCP account for each line, then post. You do not need to upload the file again.",
+  };
+}
+
 function uploadControl(parsedJson: string): { blocksPosting: boolean; detail: string } | null {
   try {
     const parsed = JSON.parse(parsedJson) as { control?: { blocksPosting?: boolean; detail?: string } };
@@ -357,14 +379,10 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
     const control = uploadControl(upload.parsedJson);
     if (control?.blocksPosting) throw new Error(control.detail || "Import control totals do not tie. Posting is blocked.");
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
-    if (kind === "t12" || kind === "income_statement") {
-      const mapped = lines.filter((line) => line.accountCode && !line.flag && !line.balanceSheet);
-      if (mapped.length === 0) {
-        throw new Error(
-          control?.detail ||
-            `${upload.filename} has no mapped income lines for this close month, so posting is blocked.`,
-        );
-      }
+    if ((kind === "t12" || kind === "income_statement") && mappedIncomeLines(lines).length === 0) {
+      throw new Error(
+        `${upload.filename} has no mapped income lines for this close month, so posting is blocked. Remember an RCP account for each line, then post again.`,
+      );
     }
     for (const line of lines) {
       if (line.flag) continue;
@@ -628,7 +646,7 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
   });
   const fileViews = uploads.map((upload) => {
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
-    const meta = uploadNote(upload.parsedJson);
+    const meta = postingBlockAfterMaps(upload.classification, lines, uploadNote(upload.parsedJson));
     return {
       id: upload.id,
       filename: upload.filename,
