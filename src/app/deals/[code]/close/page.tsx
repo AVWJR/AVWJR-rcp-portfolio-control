@@ -74,6 +74,9 @@ export default async function MonthEndClosePage({
                     <p className="font-medium text-navy-900">
                       {file.filename} · {file.classification.replaceAll("_", " ")} · {file.byteSize.toLocaleString()} bytes
                     </p>
+                    {file.blocksPosting && file.note ? (
+                      <p className="mt-2 text-red-800">{file.note}</p>
+                    ) : null}
                     {file.unmapped.length ? (
                       <div className="mt-3 space-y-2">
                         <p className="text-ink-700">Unmapped lines block hard close. Pick an RCP account — it is remembered for this SPE.</p>
@@ -107,19 +110,16 @@ export default async function MonthEndClosePage({
               {workspace.periodStatus !== "CLOSED" ? (
                 <div className="space-y-3">
                   <p className="max-w-3xl text-ink-700">
-                    Above-NOI journals (accounts 4xxx and 5xxx) are listed before they can be reversed. Interest, depreciation, amortization, and journals tied to the OpCo AM fee (6310/2310) stay on the books.
+                    Above-NOI journals (accounts 4xxx and 5xxx) are listed before they can be reversed. Interest, depreciation, amortization, and a journal that is only the OpCo mirror (1310, 2310, 6310, or 7010) stay on the books. A journal that mixes operating lines with one of those mirror codes needs a manual split.
                   </p>
                   {reversals.length ? (
-                    <form className="space-y-3" action={`/api/deals/${code}/close`} method="post">
-                      <input type="hidden" name="action" value="reverse-operating" />
-                      <input type="hidden" name="year" value={ctx.year} />
-                      <input type="hidden" name="month" value={ctx.month} />
+                    <div className="space-y-3">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b text-left text-ink-500">
                             <th className="py-1">Memo</th>
                             <th>Source</th>
-                            <th>Amount</th>
+                            <th>Above-NOI amount reversed</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -127,7 +127,7 @@ export default async function MonthEndClosePage({
                             <tr key={row.journalId} className="border-b border-black/5">
                               <td className="py-1">
                                 {row.memo}
-                                {row.partial ? " (above-NOI portion)" : ""}
+                                {row.needsManualSplit ? " — needs manual split" : row.partial ? " (above-NOI portion)" : ""}
                               </td>
                               <td>{row.source}</td>
                               <td className="tabular">{formatUsd(row.amountCents)}</td>
@@ -135,18 +135,32 @@ export default async function MonthEndClosePage({
                           ))}
                         </tbody>
                       </table>
-                      <label className="flex items-center gap-2 text-xs">
-                        <input type="checkbox" name="confirm" value="yes" required />
-                        Reverse the journals listed above
-                      </label>
-                      <label className="text-xs">
-                        Reason
-                        <input name="reason" required className="mt-1 block rounded border px-2 py-1" placeholder="Why these journals reverse" />
-                      </label>
-                      <button className="rounded border border-navy-900 px-3 py-2" type="submit">
-                        Reverse operating journals
-                      </button>
-                    </form>
+                      {reversals.some((row) => row.needsManualSplit) ? (
+                        <p className="max-w-3xl text-red-800">
+                          A row marked needs manual split mixes operating accounts with an OpCo mirror. Split that journal by hand. Posting stays blocked until you do, so those operating lines are not counted twice.
+                        </p>
+                      ) : null}
+                      {reversals.some((row) => !row.needsManualSplit) ? (
+                        <form className="space-y-3" action={`/api/deals/${code}/close`} method="post">
+                          <input type="hidden" name="action" value="reverse-operating" />
+                          <input type="hidden" name="year" value={ctx.year} />
+                          <input type="hidden" name="month" value={ctx.month} />
+                          <label className="flex items-center gap-2 text-xs">
+                            <input type="checkbox" name="confirm" value="yes" required />
+                            {reversals.some((row) => row.needsManualSplit)
+                              ? "Reverse the operating journals that are not marked needs manual split"
+                              : "Reverse the journals listed above"}
+                          </label>
+                          <label className="text-xs">
+                            Reason
+                            <input name="reason" required className="mt-1 block rounded border px-2 py-1" placeholder="Why these journals reverse" />
+                          </label>
+                          <button className="rounded border border-navy-900 px-3 py-2" type="submit">
+                            Reverse operating journals
+                          </button>
+                        </form>
+                      ) : null}
+                    </div>
                   ) : (
                     <p className="text-sm text-ink-500">No above-NOI operating journals are blocking this month.</p>
                   )}
