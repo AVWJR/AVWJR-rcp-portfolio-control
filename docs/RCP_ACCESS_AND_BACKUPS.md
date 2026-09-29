@@ -40,7 +40,7 @@ A hard lock is refused until a preparer and a different reviewer have both signe
 
 The workflow file is already in the repo. Its check is named **CI**. You still have to tell GitHub to refuse a merge when that check fails. Only a repo admin can do this.
 
-1. Open the repository on GitHub: `https://github.com/AVWJR/rcp-portfolio-control` (use the repo that contains this code if the name differs).
+1. Open the repository on GitHub: [https://github.com/AVWJR/AVWJR-rcp-portfolio-control](https://github.com/AVWJR/AVWJR-rcp-portfolio-control).
 2. Click **Settings**.
 3. In the left sidebar, click **Branches**.
 4. Next to **Branch protection rules**, click **Add branch ruleset** or **Add classic branch protection rule**. If you see both, use **Add classic branch protection rule**.
