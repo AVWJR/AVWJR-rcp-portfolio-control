@@ -243,6 +243,70 @@ export function toRenderableVisual(pack: BuiltPack, visual: PackVisual): Rendera
       })),
     };
   }
+  if (chartId === "dist_capital_returned") {
+    const labels = ["Returned", "Still out"];
+    const values = [suite.distribution.capital.returnedUsd, suite.distribution.capital.unreturnedUsd];
+    return {
+      mode: "bars",
+      title,
+      soWhat,
+      labels,
+      series: colorBars(labels, values, [PACK_PALETTE.gold, PACK_PALETTE.navy]),
+      stacked: true,
+    };
+  }
+  if (chartId === "dist_pref_over_time") {
+    const labels = suite.distribution.pref.points.map((p) => p.period);
+    return {
+      mode: "bars",
+      title,
+      soWhat,
+      labels,
+      series: [
+        { name: "Accrued", labels, values: suite.distribution.pref.points.map((p) => p.accruedUsd), color: PACK_PALETTE.navy },
+        { name: "Paid", labels, values: suite.distribution.pref.points.map((p) => p.paidUsd), color: PACK_PALETTE.gold },
+        { name: "Unpaid", labels, values: suite.distribution.pref.points.map((p) => p.unpaidUsd), color: PACK_PALETTE.inflow },
+      ],
+    };
+  }
+  if (chartId === "dist_by_party") {
+    const labels = suite.distribution.parties.points.map((p) => p.period);
+    return {
+      mode: "bars",
+      title,
+      soWhat,
+      labels,
+      stacked: true,
+      series: [
+        { name: "Deal LPs", labels, values: suite.distribution.parties.points.map((p) => p.lpUsd), color: PACK_PALETTE.navy },
+        { name: "RCP", labels, values: suite.distribution.parties.points.map((p) => p.rcpUsd), color: PACK_PALETTE.gold },
+        { name: "Co-GP", labels, values: suite.distribution.parties.points.map((p) => p.coGpUsd), color: PACK_PALETTE.inflow },
+      ],
+    };
+  }
+  if (chartId === "dist_tier_gauge") {
+    return {
+      mode: "status",
+      title,
+      soWhat,
+      items: suite.distribution.tier.tiers.map((tier) => ({
+        label: tier.label,
+        value: tier.state === "current" ? "Here" : tier.state === "done" ? "Done" : "Ahead",
+        tone: tier.state === "current" ? "watch" : tier.state === "done" ? "pass" : "neutral",
+      })),
+    };
+  }
+  if (chartId === "dist_dpi") {
+    return {
+      mode: "callout",
+      title,
+      soWhat,
+      kicker: "DPI",
+      value: suite.distribution.dpi.display,
+      detail: "LP distributions divided by capital contributed.",
+      tone: "gold",
+    };
+  }
   if (chartId === "portfolio_heatmap") {
     return {
       mode: "table",

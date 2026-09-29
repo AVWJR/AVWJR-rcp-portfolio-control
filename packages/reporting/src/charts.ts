@@ -1,5 +1,6 @@
-import type { PeriodSnapshot } from "./snapshot-types";
-import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatMonthsCoverage, formatUsd } from "./formatters";
+import { emptyDistributionActuals, type PeriodSnapshot } from "./snapshot-types";
+import { capitalBackCents } from "@rcp/ledger";
+import { centsToUsdNumber, formatBpsAsMultiple, formatBpsAsPercent, formatMonthsCoverage, formatUsd, shortPeriodLabel } from "./formatters";
 import { icRecommendation } from "./ic-recommendation";
 
 export const CHART_IDS = [
@@ -21,6 +22,11 @@ export const CHART_IDS = [
   "decision_posture",
   "upb_stack",
   "close_control",
+  "dist_capital_returned",
+  "dist_pref_over_time",
+  "dist_by_party",
+  "dist_tier_gauge",
+  "dist_dpi",
 ] as const;
 
 export type ChartId = (typeof CHART_IDS)[number];
@@ -44,6 +50,11 @@ export const CHART_TITLES: Record<ChartId, string> = {
   decision_posture: "Decision / posture",
   upb_stack: "UPB stack (not LTV)",
   close_control: "Close / IC control",
+  dist_capital_returned: "Capital returned",
+  dist_pref_over_time: "Preferred return over time",
+  dist_by_party: "Cumulative distributions by party",
+  dist_tier_gauge: "Where we are in the waterfall",
+  dist_dpi: "LP multiple to date",
 };
 
 export type WaterfallBar = {
@@ -142,6 +153,26 @@ export type ChartSuite = {
     title: string;
     footnote: string;
     rows: { key: string; label: string; display: string; tone: "good" | "watch" | "fail" | "neutral" }[];
+  };
+  distribution: {
+    capital: { title: string; footnote: string; returnedUsd: number; unreturnedUsd: number; contributedUsd: number };
+    pref: {
+      title: string;
+      footnote: string;
+      points: { period: string; accruedUsd: number; paidUsd: number; unpaidUsd: number }[];
+    };
+    parties: {
+      title: string;
+      footnote: string;
+      points: { period: string; lpUsd: number; rcpUsd: number; coGpUsd: number }[];
+    };
+    tier: {
+      title: string;
+      footnote: string;
+      position: string;
+      tiers: { id: string; label: string; state: "done" | "current" | "ahead" }[];
+    };
+    dpi: { title: string; footnote: string; display: string };
   };
 };
 
@@ -631,6 +662,90 @@ export function buildCloseControl(snap: PeriodSnapshot): ChartSuite["closeContro
   };
 }
 
+const TIER_ORDER = ["ROC", "PREF", "CATCH_UP", "PROMOTE"] as const;
+const TIER_LABEL: Record<(typeof TIER_ORDER)[number], string> = {
+  ROC: "Return of capital",
+  PREF: "Preferred return",
+  CATCH_UP: "Catch-up",
+  PROMOTE: "Promote",
+};
+
+export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distribution"] {
+  const actuals = snap.distributionActuals ?? emptyDistributionActuals();
+  const contributed = actuals.capitalContributedCents;
+  const unreturned = actuals.unreturnedCapitalCents;
+  const back = capitalBackCents(contributed, unreturned, actuals.capitalReturnedCents);
+  const returned = back.returnedCents;
+  const beforeLedger = back.beforeLedgerCents;
+  const index = TIER_ORDER.indexOf(actuals.position);
+  const points = actuals.points.length
+    ? actuals.points
+    : [
+        {
+          period: "Start",
+          accruedCents: actuals.prefAccruedCents,
+          paidCents: actuals.prefPaidCents,
+          unpaidCents: actuals.prefUnpaidCents,
+          lpCents: actuals.cumulativeLpCents,
+          rcpCents: actuals.cumulativeRcpCents,
+          coGpCents: actuals.cumulativeCoGpCents,
+        },
+      ];
+  const beforeNote = beforeLedger > 0n ? `, including ${formatUsd(beforeLedger)} returned before this ledger` : "";
+  const capitalFoot =
+    contributed <= 0n
+      ? "No LP capital is entered yet, so the bar stays empty until a contribution is saved on the waterfall."
+      : `${formatUsd(returned)} of ${formatUsd(contributed)} contributed capital is back${beforeNote}.`;
+  const prefFoot =
+    actuals.prefUnpaidCents > 0n
+      ? `${formatUsd(actuals.prefUnpaidCents)} of preferred return is still unpaid after what has actually been distributed.`
+      : "Preferred return accrued so far has been paid. The unpaid line is the balance still owed.";
+  return {
+    capital: {
+      title: CHART_TITLES.dist_capital_returned,
+      footnote: capitalFoot,
+      returnedUsd: centsToUsdNumber(returned),
+      unreturnedUsd: centsToUsdNumber(unreturned > 0n ? unreturned : 0n),
+      contributedUsd: centsToUsdNumber(contributed),
+    },
+    pref: {
+      title: CHART_TITLES.dist_pref_over_time,
+      footnote: prefFoot,
+      points: points.map((point) => ({
+        period: shortPeriodLabel(point.period),
+        accruedUsd: centsToUsdNumber(point.accruedCents),
+        paidUsd: centsToUsdNumber(point.paidCents),
+        unpaidUsd: centsToUsdNumber(point.unpaidCents),
+      })),
+    },
+    parties: {
+      title: CHART_TITLES.dist_by_party,
+      footnote: `Deal LPs have received ${formatUsd(actuals.cumulativeLpCents)}; RCP has received ${formatUsd(actuals.cumulativeRcpCents)}.`,
+      points: points.map((point) => ({
+        period: shortPeriodLabel(point.period),
+        lpUsd: centsToUsdNumber(point.lpCents),
+        rcpUsd: centsToUsdNumber(point.rcpCents),
+        coGpUsd: centsToUsdNumber(point.coGpCents),
+      })),
+    },
+    tier: {
+      title: CHART_TITLES.dist_tier_gauge,
+      footnote: `The deal is in ${TIER_LABEL[actuals.position]}. Later tiers wait until this one is satisfied.`,
+      position: actuals.position,
+      tiers: TIER_ORDER.map((id, i) => ({
+        id,
+        label: TIER_LABEL[id],
+        state: i < index ? "done" : i === index ? "current" : "ahead",
+      })),
+    },
+    dpi: {
+      title: CHART_TITLES.dist_dpi,
+      footnote: `LP multiple to date is ${formatBpsAsMultiple(actuals.dpiBps)} — distributions divided by capital contributed. ${formatUsd(returned)} of capital is back${beforeNote}.`,
+      display: formatBpsAsMultiple(actuals.dpiBps),
+    },
+  };
+}
+
 export function buildChartSuite(snap: PeriodSnapshot): ChartSuite {
   return {
     waterfall: buildGprNoiBtcfWaterfall(snap),
@@ -651,6 +766,7 @@ export function buildChartSuite(snap: PeriodSnapshot): ChartSuite {
     decisionPosture: buildDecisionPosture(snap),
     upbStack: buildUpbStack(snap),
     closeControl: buildCloseControl(snap),
+    distribution: buildDistributionCharts(snap),
   };
 }
 
@@ -678,6 +794,7 @@ export function chartIdsPresent(suite: ChartSuite): ChartId[] {
   if (suite.decisionPosture.action) ids.push("decision_posture");
   if (suite.upbStack.bars.length) ids.push("upb_stack");
   if (suite.closeControl.rows.length) ids.push("close_control");
+  ids.push("dist_capital_returned", "dist_pref_over_time", "dist_by_party", "dist_tier_gauge", "dist_dpi");
   return ids;
 }
 

@@ -100,6 +100,18 @@ export type WaterfallRunInput = WaterfallCapitalState & {
    * Ignored for non-European templates.
    */
   europeanPromoteOpen?: boolean;
+  /**
+   * LP pref already paid on earlier distributions. Omitted means this run
+   * stands alone (existing single-period behavior).
+   */
+  priorLpPrefPaidCents?: bigint;
+  /** GP catch-up already paid on earlier distributions. Omitted means $0. */
+  priorCatchUpGpCents?: bigint;
+  /**
+   * Prior catch-up gross (LP + GP). Omitted means $0 so a single run is unchanged.
+   * Used as C0 in X = (g·(P + C0) − G0) / (c − g).
+   */
+  priorCatchUpGrossCents?: bigint;
 };
 
 export type WaterfallStep = {
@@ -300,12 +312,15 @@ export function catchUpRowLabel(catchUpBps: number, lpSplitBps: number, gpSplitB
 
 /**
  * Gross catch-up dollars so the GP reaches residual share g.
- * X = (g·P − G0) / (c − g) when c > g. Otherwise $0 (a 0% rate or a 0% target
- * does not silently become 80/20).
+ * X = (g·(P + C0) − G0) / (c − g) when c > g.
+ * P is cumulative LP pref paid, C0 is prior catch-up gross (LP + GP), and G0 is
+ * GP catch-up already paid. C0 omitted means $0, so a single run is unchanged.
+ * A 0% rate or a 0% target does not silently become 80/20.
  */
 export function catchUpGrossCents(opts: {
   lpPrefPaidCents: bigint;
   gpPromoteSoFarCents: bigint;
+  priorCatchUpGrossCents?: bigint;
   lpSplitBps: number;
   gpSplitBps: number;
   catchUpBps: number;
@@ -316,10 +331,11 @@ export function catchUpGrossCents(opts: {
   const rate = clampBps(opts.catchUpBps);
   const pref = opts.lpPrefPaidCents > 0n ? opts.lpPrefPaidCents : 0n;
   const already = opts.gpPromoteSoFarCents > 0n ? opts.gpPromoteSoFarCents : 0n;
-  if (pref <= 0n || total <= 0 || gpBps <= 0 || rate <= 0) return 0n;
+  const priorGross = opts.priorCatchUpGrossCents && opts.priorCatchUpGrossCents > 0n ? opts.priorCatchUpGrossCents : 0n;
+  if (pref + priorGross <= 0n || total <= 0 || gpBps <= 0 || rate <= 0) return 0n;
   const denom = BigInt(rate) * BigInt(total) - BigInt(gpBps) * BigInt(BPS_DENOMINATOR);
   if (denom <= 0n) return 0n;
-  const numer = (BigInt(gpBps) * pref - already * BigInt(total)) * BigInt(BPS_DENOMINATOR);
+  const numer = (BigInt(gpBps) * (pref + priorGross) - already * BigInt(total)) * BigInt(BPS_DENOMINATOR);
   if (numer <= 0n) return 0n;
   return numer / denom;
 }
@@ -687,9 +703,13 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       const residual = residualPromoteSplit(config.tiers);
       const lpBps = residual ? residual.lpSplitBps : Math.max(0, tier.lpSplitBps);
       const gpBps = residual ? residual.gpSplitBps : Math.max(0, tier.gpSplitBps);
+      const priorPref = input.priorLpPrefPaidCents ?? 0n;
+      const priorCatchUp = input.priorCatchUpGpCents ?? 0n;
+      const priorCatchUpGross = input.priorCatchUpGrossCents ?? 0n;
       const gross = catchUpGrossCents({
-        lpPrefPaidCents: lpPrefPaid,
-        gpPromoteSoFarCents: gpPromoteSoFar,
+        lpPrefPaidCents: lpPrefPaid + (priorPref > 0n ? priorPref : 0n),
+        gpPromoteSoFarCents: gpPromoteSoFar + (priorCatchUp > 0n ? priorCatchUp : 0n),
+        priorCatchUpGrossCents: priorCatchUpGross > 0n ? priorCatchUpGross : 0n,
         lpSplitBps: lpBps,
         gpSplitBps: gpBps,
         catchUpBps: config.catchUpBps,

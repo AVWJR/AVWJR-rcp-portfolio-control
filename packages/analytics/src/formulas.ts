@@ -160,6 +160,11 @@ export function gaRatioBps(gaCents: bigint, feeIncomeCents: bigint): number | nu
   return ratioBps(gaCents, feeIncomeCents);
 }
 
+/** AM fee income ÷ OpCo G&A, as a multiple in basis points (10_000 = 1.00x). Null when G&A is zero. */
+export function amFeeCoverageBps(feeIncomeCents: bigint, gaCents: bigint): number | null {
+  return ratioBps(feeIncomeCents, gaCents);
+}
+
 export function concentrationBps(partCents: bigint, wholeCents: bigint): number | null {
   return ratioBps(partCents, wholeCents);
 }

@@ -51,6 +51,9 @@ describe("partner viewer access", () => {
     expect(viewerForbiddenApi("/api/expert/chat", "POST")).toBe(false);
     expect(viewerForbiddenApi("/api/access", "POST")).toBe(false);
     expect(viewerForbiddenApi("/api/narratives", "GET")).toBe(false);
+    expect(viewerForbiddenApi("/api/deals/SPE-WBG/distributions", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/deals/SPE-WBG/distributions", "GET")).toBe(false);
+    expect(viewerForbiddenApi("/api/deals/SPE-WBG/distributions/evt/reverse", "POST")).toBe(true);
     expect(partnerSharePath("https://demo.example", "abc123token")).toContain("share=abc123token");
   });
 });

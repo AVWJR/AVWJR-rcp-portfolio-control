@@ -51,6 +51,8 @@ export const RATIO_IDS = [
   "delinquency",
   "fee_income",
   "ga_ratio",
+  "am_fee_coverage",
+  "rcp_distributions_received",
   "liquidity_months",
   "look_through_upb",
   "properties_units",

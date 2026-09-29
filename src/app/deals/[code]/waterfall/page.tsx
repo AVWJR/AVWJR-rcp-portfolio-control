@@ -80,6 +80,12 @@ export default async function DealWaterfallPage({
                 </Link>
                 <Link
                   className="text-navy-700 underline"
+                  href={`/deals/${code}/distributions?entity=${code}&period=${period}`}
+                >
+                  Distribution ledger
+                </Link>
+                <Link
+                  className="text-navy-700 underline"
                   href={`/deals/${code}/proforma?entity=${code}&period=${period}`}
                 >
                   Deal proforma
@@ -106,6 +112,7 @@ export default async function DealWaterfallPage({
                 distributableCents={cfads.toString()}
                 cashCents={operatingCash.toString()}
                 europeanPromoteOpen={gate}
+                ledgerSource={record.capitalSource === "ledger"}
                 initial={{
                   ...record.config,
                   lpContributedCents: record.lpContributedCents,

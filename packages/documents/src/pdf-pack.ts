@@ -51,6 +51,47 @@ function simpleBars(
   });
 }
 
+function groupedBars(
+  doc: PDFKit.PDFDocument,
+  labels: string[],
+  series: { name: string; values: number[]; color: string }[],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const legendH = 22;
+  const labelH = CHART_LABEL_BAND;
+  const plotH = Math.max(20, h - labelH - legendH);
+  const max = Math.max(1, ...series.flatMap((ser) => ser.values.map((value) => Math.abs(value))));
+  const groupGap = 8;
+  const innerGap = 2;
+  const groupW = Math.max(18, (w - groupGap * Math.max(0, labels.length - 1)) / Math.max(1, labels.length));
+  const barW = Math.max(3, (groupW - innerGap * Math.max(0, series.length - 1)) / Math.max(1, series.length));
+  labels.forEach((label, i) => {
+    const gx = x + i * (groupW + groupGap);
+    series.forEach((ser, s) => {
+      const value = Math.abs(ser.values[i] ?? 0);
+      const bh = (value / max) * plotH;
+      const bx = gx + s * (barW + innerGap);
+      if (bh > 0) doc.rect(bx, y + plotH - bh, barW, Math.max(2, bh)).fill(ser.color);
+    });
+    doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.chartLabel).text(label, gx - 2, y + plotH + 6, {
+      width: groupW + 4,
+      align: "center",
+    });
+  });
+  let lx = x;
+  const ly = y + h - 12;
+  series.forEach((ser) => {
+    doc.rect(lx, ly, 8, 8).fill(ser.color);
+    doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.chartLabel).text(ser.name, lx + 12, ly - 2, {
+      width: 64,
+    });
+    lx += 84;
+  });
+}
+
 function waterfallBars(doc: PDFKit.PDFDocument, bars: WaterfallBar[], x: number, y: number, w: number, h: number) {
   const max = Math.max(1, ...bars.map((b) => b.baseUsd + b.valueUsd));
   const gap = 8;
@@ -136,6 +177,11 @@ function drawRenderable(doc: PDFKit.PDFDocument, pack: BuiltPack, visual: Render
         return;
       }
     }
+    const prefChart = visual.series.some((ser) => ser.name === "Unpaid");
+    if (prefChart && visual.series.length > 1 && !visual.stacked) {
+      groupedBars(doc, labels, visual.series, inner.x, inner.y, inner.w, inner.h);
+      return;
+    }
     simpleBars(
       doc,
       labels.map((label, i) => ({ label, usd: totals[i] ?? 0, color: colors[i]! })),
@@ -176,9 +222,9 @@ function drawRenderable(doc: PDFKit.PDFDocument, pack: BuiltPack, visual: Render
       const tone =
         item.tone === "fail" ? PACK_PALETTE.fail : item.tone === "watch" ? PACK_PALETTE.gold : item.tone === "pass" ? PACK_PALETTE.navy : PACK_PALETTE.rule;
       doc.rect(inner.x, y, 6, rowH - 6).fill(tone);
-      doc.fillColor(PACK_PALETTE.navy).font("Times-Bold").fontSize(12).text(item.label, inner.x + 16, y + 8, { width: inner.w * 0.32 });
-      doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(12).text(item.value, inner.x + inner.w * 0.36, y + 8, {
-        width: inner.w * 0.6,
+      doc.fillColor(PACK_PALETTE.navy).font("Times-Bold").fontSize(12).text(item.label, inner.x + 16, y + 8, { width: inner.w * 0.42 });
+      doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(12).text(item.value, inner.x + inner.w * 0.58, y + 8, {
+        width: inner.w * 0.4,
       });
       y += rowH;
     }

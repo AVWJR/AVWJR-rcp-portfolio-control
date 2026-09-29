@@ -25,7 +25,16 @@ import {
   type PostedLine,
 } from "@rcp/ledger";
 import { bookEconomicOccupancy, breakevenOccupancy, summarizeRentRoll, type UnitSnapshot } from "@rcp/properties";
-import { pairVariance, btcfCents, type MoneyLine, type PeriodSnapshot, type TrendPoint } from "@rcp/reporting";
+import {
+  pairVariance,
+  btcfCents,
+  emptyDistributionActuals,
+  type DistributionActuals,
+  type MoneyLine,
+  type PeriodSnapshot,
+  type TrendPoint,
+} from "@rcp/reporting";
+import { loadDistributionBoard, type DistributionBoard } from "./distribution-ledger";
 import { loadCapexProjects } from "./capex";
 import { buildOpCoDashboard, buildPropertyDashboard } from "./dashboards";
 import { loadPortfolioDebt } from "./debt-view";
@@ -34,6 +43,90 @@ import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
 import { loadLiveSpeWaterfalls, loadSpeWaterfall, europeanPromoteOpen, applyWaterfallToPools } from "./waterfall";
+
+function actualsFromBoard(board: DistributionBoard | null): DistributionActuals {
+  if (!board) return emptyDistributionActuals();
+  return {
+    hasEvents: board.hasEvents,
+    ready: board.ready,
+    capitalSource: board.capitalSource,
+    position: board.position,
+    capitalContributedCents: board.current.capitalContributedCents,
+    capitalReturnedCents: board.current.capitalReturnedCents,
+    unreturnedCapitalCents: board.current.unreturnedCapitalCents,
+    prefAccruedCents: board.current.prefAccruedCents,
+    prefPaidCents: board.current.prefPaidCents,
+    prefUnpaidCents: board.current.prefUnpaidCents,
+    catchUpPaidCents: board.current.catchUpPaidCents,
+    catchUpTargetCents: board.current.catchUpTargetCents,
+    promoteEarnedCents: board.current.promoteEarnedCents,
+    cumulativeLpCents: board.current.cumulativeLpCents,
+    cumulativeRcpCents: board.current.cumulativeRcpCents,
+    cumulativeCoGpCents: board.current.cumulativeCoGpCents,
+    dpiBps: board.dpiBps,
+    points: board.events
+      .filter((event) => !event.reversesEventId && !event.reversed)
+      .map((event) => ({
+        period: event.periodLabel,
+        accruedCents: event.state.prefAccruedCents,
+        paidCents: event.state.prefPaidCents,
+        unpaidCents: event.state.prefUnpaidCents,
+        lpCents: event.state.cumulativeLpCents,
+        rcpCents: event.state.cumulativeRcpCents,
+        coGpCents: event.state.cumulativeCoGpCents,
+      })),
+  };
+}
+
+function rollupActuals(boards: DistributionBoard[]): DistributionActuals {
+  if (!boards.length) return emptyDistributionActuals();
+  const base = emptyDistributionActuals();
+  const byPeriod = new Map<string, DistributionActuals["points"][number]>();
+  for (const board of boards) {
+    const row = actualsFromBoard(board);
+    base.hasEvents = base.hasEvents || row.hasEvents;
+    base.ready = base.ready && row.ready;
+    if (row.capitalSource === "ledger") base.capitalSource = "ledger";
+    base.capitalContributedCents += row.capitalContributedCents;
+    base.capitalReturnedCents += row.capitalReturnedCents;
+    base.unreturnedCapitalCents += row.unreturnedCapitalCents;
+    base.prefAccruedCents += row.prefAccruedCents;
+    base.prefPaidCents += row.prefPaidCents;
+    base.prefUnpaidCents += row.prefUnpaidCents;
+    base.catchUpPaidCents += row.catchUpPaidCents;
+    base.catchUpTargetCents += row.catchUpTargetCents;
+    base.promoteEarnedCents += row.promoteEarnedCents;
+    base.cumulativeLpCents += row.cumulativeLpCents;
+    base.cumulativeRcpCents += row.cumulativeRcpCents;
+    base.cumulativeCoGpCents += row.cumulativeCoGpCents;
+    for (const point of row.points) {
+      const prev = byPeriod.get(point.period) ?? {
+        period: point.period,
+        accruedCents: 0n,
+        paidCents: 0n,
+        unpaidCents: 0n,
+        lpCents: 0n,
+        rcpCents: 0n,
+        coGpCents: 0n,
+      };
+      prev.accruedCents += point.accruedCents;
+      prev.paidCents += point.paidCents;
+      prev.unpaidCents += point.unpaidCents;
+      prev.lpCents += point.lpCents;
+      prev.rcpCents += point.rcpCents;
+      prev.coGpCents += point.coGpCents;
+      byPeriod.set(point.period, prev);
+    }
+  }
+  base.points = [...byPeriod.values()].sort((a, b) => a.period.localeCompare(b.period));
+  base.dpiBps =
+    base.capitalContributedCents > 0n ? Number((base.cumulativeLpCents * 10_000n) / base.capitalContributedCents) : null;
+  if (base.unreturnedCapitalCents > 0n) base.position = "ROC";
+  else if (base.prefUnpaidCents > 0n) base.position = "PREF";
+  else if (base.catchUpTargetCents > base.catchUpPaidCents) base.position = "CATCH_UP";
+  else base.position = base.hasEvents ? "PROMOTE" : "ROC";
+  return base;
+}
 
 function leaseRollover12mCount(units: { leaseEnd: Date | null }[], asOf: Date): number | null {
   if (!units.length) return null;
@@ -278,6 +371,7 @@ async function loadSpeSnapshot(opts: {
       )
     : null;
   const wfApplied = Boolean(wfPools && !wfPools.lookThrough);
+  const distributionActuals = actualsFromBoard(await loadDistributionBoard(opts.entityId));
   const controls = await loadOpsControls({
     entityId: opts.entityId,
     entityIds: [opts.entityId],
@@ -400,6 +494,7 @@ async function loadSpeSnapshot(opts: {
     waterfallPromoteGpCents: wfApplied ? (wfPools?.promoteGpCents ?? 0n) : 0n,
     waterfallResidualLpCents: wfApplied ? (wfPools?.residualLpCents ?? 0n) : 0n,
     waterfallNote: wfApplied && wfPools ? wfPools.waterfallNote : null,
+    distributionActuals,
     trends,
     loans: dash.loans.map((l) => ({
       entityCode: l.entityCode,
@@ -663,6 +758,9 @@ async function loadOpCoSnapshot(opts: {
     trends[i]!.bookEconomicOccupancyBps = impliedGpr > 0n ? bookEconomicOccupancy(egiSum, impliedGpr).economicOccupancyBps : null;
   }
 
+  const distributionActuals = rollupActuals(
+    (await Promise.all(spes.map((spe) => loadDistributionBoard(spe.id)))).filter((board): board is DistributionBoard => Boolean(board)),
+  );
   const lookThroughUnits = dash.properties.reduce((acc, p) => acc + p.unitCount, 0);
   const near = loans[0];
   const controls = await loadOpsControls({
@@ -812,6 +910,7 @@ async function loadOpCoSnapshot(opts: {
     waterfallPromoteGpCents: dash.waterfallPromoteGpCents,
     waterfallResidualLpCents: dash.waterfallResidualLpCents,
     waterfallNote: dash.waterfallNote,
+    distributionActuals,
     trends,
     loans: loans.map((l) => ({
       entityCode: l.entityCode,

@@ -22,6 +22,7 @@ import {
 } from "@rcp/ledger";
 import { prisma } from "./prisma";
 import { DealValidationError } from "./deals/create-spe";
+import { ledgerCapitalByEntity, type LedgerCapitalRow } from "./distribution-read";
 
 export type SpeWaterfallRecord = {
   entityId: string;
@@ -35,6 +36,8 @@ export type SpeWaterfallRecord = {
   unpaidPrefCents: bigint | null;
   prefPaidToDateCents: bigint;
   persisted: boolean;
+  /** Ledger owns unreturned capital and unpaid pref once a distribution is posted. */
+  capitalSource?: "ledger" | "waterfall";
 };
 
 export type WaterfallSaveInput = {
@@ -250,6 +253,22 @@ export function effectiveCapital(record: SpeWaterfallRecord): {
   };
 }
 
+function overlayRecord(record: SpeWaterfallRecord, row: LedgerCapitalRow | undefined): SpeWaterfallRecord {
+  if (!row?.hasEvents) return { ...record, capitalSource: "waterfall" };
+  return {
+    ...record,
+    unreturnedCapitalCents: row.unreturnedCapitalCents,
+    unpaidPrefCents: row.unpaidPrefCents,
+    prefPaidToDateCents: row.prefPaidCents,
+    capitalSource: "ledger",
+  };
+}
+
+async function overlayRecords(records: SpeWaterfallRecord[]): Promise<SpeWaterfallRecord[]> {
+  const map = await ledgerCapitalByEntity(records.map((record) => record.entityId));
+  return records.map((record) => overlayRecord(record, map.get(record.entityId)));
+}
+
 export async function loadSpeWaterfall(entityId: string): Promise<SpeWaterfallRecord | null> {
   const entity = await prisma.entity.findUnique({
     where: { id: entityId },
@@ -257,30 +276,36 @@ export async function loadSpeWaterfall(entityId: string): Promise<SpeWaterfallRe
   });
   if (!entity || entity.type !== "SPE") return null;
   if (!entity.waterfall) {
-    return {
+    return overlayRecord(
+      {
+        entityId: entity.id,
+        entityCode: entity.code,
+        entityName: entity.name,
+        config: lookThroughConfig(),
+        lpContributedCents: 0n,
+        unreturnedCapitalCents: null,
+        unpaidPrefCents: null,
+        prefPaidToDateCents: 0n,
+        persisted: false,
+      },
+      (await ledgerCapitalByEntity([entity.id])).get(entity.id),
+    );
+  }
+  const amounts = waterfallAmountsFromStored(entity.waterfall);
+  return overlayRecord(
+    {
       entityId: entity.id,
       entityCode: entity.code,
       entityName: entity.name,
-      config: lookThroughConfig(),
-      lpContributedCents: 0n,
-      unreturnedCapitalCents: null,
-      unpaidPrefCents: null,
-      prefPaidToDateCents: 0n,
-      persisted: false,
-    };
-  }
-  const amounts = waterfallAmountsFromStored(entity.waterfall);
-  return {
-    entityId: entity.id,
-    entityCode: entity.code,
-    entityName: entity.name,
-    config: configFromRow(entity.waterfall),
-    lpContributedCents: entity.waterfall.lpContributedCents,
-    unreturnedCapitalCents: amounts.unreturnedCapitalCents,
-    unpaidPrefCents: amounts.unpaidPrefCents,
-    prefPaidToDateCents: entity.waterfall.prefPaidToDateCents,
-    persisted: true,
-  };
+      config: configFromRow(entity.waterfall),
+      lpContributedCents: entity.waterfall.lpContributedCents,
+      unreturnedCapitalCents: amounts.unreturnedCapitalCents,
+      unpaidPrefCents: amounts.unpaidPrefCents,
+      prefPaidToDateCents: entity.waterfall.prefPaidToDateCents,
+      persisted: true,
+    },
+    (await ledgerCapitalByEntity([entity.id])).get(entity.id),
+  );
 }
 
 export async function loadSpeWaterfallByCode(code: string): Promise<SpeWaterfallRecord | null> {
@@ -295,33 +320,35 @@ export async function loadLiveSpeWaterfalls(parentOpCoId: string): Promise<SpeWa
     include: { waterfall: true },
     orderBy: { code: "asc" },
   });
-  return spes.map((entity) => {
-    if (!entity.waterfall) {
+  return overlayRecords(
+    spes.map((entity) => {
+      if (!entity.waterfall) {
+        return {
+          entityId: entity.id,
+          entityCode: entity.code,
+          entityName: entity.name,
+          config: lookThroughConfig(),
+          lpContributedCents: 0n,
+          unreturnedCapitalCents: null,
+          unpaidPrefCents: null,
+          prefPaidToDateCents: 0n,
+          persisted: false,
+        };
+      }
+      const amounts = waterfallAmountsFromStored(entity.waterfall);
       return {
         entityId: entity.id,
         entityCode: entity.code,
         entityName: entity.name,
-        config: lookThroughConfig(),
-        lpContributedCents: 0n,
-        unreturnedCapitalCents: null,
-        unpaidPrefCents: null,
-        prefPaidToDateCents: 0n,
-        persisted: false,
+        config: configFromRow(entity.waterfall),
+        lpContributedCents: entity.waterfall.lpContributedCents,
+        unreturnedCapitalCents: amounts.unreturnedCapitalCents,
+        unpaidPrefCents: amounts.unpaidPrefCents,
+        prefPaidToDateCents: entity.waterfall.prefPaidToDateCents,
+        persisted: true,
       };
-    }
-    const amounts = waterfallAmountsFromStored(entity.waterfall);
-    return {
-      entityId: entity.id,
-      entityCode: entity.code,
-      entityName: entity.name,
-      config: configFromRow(entity.waterfall),
-      lpContributedCents: entity.waterfall.lpContributedCents,
-      unreturnedCapitalCents: amounts.unreturnedCapitalCents,
-      unpaidPrefCents: amounts.unpaidPrefCents,
-      prefPaidToDateCents: entity.waterfall.prefPaidToDateCents,
-      persisted: true,
-    };
-  });
+    }),
+  );
 }
 
 /** Portfolio capital+pref still unpaid on live SPEs that have a real LP waterfall and capital entered. */
@@ -577,12 +604,19 @@ export async function saveSpeWaterfall(entityId: string, body: Partial<Waterfall
     throw new DealValidationError("Waterfall is per property SPE, not HoldCo or OpCo.", "code");
   }
   const parsed = parseWaterfallSave(body);
+  const ledger = (await ledgerCapitalByEntity([entityId])).get(entityId);
+  const existing = await prisma.speWaterfall.findUnique({ where: { entityId } });
+  const keepOpening = Boolean(ledger?.hasEvents && existing);
+  const storedOpening = existing ? waterfallAmountsFromStored(existing) : null;
+  const unreturnedCapitalCents = keepOpening ? storedOpening!.unreturnedCapitalCents : parsed.unreturnedCapitalCents;
+  const unpaidPrefCents = keepOpening ? storedOpening!.unpaidPrefCents : parsed.unpaidPrefCents;
+  const prefPaidToDateCents = keepOpening ? existing!.prefPaidToDateCents : parsed.prefPaidToDateCents;
   const tiersJson = encodeTiersJson(parsed.config.tiers, {
-    unreturnedCapitalCents: parsed.unreturnedCapitalCents,
-    unpaidPrefCents: parsed.unpaidPrefCents,
+    unreturnedCapitalCents,
+    unpaidPrefCents,
   });
-  const storedUnreturned = parsed.unreturnedCapitalCents ?? 0n;
-  const storedUnpaid = parsed.unpaidPrefCents ?? 0n;
+  const storedUnreturned = unreturnedCapitalCents ?? 0n;
+  const storedUnpaid = unpaidPrefCents ?? 0n;
   const row = await prisma.speWaterfall.upsert({
     where: { entityId },
     create: {
@@ -601,7 +635,7 @@ export async function saveSpeWaterfall(entityId: string, body: Partial<Waterfall
       lpContributedCents: parsed.lpContributedCents,
       unreturnedCapitalCents: storedUnreturned,
       unpaidPrefCents: storedUnpaid,
-      prefPaidToDateCents: parsed.prefPaidToDateCents,
+      prefPaidToDateCents,
       notes: parsed.config.notes,
       tiersJson,
     },
@@ -620,23 +654,26 @@ export async function saveSpeWaterfall(entityId: string, body: Partial<Waterfall
       lpContributedCents: parsed.lpContributedCents,
       unreturnedCapitalCents: storedUnreturned,
       unpaidPrefCents: storedUnpaid,
-      prefPaidToDateCents: parsed.prefPaidToDateCents,
+      prefPaidToDateCents,
       notes: parsed.config.notes,
       tiersJson,
     },
   });
   const amounts = waterfallAmountsFromStored(row);
-  return {
-    entityId: entity.id,
-    entityCode: entity.code,
-    entityName: entity.name,
-    config: configFromRow(row),
-    lpContributedCents: row.lpContributedCents,
-    unreturnedCapitalCents: amounts.unreturnedCapitalCents,
-    unpaidPrefCents: amounts.unpaidPrefCents,
-    prefPaidToDateCents: row.prefPaidToDateCents,
-    persisted: true,
-  };
+  return overlayRecord(
+    {
+      entityId: entity.id,
+      entityCode: entity.code,
+      entityName: entity.name,
+      config: configFromRow(row),
+      lpContributedCents: row.lpContributedCents,
+      unreturnedCapitalCents: amounts.unreturnedCapitalCents,
+      unpaidPrefCents: amounts.unpaidPrefCents,
+      prefPaidToDateCents: row.prefPaidToDateCents,
+      persisted: true,
+    },
+    ledger,
+  );
 }
 
 export { defaultWaterfallConfig, lookThroughConfig };

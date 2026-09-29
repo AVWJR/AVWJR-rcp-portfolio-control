@@ -4,6 +4,9 @@ import { DashboardTiles } from "@/components/dashboard-tiles";
 import { NoiConcentration } from "@/components/noi-concentration";
 import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
+import { DistributionCharts } from "@/components/deals/distribution-charts";
+import { chartModelFromBoard } from "@/lib/distribution-chart-model";
+import { loadDistributionBoard, type DistributionBoard } from "@/lib/distribution-ledger";
 import { buildDashboardForEntity, type OpCoDashboard, type PropertyDashboard } from "@/lib/dashboards";
 import { formatUsd } from "@rcp/ledger";
 import { formatRatioBps } from "@rcp/properties";
@@ -41,10 +44,11 @@ export default async function EntityDashboardPage({
           year: ctx.year,
           month: ctx.month,
         });
+        const distribution = ctx.entity.type === "SPE" ? await loadDistributionBoard(ctx.entity.id) : null;
         return dash.kind === "opco" ? (
           <OpCoView ctxLabel={reportSubtitle(ctx)} dash={dash} />
         ) : (
-          <PropertyView ctxLabel={reportSubtitle(ctx)} dash={dash} archived={ctx.archived} />
+          <PropertyView ctxLabel={reportSubtitle(ctx)} dash={dash} archived={ctx.archived} distribution={distribution} />
         );
       }}
     </ReportShell>
@@ -55,10 +59,12 @@ function PropertyView({
   ctxLabel,
   dash,
   archived,
+  distribution,
 }: {
   ctxLabel: string;
   dash: PropertyDashboard;
   archived: boolean;
+  distribution: DistributionBoard | null;
 }) {
   const q = `entity=${dash.entityCode}&period=${dash.period}`;
   return (
@@ -93,6 +99,9 @@ function PropertyView({
           <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/waterfall?${q}`}>
             LP/GP waterfall
           </Link>
+          <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/distributions?${q}`}>
+            Distribution ledger
+          </Link>
           <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/close?${q}`}>
             Month-end close
           </Link>
@@ -109,6 +118,7 @@ function PropertyView({
       </div>
       {dash.unitCount === 0 ? <ReapplyRentRollButton entityCode={dash.entityCode} hasUnits={false} /> : null}
       <BrokerOverlayStrip overlay={dash.brokerOverlay} />
+      {distribution ? <DistributionCharts model={chartModelFromBoard(distribution)} /> : null}
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} />
     </div>
   );
@@ -160,6 +170,7 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                 <th className="py-2 text-left">Strategy</th>
                 <th className="py-2 text-right">Period NOI</th>
                 <th className="py-2 text-right">Cash flow before debt service</th>
+                <th className="py-2 text-right">RCP distributions received</th>
                 <th className="py-2 text-right">Share</th>
               </tr>
             </thead>
@@ -185,6 +196,7 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                         <span className="ml-1 text-[10px] uppercase tracking-[0.08em] text-ink-500">look-through</span>
                       )}
                     </td>
+                    <td className="tabular py-2 text-right">{formatUsd(p.rcpDistributionsCents)}</td>
                     <td className="tabular py-2 text-right">{formatRatioBps(share?.shareBps ?? null)}</td>
                   </tr>
                 );

@@ -254,7 +254,7 @@ function drawRenderable(
     x: box.x,
     y: box.y,
     w: box.w,
-    h: 0.36,
+    h: 0.64,
     fontSize: PACK_TYPE.pptx.visualTitle,
     color: NAVY,
     fontFace: "Georgia",
@@ -263,7 +263,7 @@ function drawRenderable(
   });
   slide.addText(visual.soWhat, {
     x: box.x,
-    y: box.y + 0.38,
+    y: box.y + 0.68,
     w: box.w,
     h: 0.58,
     fontSize: PACK_TYPE.pptx.visualSoWhat,
@@ -272,7 +272,7 @@ function drawRenderable(
     italic: true,
     margin: 0,
   });
-  const headerH = 1.08;
+  const headerH = 1.38;
   const bottomPad = 0.16;
   const inner = { x: box.x, y: box.y + headerH, w: box.w, h: box.h - headerH - bottomPad };
 
@@ -283,7 +283,7 @@ function drawRenderable(
       w: inner.w,
       h: inner.h,
       barGrouping: visual.stacked ? "stacked" : "clustered",
-      showLegend: Boolean(visual.stacked && visual.series.length > 1),
+      showLegend: visual.series.length > 1,
       legendPos: "b",
       legendFontSize: PACK_TYPE.pptx.chartAxis,
       chartColors: visual.series.map((s) => hex(s.color)),

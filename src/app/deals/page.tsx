@@ -124,6 +124,12 @@ async function DealIndex({
                 LP/GP waterfall
               </Link>
               <Link
+                href={`/deals/${spe.code}/distributions?entity=${spe.code}&period=${period}`}
+                className="text-sm text-navy-800 underline"
+              >
+                Distributions
+              </Link>
+              <Link
                 href={`/deals/${spe.code}/close?entity=${spe.code}&period=${period}`}
                 className="text-sm text-navy-800 underline"
               >
