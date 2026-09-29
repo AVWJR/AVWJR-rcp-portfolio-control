@@ -24,6 +24,7 @@ export function unitToSnapshot(row: {
   bathsTenths: number;
   sqft: number;
   status: UnitStatus;
+  substatus?: string | null;
   marketRent: bigint;
   inPlaceRent: bigint;
   leaseStart: Date | null;
@@ -37,6 +38,7 @@ export function unitToSnapshot(row: {
     bathsTenths: row.bathsTenths,
     sqft: row.sqft,
     status: row.status,
+    substatus: row.substatus ?? undefined,
     marketRent: row.marketRent,
     inPlaceRent: row.inPlaceRent,
     leaseStart: row.leaseStart,
@@ -70,6 +72,7 @@ export async function replaceRentRoll(opts: {
         bathsTenths: u.bathsTenths,
         sqft: u.sqft,
         status: u.status,
+        substatus: u.substatus ?? null,
         marketRent: u.marketRent,
         inPlaceRent: u.inPlaceRent,
         leaseStart: u.leaseStart,

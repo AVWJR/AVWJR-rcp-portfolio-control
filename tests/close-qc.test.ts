@@ -12,23 +12,30 @@ import {
   rentRollEconomicOccupancyBps,
   rentRollGpr,
   rentRollNonRevenue,
+  runRentRollTieOuts,
   signedLossToLease,
+  summarizeRentRoll,
+  type TieOutInput,
   type UnitSnapshot,
 } from "@rcp/properties";
 import { parseCloseFile } from "@/lib/close/parse-file";
 import {
   loadCloseWorkspace,
   postCloseToBooks,
+  previewOperatingReversals,
   reverseOperatingJournals,
+  setTieOutTolerance,
   storeCloseUpload,
   transitionClose,
 } from "@/lib/close/workspace";
+import { reviewTreeIntercompany } from "@/lib/intercompany";
+import { importRentRollSource, loadUnits } from "@/lib/rent-roll";
 import { loadYtdBudgetMap } from "@/lib/budgets";
 import { openPeriod } from "@/lib/deals/periods";
 import { createEntityWithCoa } from "@/lib/entities";
 import { completeChecklist, hardLockPeriod, softClosePeriod } from "@/lib/period-close";
 import { resolveReportingPeriod, spesStillOpen } from "@/lib/period-default";
-import { priorYearSameMonth } from "@/lib/operating";
+import { buildOperatingPackage, priorYearSameMonth } from "@/lib/operating";
 import { postJournal } from "@/lib/post-journal";
 import { prisma } from "@/lib/prisma";
 import { loadPostedLines } from "@/lib/queries";
@@ -333,7 +340,7 @@ describe("close upload, posting, and tie-outs", () => {
     expect(await resolveReportingPeriod("RCP-HOLD", null)).toBe("2026-08");
     expect(await resolveReportingPeriod("SPE-WBG", "2026-08")).toBe("2026-08");
     const stillOpen = await spesStillOpen("RCP-OPCO", "2026-07");
-    expect(stillOpen.map((spe) => spe.code)).toEqual(["SPE-CVC", "SPE-HCR"]);
+    expect(stillOpen.map((spe) => spe.code).filter((code) => !code.startsWith("SPE-Q"))).toEqual(["SPE-CVC", "SPE-HCR"]);
   });
 
   it("runs the close path on a 511-unit Lease Charges file without replacing a past month or the SPE unit count", async () => {
@@ -863,6 +870,220 @@ describe("close upload, posting, and tie-outs", () => {
     expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(4_000));
   });
 
+  it("reverses only the above-NOI portion of a mixed journal and leaves a balancing entry", async () => {
+    const entity = await freshSpe("SPE-QMIX", "QC Mixed Reverse LLC");
+    const period = await openPeriod(entity.id, 2026, 8);
+    await postJournal({
+      entityId: entity.id,
+      periodId: period.id,
+      date: new Date("2026-08-31T16:00:00.000Z"),
+      memo: "Payroll and mortgage interest",
+      source: "seed",
+      lines: [
+        { accountCode: "5110", debit: dollars(100), credit: 0n },
+        { accountCode: "6110", debit: dollars(40), credit: 0n },
+        { accountCode: "1010", debit: 0n, credit: dollars(140) },
+      ],
+    });
+    const preview = await previewOperatingReversals({ entityId: entity.id, year: 2026, month: 8 });
+    expect(preview).toHaveLength(1);
+    expect(preview[0]?.partial).toBe(true);
+    expect(preview[0]?.memo).toBe("Payroll and mortgage interest");
+    expect(preview[0]?.amountCents).toBe(dollars(100));
+    await reverseOperatingJournals({
+      entityId: entity.id,
+      year: 2026,
+      month: 8,
+      reason: "Replace the above-NOI payroll line and keep interest",
+    });
+    const reversal = await prisma.journal.findFirst({
+      where: { entityId: entity.id, source: "operating_reversal" },
+      include: { lines: true },
+    });
+    const debit = reversal?.lines.reduce((acc, line) => acc + line.debit, 0n) ?? 0n;
+    const credit = reversal?.lines.reduce((acc, line) => acc + line.credit, 0n) ?? 0n;
+    expect(debit).toBe(credit);
+    expect(debit).toBe(dollars(100));
+    expect(await accountNet(entity.id, "5110")).toBe(0n);
+    expect(await accountNet(entity.id, "6110")).toBe(dollars(40));
+    const lines = await loadPostedLines({
+      entityIds: [entity.id],
+      from: new Date(Date.UTC(2026, 7, 1)),
+      to: new Date(Date.UTC(2026, 7, 31, 23, 59, 59)),
+    });
+    const statement = buildIncomeStatement({ throughEnd: lines, inPeriod: lines, eliminate: false });
+    expect(statement.interest).toBe(dollars(40));
+    expect(statement.noi).toBe(0n);
+  });
+
+  it("keeps SPE-WBG interest, depreciation, and the AM fee when a P&L package replaces above-NOI journals", async () => {
+    const wbg = await prisma.entity.findUnique({ where: { code: "SPE-WBG" } });
+    if (!wbg) throw new Error("Seed SPE-WBG first");
+    const through = new Date("2026-08-31T23:59:59.000Z");
+    await clearWbgAugustClose(wbg.id);
+    try {
+      const before = await reviewTreeIntercompany(through);
+      expect(before.ok).toBe(true);
+      const preview = await previewOperatingReversals({ entityId: wbg.id, year: 2026, month: 8 });
+      const memos = preview.map((row) => row.memo);
+      expect(memos).toEqual(expect.arrayContaining(["Accrue GPR", "Operating expenses"]));
+      expect(memos.join(" ")).not.toMatch(/Mortgage interest|Depreciation|asset management fee/i);
+      expect(preview.find((row) => row.memo === "Accrue GPR")?.amountCents).toBe(dollars(339_240));
+      expect(preview.every((row) => row.partial === false)).toBe(true);
+      await reverseOperatingJournals({
+        entityId: wbg.id,
+        year: 2026,
+        month: 8,
+        reason: "Replace seeded above-NOI August books with the manager package",
+      });
+      await storeCloseUpload({
+        entityId: wbg.id,
+        entityCode: wbg.code,
+        year: 2026,
+        month: 8,
+        filename: "profit.csv",
+        mimeType: "text/csv",
+        bytes: pnlCsv(),
+      });
+      await postCloseToBooks({ entityId: wbg.id, year: 2026, month: 8 });
+      const posted = await prisma.journal.findFirst({
+        where: { entityId: wbg.id, source: "month_end_is" },
+        include: { lines: { include: { account: true } } },
+      });
+      const postedCodes = new Set(posted?.lines.map((line) => line.account.code));
+      expect(postedCodes.has("6110")).toBe(false);
+      expect(postedCodes.has("6210")).toBe(false);
+      expect(postedCodes.has("6310")).toBe(false);
+      const after = await reviewTreeIntercompany(through);
+      expect(after.ok).toBe(true);
+      const lines = await loadPostedLines({
+        entityIds: [wbg.id],
+        from: new Date(Date.UTC(2026, 7, 1)),
+        to: new Date(Date.UTC(2026, 7, 31, 23, 59, 59)),
+      });
+      const statement = buildIncomeStatement({ throughEnd: lines, inPeriod: lines, eliminate: false });
+      expect(statement.interest).toBe(dollars(80_500));
+      expect(statement.depreciation).toBe(dollars(62_000));
+      expect(statement.amFees).toBe(dollars(4_740));
+      expect(statement.netIncome).toBe(statement.noi - statement.interest - statement.depreciation - statement.amFees);
+      expect(statement.noi).toBe(dollars(4_000));
+    } finally {
+      await clearWbgAugustClose(wbg.id);
+    }
+  });
+
+  it("keeps MODEL on 4040 with no loss-to-lease, and DOWN out of GPR, for CSV, redIQ, and Yardi", async () => {
+    const cases = [
+      {
+        filename: "rent-roll.csv",
+        mimeType: "text/csv",
+        bytes: Buffer.from(
+          [
+            "unit_id,floorplan,beds,baths,sqft,status,market_rent,in_place_rent",
+            "101,A1,1,1,700,OCCUPIED,1000.00,1000.00",
+            "102,A1,1,1,700,MODEL,1220.00,0",
+            "103,A1,1,1,700,DOWN,800.00,0",
+          ].join("\n"),
+          "utf8",
+        ),
+        dialect: "canonical_csv",
+      },
+      {
+        filename: "rediq-rent-roll.csv",
+        mimeType: "text/csv",
+        bytes: Buffer.from(
+          [
+            "UnitID,PlanID,NetSF,Bed,Bath,OccStatus,MktRent,InPlaceRent",
+            "101,A1,700,1,1,Occupied,1000,1000",
+            "102,A1,700,1,1,MODEL,1220,0",
+            "103,A1,700,1,1,Down,800,0",
+          ].join("\n"),
+          "utf8",
+        ),
+        dialect: "redi_q_machine",
+      },
+      {
+        filename: "yardi-lease-charges.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        bytes: sheet([
+          ["Residential Rent Roll with Lease Charges"],
+          ["As of: 08/31/2026"],
+          ["Unit", "Unit Type", "Unit Sq Ft", "Resident", "Name", "Status", "Market", "Charge Code", "Amount"],
+          ["101", "A1", "700", "R101", "Smith", "Occupied", "1000", "rent", "1000"],
+          ["102", "A1", "700", "M102", "Model", "MODEL", "1220", "rent", "0"],
+          ["103", "A1", "700", "D103", "Offline", "DOWN", "800", "rent", "0"],
+        ]),
+        dialect: "yardi_lease_charges",
+      },
+    ] as const;
+    for (const [index, file] of cases.entries()) {
+      const entity = await freshSpe(`SPE-QSUB${index}`, "QC Substatus LLC");
+      const imported = await importRentRollSource({
+        entityId: entity.id,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        bytes: file.bytes,
+        confirmReplace: true,
+      });
+      expect(imported.dialect).toBe(file.dialect);
+      const units = await loadUnits([entity.id]);
+      const model = units.find((unit) => unit.unitCode === "102");
+      const down = units.find((unit) => unit.unitCode === "103");
+      expect(model?.status).toBe("OCCUPIED");
+      expect(model?.substatus).toBe("MODEL");
+      expect(down?.status).toBe("DOWN");
+      expect(down?.substatus).toBe("DOWN");
+      const roll = summarizeRentRoll(units);
+      expect(roll.gpr).toBe(dollars(2_220));
+      expect(roll.nonRevenueDeduction).toBe(dollars(1_220));
+      expect(roll.lossToLease).toBe(0n);
+      expect(roll.signedLossToLease).toBe(0n);
+      expect(roll.inPlaceRent).toBe(dollars(1_000));
+      const operating = await buildOperatingPackage({
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        consolidated: false,
+      });
+      expect(operating.kpis.rentRoll?.nonRevenueDeduction).toBe(dollars(1_220));
+      expect(operating.kpis.rentRoll?.lossToLease).toBe(0n);
+      expect(operating.kpis.rentRoll?.inPlaceRent).toBe(dollars(1_000));
+      expect(await prisma.leasePeriodSnapshot.count({ where: { entityId: entity.id } })).toBe(0);
+      const workspace = await loadCloseWorkspace(entity.id, 2026, 8);
+      expect(workspace.tieOuts.find((row) => row.id === "RR-6")?.rentRollCents).toBe(dollars(1_220));
+      expect(workspace.tieOuts.find((row) => row.id === "RR-3")?.rentRollCents).toBe(0n);
+    }
+  });
+
+  it("rejects an unknown tolerance key and lets asof_days pass RR-12", async () => {
+    const entity = await freshSpe("SPE-QTOL", "QC Tolerance LLC");
+    await expect(setTieOutTolerance({ entityId: entity.id, key: "nope", cents: 1n })).rejects.toThrow(/Unknown tie-out key/);
+    await expect(setTieOutTolerance({ entityId: entity.id, key: "days", days: 30 })).rejects.toThrow(/Unknown tie-out key/);
+    const outside = runRentRollTieOuts(tieInput("2026-03-15", "2026-08-31"));
+    expect(outside.find((row) => row.id === "RR-12")?.severity).toBe("hard_fail");
+    const inside = runRentRollTieOuts(
+      tieInput("2026-03-15", "2026-08-31", { asof_days: { days: 200 } }),
+    );
+    expect(inside.find((row) => row.id === "RR-12")?.severity).toBe("pass");
+    expect(inside.find((row) => row.id === "RR-12")?.detail).toMatch(/inside the 200-day tolerance/);
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "rent-roll.csv",
+      mimeType: "text/csv",
+      bytes: rollCsv("2026-03-15", "101", "OCCUPIED", "500.00", "500.00"),
+    });
+    expect((await loadCloseWorkspace(entity.id, 2026, 8)).tieOuts.find((row) => row.id === "RR-12")?.severity).toBe(
+      "hard_fail",
+    );
+    await setTieOutTolerance({ entityId: entity.id, key: "asof_days", days: 200, year: 2026, month: 8 });
+    const saved = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(saved.tieOuts.find((row) => row.id === "RR-12")?.severity).toBe("pass");
+    expect(saved.tolerances.find((row) => row.key === "asof_days")?.days).toBe(200);
+  });
+
   it("uses the latest month closed by every live SPE", async () => {
     const hold = await prisma.entity.findUnique({ where: { code: "RCP-HOLD" } });
     if (!hold) throw new Error("Seed RCP-HOLD first");
@@ -912,6 +1133,82 @@ async function freshSpe(prefix: string, name: string) {
   });
   ids.push(entity.id);
   return entity;
+}
+
+const WBG_CLOSE_SOURCES = [
+  "operating_reversal",
+  "month_end_is",
+  "month_end_bs",
+  "month_end_is_reversal",
+  "month_end_bs_reversal",
+] as const;
+
+async function clearWbgAugustClose(entityId: string) {
+  const period = await prisma.period.findUnique({
+    where: { entityId_year_month: { entityId, year: 2026, month: 8 } },
+  });
+  if (period) {
+    const doomed = await prisma.journal.findMany({
+      where: { entityId, periodId: period.id, source: { in: [...WBG_CLOSE_SOURCES] } },
+      select: { id: true },
+    });
+    const doomedIds = doomed.map((row) => row.id);
+    if (doomedIds.length) {
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: doomedIds } } });
+      await prisma.journal.deleteMany({ where: { id: { in: doomedIds }, reversesJournalId: { not: null } } });
+      await prisma.journal.deleteMany({ where: { id: { in: doomedIds } } });
+    }
+  }
+  await prisma.monthEndUpload.deleteMany({ where: { entityId, year: 2026, month: 8 } });
+  await prisma.monthEndEvent.deleteMany({ where: { entityId, year: 2026, month: 8 } });
+  await prisma.vaultDocument.deleteMany({ where: { entityId, filename: "profit.csv" } });
+}
+
+async function accountNet(entityId: string, code: string) {
+  const lines = await prisma.journalLine.findMany({
+    where: { journal: { entityId, status: "POSTED" }, account: { code } },
+  });
+  return lines.reduce((acc, line) => acc + line.debit - line.credit, 0n);
+}
+
+function tieInput(
+  asOfDate: string,
+  periodEnd: string,
+  tolerances?: TieOutInput["tolerances"],
+): TieOutInput {
+  return {
+    rentRollPresent: true,
+    entityUnitCount: 1,
+    unitCount: 1,
+    rentableCount: 1,
+    occupiedCount: 1,
+    vacantCount: 0,
+    downCount: 0,
+    gprCents: dollars(500),
+    scheduledRentCents: dollars(500),
+    signedLtlCents: 0n,
+    vacancyCents: 0n,
+    concessionCents: 0n,
+    nonRevenueCents: 0n,
+    delinquencyCents: null,
+    depositCents: 0n,
+    prepaidCents: 0n,
+    asOfDate,
+    periodEnd,
+    gl: {
+      gpr: dollars(500),
+      ltl: 0n,
+      vacancy: 0n,
+      concessions: 0n,
+      nru: 0n,
+      ar: 0n,
+      deposits: 0n,
+      depositCash: 0n,
+      prepaid: 0n,
+    },
+    chargeMismatchCount: 0,
+    tolerances,
+  };
 }
 
 async function periodNoi(entityId: string, year: number, month: number) {

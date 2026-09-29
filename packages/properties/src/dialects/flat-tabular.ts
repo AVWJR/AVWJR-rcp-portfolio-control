@@ -112,7 +112,8 @@ export function parseFlatTabular(rows: string[][], opts: DialectParseOpts = {}):
   parseMeta(rows, found.index, meta);
 
   const units: CanonicalUnit[] = snapshots.map((snapshot) => {
-    const extras = extrasByUnit.get(snapshot.unitCode) ?? {};
+    const extras = { ...(extrasByUnit.get(snapshot.unitCode) ?? {}) };
+    if (snapshot.substatus) extras.unit_substatus = snapshot.substatus;
     const resident = extras.Resident || extras.resident || extras["Resident Name"] || extras["Tenant Name"] || "";
     if (resident && !parseRentRollStatus(resident)) {
       extras.resident_name = extras.resident_name || resident;

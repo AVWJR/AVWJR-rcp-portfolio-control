@@ -1,7 +1,7 @@
 import { CloseDropzone } from "@/components/deals/close-dropzone";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { loadYtdBudgetMap } from "@/lib/budgets";
-import { loadCloseWorkspace } from "@/lib/close/workspace";
+import { loadCloseWorkspace, previewOperatingReversals } from "@/lib/close/workspace";
 import { buildIncomeStatement, formatUsd, MASTER_COA } from "@rcp/ledger";
 import { incomeStatementFromBudget, incomeStatementKeyedAmounts } from "@rcp/reporting";
 import { notFound } from "next/navigation";
@@ -20,13 +20,14 @@ export default async function MonthEndClosePage({
     <ReportShell searchParams={merged} pathname={`/deals/${code}/close`}>
       {async (ctx) => {
         if (ctx.entity.type !== "SPE" || ctx.entity.code !== code) notFound();
-        const [workspace, ytdBudgetMap] = await Promise.all([
+        const [workspace, ytdBudgetMap, reversals] = await Promise.all([
           loadCloseWorkspace(ctx.entity.id, ctx.year, ctx.month),
           loadYtdBudgetMap({
             entityIds: [ctx.entity.id],
             year: ctx.year,
             month: ctx.month,
           }),
+          previewOperatingReversals({ entityId: ctx.entity.id, year: ctx.year, month: ctx.month }),
         ]);
         const ytd = buildIncomeStatement({
           throughEnd: ctx.statements.ytdActivity,
@@ -105,21 +106,50 @@ export default async function MonthEndClosePage({
               </datalist>
               {workspace.periodStatus !== "CLOSED" ? (
                 <div className="space-y-3">
-                  <form className="flex flex-wrap items-end gap-2" action={`/api/deals/${code}/close`} method="post">
-                    <input type="hidden" name="action" value="reverse-operating" />
-                    <input type="hidden" name="year" value={ctx.year} />
-                    <input type="hidden" name="month" value={ctx.month} />
-                    <label className="text-xs">
-                      Reason
-                      <input name="reason" required className="mt-1 block rounded border px-2 py-1" placeholder="Why these journals reverse" />
-                    </label>
-                    <button className="rounded border border-navy-900 px-3 py-2" type="submit">
-                      Reverse operating journals
-                    </button>
-                  </form>
                   <p className="max-w-3xl text-ink-700">
-                    Seeded months such as SPE-WBG 2026-08 already have operating journals. Reverse them with a reason, then post the package. A hard-locked month still needs a reopen first.
+                    Above-NOI journals (accounts 4xxx and 5xxx) are listed before they can be reversed. Interest, depreciation, amortization, and journals tied to the OpCo AM fee (6310/2310) stay on the books.
                   </p>
+                  {reversals.length ? (
+                    <form className="space-y-3" action={`/api/deals/${code}/close`} method="post">
+                      <input type="hidden" name="action" value="reverse-operating" />
+                      <input type="hidden" name="year" value={ctx.year} />
+                      <input type="hidden" name="month" value={ctx.month} />
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-ink-500">
+                            <th className="py-1">Memo</th>
+                            <th>Source</th>
+                            <th>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reversals.map((row) => (
+                            <tr key={row.journalId} className="border-b border-black/5">
+                              <td className="py-1">
+                                {row.memo}
+                                {row.partial ? " (above-NOI portion)" : ""}
+                              </td>
+                              <td>{row.source}</td>
+                              <td className="tabular">{formatUsd(row.amountCents)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <label className="flex items-center gap-2 text-xs">
+                        <input type="checkbox" name="confirm" value="yes" required />
+                        Reverse the journals listed above
+                      </label>
+                      <label className="text-xs">
+                        Reason
+                        <input name="reason" required className="mt-1 block rounded border px-2 py-1" placeholder="Why these journals reverse" />
+                      </label>
+                      <button className="rounded border border-navy-900 px-3 py-2" type="submit">
+                        Reverse operating journals
+                      </button>
+                    </form>
+                  ) : (
+                    <p className="text-sm text-ink-500">No above-NOI operating journals are blocking this month.</p>
+                  )}
                   <form action={`/api/deals/${code}/close`} method="post">
                     <input type="hidden" name="action" value="post" />
                     <input type="hidden" name="year" value={ctx.year} />

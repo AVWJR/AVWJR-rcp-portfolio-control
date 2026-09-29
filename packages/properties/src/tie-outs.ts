@@ -16,7 +16,24 @@ export type TieOut = {
   detail: string;
 };
 
-export type TieTolerance = { cents?: bigint; bps?: number };
+export type TieTolerance = { cents?: bigint; bps?: number; days?: number };
+
+/** Keys a controller may save on TieOutTolerance. `asof_days` uses the days column for RR-12. */
+export const TIE_OUT_TOLERANCE_KEYS = [
+  "gpr",
+  "sched_rent",
+  "ltl",
+  "vacancy",
+  "concession",
+  "nru",
+  "ar",
+  "deposit",
+  "deposit_cash",
+  "prepaid",
+  "asof_days",
+] as const;
+
+export type TieOutToleranceKey = (typeof TIE_OUT_TOLERANCE_KEYS)[number];
 
 export type TieOutInput = {
   rentRollPresent: boolean;
@@ -120,6 +137,13 @@ function moneyTie(opts: {
 function sameMonth(asOf: string | null, periodEnd: string): boolean | null {
   if (!asOf) return null;
   return asOf.slice(0, 7) === periodEnd.slice(0, 7);
+}
+
+function daysBetween(asOf: string, periodEnd: string): number | null {
+  const start = Date.parse(`${asOf.slice(0, 10)}T00:00:00.000Z`);
+  const end = Date.parse(`${periodEnd.slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.abs(Math.round((start - end) / 86_400_000));
 }
 
 export function runRentRollTieOuts(input: TieOutInput): TieOut[] {
@@ -261,19 +285,31 @@ export function runRentRollTieOuts(input: TieOutInput): TieOut[] {
   });
 
   const month = sameMonth(input.asOfDate, input.periodEnd);
+  const asofDays = tol.asof_days?.days;
+  const dayGap = input.asOfDate ? daysBetween(input.asOfDate, input.periodEnd) : null;
+  const withinDayWindow = asofDays != null && dayGap != null && dayGap <= asofDays;
+  const asofSeverity: TieSeverity = missing
+    ? "hard_fail"
+    : month === true || (month === false && withinDayWindow)
+      ? "pass"
+      : month === false
+        ? "hard_fail"
+        : "warning";
   rows.push({
     id: "RR-12",
     label: "As-of date",
     rentRollCents: null,
     glCents: null,
-    differenceCents: null,
-    severity: missing ? "hard_fail" : month === false ? "hard_fail" : month === true ? "pass" : "warning",
+    differenceCents: dayGap == null ? null : BigInt(dayGap),
+    severity: asofSeverity,
     detail:
-      month === false
-        ? `Rent roll as-of ${input.asOfDate} is not in the close month of ${input.periodEnd.slice(0, 7)}.`
-        : month === true
-          ? "As-of date is in the close month."
-          : "As-of date was not detected.",
+      month === true
+        ? "As-of date is in the close month."
+        : month === false && withinDayWindow
+          ? `As-of ${input.asOfDate} is ${dayGap} day(s) from ${input.periodEnd}, inside the ${asofDays}-day tolerance.`
+          : month === false
+            ? `Rent roll as-of ${input.asOfDate} is not in the close month of ${input.periodEnd.slice(0, 7)}.`
+            : "As-of date was not detected.",
   });
 
   rows.push({

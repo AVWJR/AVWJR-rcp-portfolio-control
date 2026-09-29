@@ -68,6 +68,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         cents?: string | number | null;
         bps?: string | number | null;
         days?: string | number | null;
+        confirm?: boolean | string;
       };
       year = Number(body.year);
       month = Number(body.month);
@@ -103,13 +104,16 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         return NextResponse.json({ ok: true });
       }
       if (body.action === "reverse-operating") {
+        if (body.confirm !== true && body.confirm !== "yes") {
+          throw new Error("Confirm the journals listed on the close page before reversing.");
+        }
         const reversed = await reverseOperatingJournals({
           entityId: entity.id,
           year,
           month,
           reason: body.reason ?? "",
         });
-        return NextResponse.json({ ok: true, ...reversed });
+        return NextResponse.json({ ok: true, reversed: reversed.reversed });
       }
       if (body.action === "set-tolerance") {
         await setTieOutTolerance({
@@ -159,6 +163,9 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       return wantsHtml ? back() : NextResponse.json({ ok: true });
     }
     if (action === "reverse-operating") {
+      if (String(form.get("confirm") ?? "") !== "yes") {
+        throw new Error("Confirm the journals listed on the close page before reversing.");
+      }
       await reverseOperatingJournals({
         entityId: entity.id,
         year,

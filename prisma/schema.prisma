@@ -269,6 +269,8 @@ model Unit {
   bathsTenths     Int // 10 = 1.0 bath, 15 = 1.5
   sqft            Int
   status          UnitStatus
+  /// MODEL, EMPLOYEE, ADMIN, or DOWN. Null on ordinary occupied and vacant units.
+  substatus       String?
   marketRent      BigInt
   inPlaceRent     BigInt     @default(0)
   leaseStart      DateTime?

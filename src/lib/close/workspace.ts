@@ -29,6 +29,7 @@ import {
   rentRollVacancyLoss,
   signedLossToLease,
   runRentRollTieOuts,
+  TIE_OUT_TOLERANCE_KEYS,
   leaseExpirationSummary,
   leaseMasterRecord,
   type CanonicalUnit,
@@ -376,16 +377,13 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
   const reversedIds = new Set(
     existing.map((row) => row.reversesJournalId).filter((id): id is string => Boolean(id)),
   );
-  const foreignPnl = existing.filter(
-    (journal) =>
-      !journal.reversesJournalId &&
-      !reversedIds.has(journal.id) &&
-      !journal.source.startsWith("month_end_") &&
-      journal.lines.some((line) => line.account.type === "REVENUE" || line.account.type === "EXPENSE"),
-  );
+  const foreignPnl = existing.flatMap((journal) => {
+    const plan = planOperatingReversal(journal, reversedIds);
+    return plan ? [plan] : [];
+  });
   if (foreignPnl.length > 0) {
     throw new Error(
-      `This month already has ${foreignPnl.length} operating journal(s). Posting the package would count NOI twice. Reverse those journals before posting the close.`,
+      `This month already has ${foreignPnl.length} above-NOI operating journal(s). Posting the package would count NOI twice. Reverse those journals before posting the close.`,
     );
   }
   const importSources = ["month_end_is", "month_end_bs"] as const;
@@ -512,6 +510,7 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
         balanceCents: 0n,
         depositCents: 0n,
         concessionCents: unit.concessionCents,
+        substatus: unit.substatus ?? undefined,
       }));
   const rentRollUpload = uploads.find((upload) => upload.classification === "rent_roll");
   const rentMeta = rentRollUpload ? uploadMeta(rentRollUpload.parsedJson) : {};
@@ -525,6 +524,7 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     bathsTenths: unit.bathsTenths,
     sqft: unit.sqft,
     status: unit.status,
+    substatus: unit.substatus ?? undefined,
     marketRent: unit.marketRent,
     inPlaceRent: unit.inPlaceRent,
     leaseStart: unit.leaseStart,
@@ -561,6 +561,7 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     tolerances[row.key] = {
       ...(row.cents != null ? { cents: row.cents } : {}),
       ...(row.bps != null ? { bps: row.bps } : {}),
+      ...(row.days != null ? { days: row.days } : {}),
     };
   }
   const tieOuts: TieOut[] = runRentRollTieOuts({
@@ -647,6 +648,9 @@ export async function setTieOutTolerance(opts: {
 }) {
   const key = opts.key.trim();
   if (!key) throw new Error("Name the tie-out tolerance.");
+  if (!(TIE_OUT_TOLERANCE_KEYS as readonly string[]).includes(key)) {
+    throw new Error(`Unknown tie-out key "${key}". Use ${TIE_OUT_TOLERANCE_KEYS.join(", ")}.`);
+  }
   await prisma.tieOutTolerance.upsert({
     where: { entityId_key: { entityId: opts.entityId, key } },
     update: { cents: opts.cents ?? null, bps: opts.bps ?? null, days: opts.days ?? null },
@@ -669,7 +673,128 @@ export async function setTieOutTolerance(opts: {
   });
 }
 
-/** Reverse posted operating journals that would make a month-end package count NOI twice. */
+const MIRROR_CODES = new Set(["1310", "2310", "6310", "7010"]);
+const BELOW_NOI_CODES = new Set(["6110", "6120", "6210", "6220", "6310", "6410", "7010"]);
+
+type ReversibleJournal = {
+  id: string;
+  memo: string;
+  source: string;
+  reversesJournalId: string | null;
+  lines: {
+    debit: bigint;
+    credit: bigint;
+    memo: string | null;
+    account: { code: string; type: string };
+  }[];
+};
+
+export type OperatingReversalPreview = {
+  journalId: string;
+  memo: string;
+  source: string;
+  amountCents: bigint;
+  partial: boolean;
+};
+
+type PlannedReversal = OperatingReversalPreview & {
+  lines: { accountCode: string; debit: bigint; credit: bigint; memo: string }[];
+};
+
+function isAboveNoiLine(line: ReversibleJournal["lines"][number]): boolean {
+  if (MIRROR_CODES.has(line.account.code) || BELOW_NOI_CODES.has(line.account.code)) return false;
+  if (line.account.type !== "REVENUE" && line.account.type !== "EXPENSE") return false;
+  return /^[45]\d{3}$/.test(line.account.code);
+}
+
+function planOperatingReversal(journal: ReversibleJournal, reversedIds: Set<string>): PlannedReversal | null {
+  if (journal.reversesJournalId || reversedIds.has(journal.id) || journal.source.startsWith("month_end_")) return null;
+  if (journal.lines.some((line) => MIRROR_CODES.has(line.account.code))) return null;
+  const above = journal.lines.filter(isAboveNoiLine);
+  if (!above.length) return null;
+  const otherPnl = journal.lines.some(
+    (line) =>
+      (line.account.type === "REVENUE" || line.account.type === "EXPENSE") && !isAboveNoiLine(line),
+  );
+  if (!otherPnl) {
+    const amountCents = journal.lines.reduce((acc, line) => acc + line.debit, 0n);
+    return {
+      journalId: journal.id,
+      memo: journal.memo,
+      source: journal.source,
+      amountCents,
+      partial: false,
+      lines: journal.lines.map((line) => ({
+        accountCode: line.account.code,
+        debit: line.credit,
+        credit: line.debit,
+        memo: `Reversal: ${line.memo ?? journal.memo}`,
+      })),
+    };
+  }
+  const lines = above.map((line) => ({
+    accountCode: line.account.code,
+    debit: line.credit,
+    credit: line.debit,
+    memo: `Reversal: ${line.memo ?? journal.memo}`,
+  }));
+  const imbalance = lines.reduce((acc, line) => acc + line.debit - line.credit, 0n);
+  if (imbalance !== 0n) {
+    const plug =
+      journal.lines
+        .filter((line) => line.account.type !== "REVENUE" && line.account.type !== "EXPENSE" && !MIRROR_CODES.has(line.account.code))
+        .sort((a, b) => {
+          const left = b.debit + b.credit;
+          const right = a.debit + a.credit;
+          return left > right ? 1 : left < right ? -1 : 0;
+        })[0]?.account.code ?? "1999";
+    if (imbalance > 0n) lines.push({ accountCode: plug, debit: 0n, credit: imbalance, memo: `Reversal balance: ${journal.memo}` });
+    else lines.push({ accountCode: plug, debit: -imbalance, credit: 0n, memo: `Reversal balance: ${journal.memo}` });
+  }
+  const amountCents = above.reduce((acc, line) => acc + line.debit + line.credit, 0n);
+  return {
+    journalId: journal.id,
+    memo: journal.memo,
+    source: journal.source,
+    amountCents,
+    partial: true,
+    lines,
+  };
+}
+
+async function plannedOperatingReversals(entityId: string, year: number, month: number): Promise<{
+  periodId: string;
+  status: string;
+  plans: PlannedReversal[];
+} | null> {
+  const period = await prisma.period.findUnique({ where: { entityId_year_month: { entityId, year, month } } });
+  if (!period) return null;
+  const existing = await prisma.journal.findMany({
+    where: { entityId, periodId: period.id, status: "POSTED" },
+    include: { lines: { include: { account: true } } },
+  });
+  const reversedIds = new Set(existing.map((row) => row.reversesJournalId).filter((id): id is string => Boolean(id)));
+  return {
+    periodId: period.id,
+    status: period.status,
+    plans: existing.flatMap((journal) => {
+      const plan = planOperatingReversal(journal, reversedIds);
+      return plan ? [plan] : [];
+    }),
+  };
+}
+
+/** Journals whose above-NOI lines would be reversed. Interest, depreciation, amortization, and OpCo mirrors stay. */
+export async function previewOperatingReversals(opts: {
+  entityId: string;
+  year: number;
+  month: number;
+}): Promise<OperatingReversalPreview[]> {
+  const planned = await plannedOperatingReversals(opts.entityId, opts.year, opts.month);
+  return (planned?.plans ?? []).map(({ lines: _lines, ...preview }) => preview);
+}
+
+/** Reverse posted above-NOI journals that would make a month-end package count NOI twice. */
 export async function reverseOperatingJournals(opts: {
   entityId: string;
   year: number;
@@ -682,36 +807,19 @@ export async function reverseOperatingJournals(opts: {
   if (period.status === "CLOSED") {
     throw new PeriodLockedError("Closed months are not overwritten. Reopen with a reason and a ticket.");
   }
-  const existing = await prisma.journal.findMany({
-    where: { entityId: opts.entityId, periodId: period.id, status: "POSTED" },
-    include: { lines: { include: { account: true } } },
-  });
-  const reversedIds = new Set(
-    existing.map((row) => row.reversesJournalId).filter((id): id is string => Boolean(id)),
-  );
-  const blocking = existing.filter(
-    (journal) =>
-      !journal.reversesJournalId &&
-      !reversedIds.has(journal.id) &&
-      !journal.source.startsWith("month_end_") &&
-      journal.lines.some((line) => line.account.type === "REVENUE" || line.account.type === "EXPENSE"),
-  );
-  if (!blocking.length) throw new Error("No operating journals are blocking this month.");
+  const planned = await plannedOperatingReversals(opts.entityId, opts.year, opts.month);
+  const blocking = planned?.plans ?? [];
+  if (!blocking.length) throw new Error("No above-NOI operating journals are blocking this month.");
   for (const journal of blocking) {
     await postJournal({
       entityId: opts.entityId,
       periodId: period.id,
       date: new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`),
-      memo: `Reversal of ${journal.memo}`,
+      memo: journal.partial ? `Reversal of above-NOI lines in ${journal.memo}` : `Reversal of ${journal.memo}`,
       source: "operating_reversal",
-      reversesJournalId: journal.id,
+      reversesJournalId: journal.journalId,
       allowControllerAdjustment: period.status === "SOFT_CLOSED",
-      lines: journal.lines.map((line) => ({
-        accountCode: line.account.code,
-        debit: line.credit,
-        credit: line.debit,
-        memo: `Reversal: ${line.memo ?? journal.memo}`,
-      })),
+      lines: journal.lines,
     });
   }
   await prisma.monthEndEvent.create({
@@ -720,10 +828,13 @@ export async function reverseOperatingJournals(opts: {
       year: opts.year,
       month: opts.month,
       action: "REVERSE_OPERATING",
-      detail: `${reason} · ${blocking.length} journal(s)`,
+      detail: `${reason} · ${blocking.length} above-NOI journal(s)`,
     },
   });
-  return { reversed: blocking.length };
+  return {
+    reversed: blocking.length,
+    journals: blocking.map(({ lines: _lines, ...preview }) => preview),
+  };
 }
 
 export async function transitionClose(opts: {
