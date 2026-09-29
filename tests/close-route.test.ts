@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { POST } from "@/app/api/deals/[code]/close/route";
+import { loadCloseWorkspace } from "@/lib/close/workspace";
 import { openPeriod } from "@/lib/deals/periods";
 import { createEntityWithCoa } from "@/lib/entities";
 import { completeChecklist } from "@/lib/period-close";
@@ -583,5 +584,91 @@ describe("POST /api/deals/[code]/close", () => {
     });
     expect(reversalReasons.map((row) => row.detail)).toEqual(["JSON controller reversal", "Form controller reversal"]);
     expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(2);
+  });
+
+  it("saves the form's income and balance-sheet choice and reuses it when the next post omits both", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO first");
+    const entity = await createEntityWithCoa({
+      code: `SPE-QSV${Date.now().toString(36).slice(-4).toUpperCase()}`,
+      name: "QC Saved Source Route LLC",
+      type: "SPE",
+      parentId: opco.id,
+      unitCount: 1,
+    });
+    ids.push(entity.id);
+    const chosenIncome = ["Account,Actual", 'Gross Potential Rent,"75,000.00"', 'Net Operating Income,"75,000.00"'].join("\n");
+    const newerIncome = ["Account,Actual", 'Gross Potential Rent,"70,500.00"', 'Net Operating Income,"70,500.00"'].join("\n");
+    const chosenBalance = ["Account,Actual", "2010 Accounts Payable,10000"].join("\n");
+    const newerBalance = ["Account,Actual", "2010 Accounts Payable,15000"].join("\n");
+
+    async function upload(filename: string, text: string) {
+      const response = await call(
+        entity.code,
+        new Request(endpoint(entity.code), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "upload", year: 2026, month: 8, filename, text, mimeType: "text/csv" }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { files: { uploadId: string }[] };
+      return body.files[0]?.uploadId ?? "";
+    }
+
+    const incomeId = await upload("chosen-profit.csv", chosenIncome);
+    const incomeNewerId = await upload("newer-profit.csv", newerIncome);
+    const balanceId = await upload("balance-sheet.csv", chosenBalance);
+    const balanceNewerId = await upload("balance-sheet-v2.csv", newerBalance);
+    await prisma.monthEndUpload.update({ where: { id: incomeId }, data: { createdAt: new Date("2026-08-01T12:00:00.000Z") } });
+    await prisma.monthEndUpload.update({ where: { id: incomeNewerId }, data: { createdAt: new Date("2026-08-03T12:00:00.000Z") } });
+    await prisma.monthEndUpload.update({ where: { id: balanceId }, data: { createdAt: new Date("2026-08-01T12:00:00.000Z") } });
+    await prisma.monthEndUpload.update({
+      where: { id: balanceNewerId },
+      data: { createdAt: new Date("2026-08-03T12:00:00.000Z") },
+    });
+
+    const form = new FormData();
+    form.set("action", "post");
+    form.set("year", "2026");
+    form.set("month", "8");
+    form.set("incomeUploadId", incomeId);
+    form.set("balanceUploadId", balanceId);
+    const posted = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: form }),
+    );
+    expect(posted.status).toBe(303);
+    expect(decodeURIComponent(posted.headers.get("location") ?? "")).not.toMatch(/error=/);
+
+    const again = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "post", year: 2026, month: 8 }),
+      }),
+    );
+    expect(again.status).toBe(200);
+
+    const view = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(view.savedIncomeUploadId).toBe(incomeId);
+    expect(view.defaultIncomeUploadId).toBe(incomeId);
+    expect(view.incomeSourceSummary).toBe("Income source: chosen-profit.csv — saved for this SPE and period.");
+    expect(view.uploads.find((file) => file.id === incomeNewerId)?.postingLabel).toBe("Superseded — not posted");
+    expect(view.savedBalanceUploadId).toBe(balanceId);
+    expect(view.balanceSourceSummary).toBe("Balance sheet source: balance-sheet.csv — saved for this SPE and period.");
+    expect(view.uploads.find((file) => file.id === balanceNewerId)?.postingLabel).toBe("Superseded — not posted");
+    expect(view.newerIncomeNotice).toMatch(/newer-profit\.csv/);
+    expect(view.newerBalanceNotice).toMatch(/balance-sheet-v2\.csv/);
+
+    const lines = await prisma.journalLine.findMany({
+      where: { journal: { entityId: entity.id, status: "POSTED" }, account: { code: { in: ["4010", "2010", "1999"] } } },
+      include: { account: true },
+    });
+    const net = (code: string) =>
+      lines.filter((line) => line.account.code === code).reduce((acc, line) => acc + line.debit - line.credit, 0n);
+    expect(net("4010")).toBe(-dollars(75_000));
+    expect(net("2010")).toBe(-dollars(10_000));
   });
 });

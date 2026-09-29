@@ -1,8 +1,7 @@
 import { CloseDropzone } from "@/components/deals/close-dropzone";
-import { IncomeSourcePicker } from "@/components/deals/income-source-picker";
+import { BalanceSourcePicker, IncomeSourcePicker } from "@/components/deals/income-source-picker";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { loadYtdBudgetMap } from "@/lib/budgets";
-import { DEFAULT_INCOME_STATEMENT_LABEL, SUPERSEDED_INCOME_LABEL } from "@/lib/close/income-source";
 import { loadCloseWorkspace, previewOperatingReversals } from "@/lib/close/workspace";
 import { buildIncomeStatement, formatUsd, MASTER_COA } from "@rcp/ledger";
 import { incomeStatementFromBudget, incomeStatementKeyedAmounts } from "@rcp/reporting";
@@ -65,6 +64,7 @@ export default async function MonthEndClosePage({
         const period = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
         const softClosed = workspace.periodStatus === "SOFT_CLOSED";
         const incomeFiles = workspace.uploads.filter((file) => file.incomePosting);
+        const balanceFiles = workspace.uploads.filter((file) => file.balancePosting);
         return (
           <div className="space-y-8">
             <div>
@@ -101,16 +101,15 @@ export default async function MonthEndClosePage({
                     <p className="font-medium text-navy-900">
                       {file.filename} · {file.classification.replaceAll("_", " ")} · {file.byteSize.toLocaleString()} bytes
                     </p>
-                    {file.incomePosting === "superseded" ? (
-                      <p className="mt-1 font-medium text-navy-900">{SUPERSEDED_INCOME_LABEL}</p>
-                    ) : null}
-                    {file.incomePosting === "source" ? (
-                      <p className="mt-1 text-ink-700">
-                        {file.classification === "income_statement"
-                          ? `${DEFAULT_INCOME_STATEMENT_LABEL}. This file posts the month’s income.`
-                          : file.classification === "t12"
-                            ? "This file posts the month’s income. Only its close-month column is posted."
-                            : "This file posts the month’s income."}
+                    {file.postingLabel ? (
+                      <p
+                        className={
+                          file.incomePosting === "superseded" || file.balancePosting === "superseded"
+                            ? "mt-1 font-medium text-navy-900"
+                            : "mt-1 text-ink-700"
+                        }
+                      >
+                        {file.postingLabel}
                       </p>
                     ) : null}
                     {file.blocksPosting && file.note ? (
@@ -214,17 +213,27 @@ export default async function MonthEndClosePage({
                     <input type="hidden" name="action" value="post" />
                     <input type="hidden" name="year" value={ctx.year} />
                     <input type="hidden" name="month" value={ctx.month} />
-                    {incomeFiles.length === 1 ? (
-                      <p className="text-sm text-ink-700">
-                        Income source: {incomeFiles[0]?.filename} —{" "}
-                        {incomeFiles[0]?.classification === "income_statement"
-                          ? DEFAULT_INCOME_STATEMENT_LABEL
-                          : "Default, most recent income file"}
-                        {incomeFiles[0]?.classification === "t12" ? ". Only its close-month column is posted." : "."}
-                      </p>
+                    {workspace.incomeSourceSummary ? (
+                      <p className="text-sm text-ink-700">{workspace.incomeSourceSummary}</p>
                     ) : null}
                     {workspace.defaultIncomeUploadId ? (
-                      <IncomeSourcePicker files={incomeFiles} defaultId={workspace.defaultIncomeUploadId} />
+                      <IncomeSourcePicker
+                        files={incomeFiles}
+                        selectedId={workspace.defaultIncomeUploadId}
+                        automaticId={workspace.automaticIncomeUploadId}
+                        newerNotice={workspace.newerIncomeNotice}
+                      />
+                    ) : null}
+                    {workspace.balanceSourceSummary ? (
+                      <p className="text-sm text-ink-700">{workspace.balanceSourceSummary}</p>
+                    ) : null}
+                    {workspace.defaultBalanceUploadId ? (
+                      <BalanceSourcePicker
+                        files={balanceFiles}
+                        selectedId={workspace.defaultBalanceUploadId}
+                        automaticId={workspace.automaticBalanceUploadId}
+                        newerNotice={workspace.newerBalanceNotice}
+                      />
                     ) : null}
                     <ControllerOverrideFields active={softClosed} includeReason />
                     <button className="rounded bg-navy-900 px-4 py-2 text-sm text-white" type="submit">

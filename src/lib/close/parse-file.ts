@@ -107,7 +107,15 @@ export function mapStatementLabel(
   if (client?.accountCode && MASTER_COA_BY_CODE.has(client.accountCode)) {
     return { accountCode: client.accountCode, confidence: "CLIENT_MAP", balanceSheet: false };
   }
-  const { rest } = splitAccount(label);
+  const { sourceAccountNo, rest } = splitAccount(label);
+  if (sourceAccountNo && MASTER_COA_BY_CODE.has(sourceAccountNo)) {
+    const account = MASTER_COA_BY_CODE.get(sourceAccountNo);
+    return {
+      accountCode: sourceAccountNo,
+      confidence: "EXACT",
+      balanceSheet: account != null && account.type !== "REVENUE" && account.type !== "EXPENSE",
+    };
+  }
   if (MASTER_COA_BY_CODE.has(rest)) {
     return { accountCode: rest, confidence: "EXACT", balanceSheet: false };
   }
@@ -284,7 +292,7 @@ export function rowsFromMatrix(
     }
     if (isStatementTotalLabel(labelCell)) return;
     const { sourceAccountNo, rest } = splitAccount(labelCell);
-    const mapped = mapStatementLabel(rest || labelCell);
+    const mapped = mapStatementLabel(labelCell);
     let signed = amount ?? 0n;
     if (mode === "gl" && amount != null) {
       const account = mapped.accountCode ? MASTER_COA_BY_CODE.get(mapped.accountCode) : undefined;

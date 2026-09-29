@@ -32,7 +32,7 @@ function textOrEmpty(value: unknown): string {
   return String(value);
 }
 
-function incomeUploadIdFrom(value: unknown): string | undefined {
+function uploadIdFrom(value: unknown): string | undefined {
   const text = textOrEmpty(value).trim();
   return text || undefined;
 }
@@ -81,6 +81,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         confirm?: boolean | string;
         controllerOverride?: boolean | string;
         incomeUploadId?: string;
+        balanceUploadId?: string;
       };
       year = Number(body.year);
       month = Number(body.month);
@@ -116,7 +117,8 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
           entityId: entity.id,
           year,
           month,
-          incomeUploadId: incomeUploadIdFrom(body.incomeUploadId),
+          incomeUploadId: uploadIdFrom(body.incomeUploadId),
+          balanceUploadId: uploadIdFrom(body.balanceUploadId),
           controllerOverride: body.controllerOverride,
           reason: textOrEmpty(body.reason),
         });
@@ -183,7 +185,8 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         entityId: entity.id,
         year,
         month,
-        incomeUploadId: incomeUploadIdFrom(form.get("incomeUploadId")),
+        incomeUploadId: uploadIdFrom(form.get("incomeUploadId")),
+        balanceUploadId: uploadIdFrom(form.get("balanceUploadId")),
         controllerOverride: textOrEmpty(form.get("controllerOverride")),
         reason: textOrEmpty(form.get("reason")),
       });

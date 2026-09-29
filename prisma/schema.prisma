@@ -213,6 +213,10 @@ model Period {
   reopenReason   String?
   reopenTicket   String?
   basis          String       @default("ACCRUAL")
+  /// Explicit income-file choice for this SPE and period. Null keeps the newest income statement.
+  incomeSourceUploadId  String?
+  /// Explicit balance-sheet choice for this SPE and period. Null keeps the newest balance sheet.
+  balanceSourceUploadId String?
   createdAt      DateTime     @default(now())
 
   journals  Journal[]
