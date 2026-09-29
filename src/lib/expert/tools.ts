@@ -1,3 +1,4 @@
+import { AuthzError, assertCan, resolveActor, visibleEntityCodes } from "@/lib/auth/actor";
 import { isLiveSpe } from "@/lib/archive";
 import { getIntake, publicIntake } from "@/lib/deals/intake";
 import { buildDashboardForEntity, type LiveRatio } from "@/lib/dashboards";
@@ -29,12 +30,24 @@ function href(path: string, entityCode: string, periodLabel: string, view?: "com
   return withContext(path, entityCode, periodLabel, view);
 }
 
+async function deniedEntity(entityId: string): Promise<ExpertToolError | null> {
+  try {
+    await assertCan("read", entityId);
+    return null;
+  } catch (error) {
+    if (error instanceof AuthzError) return { ok: false, error: error.message };
+    throw error;
+  }
+}
+
 export async function getEntitySummary(entityCode: string): Promise<EntitySummary | ExpertToolError> {
   const entity = await prisma.entity.findUnique({
     where: { code: entityCode },
     include: { parent: true, children: true },
   });
   if (!entity) return { ok: false, error: `Unknown entity ${entityCode}` };
+  const hidden = await deniedEntity(entity.id);
+  if (hidden) return hidden;
   return {
     code: entity.code,
     name: entity.name,
@@ -65,6 +78,8 @@ export async function getPeriodStatus(
   if (!parsed) return { ok: false, error: "Period must be YYYY-MM" };
   const entity = await prisma.entity.findUnique({ where: { code: entityCode } });
   if (!entity) return { ok: false, error: `Unknown entity ${entityCode}` };
+  const hidden = await deniedEntity(entity.id);
+  if (hidden) return hidden;
   const period = await prisma.period.findUnique({
     where: { entityId_year_month: { entityId: entity.id, year: parsed.year, month: parsed.month } },
     include: { checklist: { orderBy: { sortOrder: "asc" } } },
@@ -113,6 +128,8 @@ export async function getKpiSnapshot(
   if (!parsed) return { ok: false, error: "Period must be YYYY-MM" };
   const entity = await prisma.entity.findUnique({ where: { code: entityCode } });
   if (!entity) return { ok: false, error: `Unknown entity ${entityCode}` };
+  const hidden = await deniedEntity(entity.id);
+  if (hidden) return hidden;
   if (entity.type === "HOLDCO") {
     return {
       entityCode: entity.code,
@@ -159,6 +176,8 @@ export async function getDataCompleteness(
     include: { children: true },
   });
   if (!entity) return { ok: false, error: `Unknown entity ${entityCode}` };
+  const hidden = await deniedEntity(entity.id);
+  if (hidden) return hidden;
 
   const period = await prisma.period.findUnique({
     where: { entityId_year_month: { entityId: entity.id, year: parsed.year, month: parsed.month } },
@@ -342,6 +361,8 @@ export async function getAnomalies(
   if (!parsed) return { ok: false, error: "Period must be YYYY-MM" };
   const entity = await prisma.entity.findUnique({ where: { code: entityCode } });
   if (!entity) return { ok: false, error: `Unknown entity ${entityCode}` };
+  const hidden = await deniedEntity(entity.id);
+  if (hidden) return hidden;
 
   const flags: AnomalyFlag[] = [];
   const period = await prisma.period.findUnique({
@@ -632,6 +653,17 @@ export async function getDealIntakeStatus(intakeId: string) {
   if (!intakeId?.trim()) return { ok: false as const, error: "intakeId required" };
   const intake = await getIntake(intakeId.trim());
   if (!intake) return { ok: false as const, error: `Unknown intake ${intakeId}` };
+  if (intake.entityId) {
+    const blocked = await deniedEntity(intake.entityId);
+    if (blocked) return blocked;
+  } else {
+    try {
+      await assertCan("read");
+    } catch (error) {
+      if (error instanceof AuthzError) return { ok: false as const, error: error.message };
+      throw error;
+    }
+  }
   return { ok: true as const, intake: publicIntake(intake) };
 }
 
@@ -652,5 +684,14 @@ export async function runExpertTools(entityCode: string, periodLabel: string) {
 export async function loadPortfolioLoansForPeriod(periodLabel: string) {
   const parsed = parsePeriodLabel(periodLabel);
   if (!parsed) return [];
-  return loadPortfolioDebt(parsed.year, parsed.month);
+  try {
+    await assertCan("read");
+  } catch (error) {
+    if (error instanceof AuthzError) return [];
+    throw error;
+  }
+  const actor = await resolveActor();
+  const codes = await visibleEntityCodes(actor);
+  const loans = await loadPortfolioDebt(parsed.year, parsed.month);
+  return codes ? loans.filter((loan) => codes.has(loan.entityCode)) : loans;
 }

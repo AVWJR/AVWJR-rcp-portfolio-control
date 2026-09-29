@@ -1,4 +1,6 @@
+import { canSeeEntity, enforce, resolveActor } from "@/lib/auth/actor";
 import { currentAccessRole } from "@/lib/access-server";
+import { prisma } from "@/lib/prisma";
 import { expertAiEnabled, resolveExpertProvider } from "@/lib/expert/ai-enabled";
 import { resolveContext } from "@/lib/expert/chat";
 import { describePage } from "@/lib/expert/nav";
@@ -10,6 +12,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const pathname = url.searchParams.get("pathname") || "/";
   const page = describePage(pathname);
@@ -24,6 +28,11 @@ export async function GET(request: Request) {
     uiHints: page.hints,
     accessRole,
   });
+  const actor = await resolveActor();
+  const subject = await prisma.entity.findUnique({ where: { code: ctx.entityCode } });
+  if (subject && !canSeeEntity(actor, subject.id)) {
+    return NextResponse.json({ error: "This account is not allowed to open that deal." }, { status: 403 });
+  }
 
   try {
     const tools = await runExpertTools(ctx.entityCode, ctx.periodLabel);

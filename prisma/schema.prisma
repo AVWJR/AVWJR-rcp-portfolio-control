@@ -118,8 +118,10 @@ model Entity {
   lifecycleStatus  EntityLifecycle @default(LIVE)
   archivedAt       DateTime?
   archivedBy       String?
+  archivedByUserId String?
   restoredAt       DateTime?
   restoredBy       String?
+  restoredByUserId String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -137,6 +139,7 @@ model Entity {
   reportJobs       ReportJob[]
   dealIntakes      DealIntake[]
   waterfall        SpeWaterfall?
+  userScopes       UserEntityScope[]
   vendorAccountMaps VendorAccountMap[]
   monthEndUploads  MonthEndUpload[]
   leaseSnapshots   LeasePeriodSnapshot[]
@@ -217,6 +220,11 @@ model Period {
   incomeSourceUploadId  String?
   /// Explicit balance-sheet choice for this SPE and period. Null keeps the newest balance sheet.
   balanceSourceUploadId String?
+  preparedByUserId       String?
+  preparedAt             DateTime?
+  reviewedByUserId       String?
+  reviewedAt             DateTime?
+  ownerSelfApproveReason String?
   createdAt      DateTime     @default(now())
 
   journals  Journal[]
@@ -237,6 +245,7 @@ model Journal {
   source      String        @default("manual")
   status      JournalStatus @default(DRAFT)
   postedAt          DateTime?
+  postedByUserId    String?
   reversesJournalId String?
   reversesJournal   Journal?  @relation("JournalReversal", fields: [reversesJournalId], references: [id], onDelete: SetNull)
   reversedBy        Journal[] @relation("JournalReversal")
@@ -404,7 +413,11 @@ model CloseChecklistItem {
   sortOrder  Int
   status     ChecklistItemStatus  @default(PENDING)
   notes      String?
-  reviewedAt DateTime?
+  preparedByUserId       String?
+  preparedAt             DateTime?
+  reviewedByUserId       String?
+  reviewedAt             DateTime?
+  ownerSelfApproveReason String?
 
   @@unique([periodId, code])
 }
@@ -413,10 +426,11 @@ model PeriodCloseEvent {
   id        String            @id @default(cuid())
   periodId  String
   period    Period            @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  action    PeriodCloseAction
-  reason    String?
-  ticket    String?
-  createdAt DateTime          @default(now())
+  action      PeriodCloseAction
+  reason      String?
+  ticket      String?
+  actorUserId String?
+  createdAt   DateTime          @default(now())
 
   @@index([periodId])
 }
@@ -534,8 +548,9 @@ model VaultDocument {
   mimeType    String
   storagePath String
   byteSize    Int
-  notes       String?
-  uploadedAt  DateTime @default(now())
+  notes            String?
+  uploadedByUserId String?
+  uploadedAt       DateTime @default(now())
 
   @@index([entityId, kind])
 }
@@ -598,9 +613,10 @@ model DealIntakeFile {
   mimeType        String
   byteSize        Int
   storagePath     String
-  vaultDocumentId String?
-  remoteId        String?
-  status          String     @default("stored")
+  vaultDocumentId  String?
+  remoteId         String?
+  uploadedByUserId String?
+  status           String     @default("stored")
   lastError       String?
   createdAt       DateTime   @default(now())
 
@@ -654,6 +670,7 @@ model VendorAccountMap {
   sourceAccountNo String   @default("")
   normalizedLabel String
   accountCode     String
+  updatedByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -672,10 +689,11 @@ model MonthEndUpload {
   mimeType       String   @default("application/octet-stream")
   classification String
   byteSize       Int
-  sha256         String
-  storagePath    String
-  parsedJson     String   @default("{}")
-  createdAt      DateTime @default(now())
+  sha256           String
+  storagePath      String
+  parsedJson       String   @default("{}")
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
 
   @@index([entityId, year, month])
 }
@@ -717,9 +735,59 @@ model MonthEndEvent {
   entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
   year      Int
   month     Int
-  action    String
-  detail    String
-  createdAt DateTime @default(now())
+  action      String
+  detail      String
+  actorUserId String?
+  createdAt   DateTime @default(now())
 
   @@index([entityId, year, month])
+}
+
+/// Login account. Roles and deal scopes live next to the books. Additive.
+enum AppRole {
+  OWNER
+  CONTROLLER
+  PREPARER
+  REVIEWER
+  LP_VIEWER
+  LENDER_VIEWER
+}
+
+model AppUser {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  passwordHash   String?
+  role           AppRole   @default(REVIEWER)
+  active         Boolean   @default(true)
+  invitedAt      DateTime  @default(now())
+  deactivatedAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  scopes UserEntityScope[]
+
+  @@index([role, active])
+}
+
+/// LP and lender viewers are limited to these entities. Other roles ignore scopes.
+model UserEntityScope {
+  id        String   @id @default(cuid())
+  userId    String
+  user      AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, entityId])
+  @@index([entityId])
+}
+
+/// Failed sign-ins. A burst from one email or one IP locks that bucket.
+model AuthLoginFailure {
+  id        String   @id @default(cuid())
+  bucket    String
+  createdAt DateTime @default(now())
+
+  @@index([bucket, createdAt])
 }

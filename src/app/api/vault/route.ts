@@ -1,3 +1,4 @@
+import { enforce, resolveActor } from "@/lib/auth/actor";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
 import { FileStoreError, isBlobTokenConfigured, isOnVercel } from "@/lib/file-store";
@@ -62,6 +63,8 @@ async function registerBlobReference(request: Request) {
 }
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity");
   let entityId: string | undefined;
@@ -69,8 +72,17 @@ export async function GET(request: Request) {
     const entity = await prisma.entity.findUnique({ where: { code } });
     if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
     entityId = entity.id;
+    const scoped = await enforce("read", entity.id);
+    if (scoped) return scoped;
   }
-  const docs = await listVaultDocuments(entityId);
+  const actor = await resolveActor();
+  let docs = await listVaultDocuments(entityId);
+  if (actor.entityIds) {
+    const allowed = new Set(
+      (await prisma.entity.findMany({ where: { id: { in: actor.entityIds } }, select: { code: true } })).map((row) => row.code),
+    );
+    docs = docs.filter((doc) => allowed.has(doc.entityCode));
+  }
   return NextResponse.json(
     serialize({
       documents: docs,
@@ -82,6 +94,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     try {

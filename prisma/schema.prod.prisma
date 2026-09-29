@@ -117,8 +117,10 @@ model Entity {
   lifecycleStatus  EntityLifecycle @default(LIVE)
   archivedAt       DateTime?
   archivedBy       String?
+  archivedByUserId String?
   restoredAt       DateTime?
   restoredBy       String?
+  restoredByUserId String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -135,6 +137,42 @@ model Entity {
   vaultDocuments   VaultDocument[]
   reportJobs       ReportJob[]
   dealIntakes      DealIntake[]
+  waterfall        SpeWaterfall?
+  userScopes       UserEntityScope[]
+  vendorAccountMaps VendorAccountMap[]
+  monthEndUploads  MonthEndUpload[]
+  leaseSnapshots   LeasePeriodSnapshot[]
+  monthEndEvents   MonthEndEvent[]
+  tieOutTolerances TieOutTolerance[]
+}
+
+/// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
+/// (legacy OpCo stack). Saving a template is an explicit Principal choice.
+model SpeWaterfall {
+  id                     String   @id @default(cuid())
+  entityId               String   @unique
+  entity                 Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  templateId             String   @default("look_through_100")
+  prefRateBps            Int      @default(800)
+  compounding            String   @default("NONE")
+  catchUpEnabled         Boolean  @default(false)
+  catchUpBps             Int      @default(10000)
+  gpCoInvestBps          Int      @default(0)
+  coGpName               String?
+  coGpOfPromoteBps       Int      @default(0)
+  coGpCoInvestShareBps   Int      @default(0)
+  promoteBase            String   @default("DISTRIBUTABLE_CASH")
+  lookbackClawback       Boolean  @default(false)
+  lpContributedCents     BigInt   @default(0)
+  unreturnedCapitalCents BigInt   @default(0)
+  unpaidPrefCents        BigInt   @default(0)
+  prefPaidToDateCents    BigInt   @default(0)
+  notes                  String?
+  tiersJson              String   @default("[]")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([templateId])
 }
 
 /// Master template rows use entityId = null. Entity CoA is cloned from the template.
@@ -176,6 +214,16 @@ model Period {
   reopenedAt     DateTime?
   reopenReason   String?
   reopenTicket   String?
+  basis          String       @default("ACCRUAL")
+  /// Explicit income-file choice for this SPE and period. Null keeps the newest income statement.
+  incomeSourceUploadId  String?
+  /// Explicit balance-sheet choice for this SPE and period. Null keeps the newest balance sheet.
+  balanceSourceUploadId String?
+  preparedByUserId       String?
+  preparedAt             DateTime?
+  reviewedByUserId       String?
+  reviewedAt             DateTime?
+  ownerSelfApproveReason String?
   createdAt      DateTime     @default(now())
 
   journals  Journal[]
@@ -195,12 +243,17 @@ model Journal {
   memo        String
   source      String        @default("manual")
   status      JournalStatus @default(DRAFT)
-  postedAt    DateTime?
-  createdAt   DateTime      @default(now())
+  postedAt          DateTime?
+  postedByUserId    String?
+  reversesJournalId String?
+  reversesJournal   Journal?  @relation("JournalReversal", fields: [reversesJournalId], references: [id], onDelete: SetNull)
+  reversedBy        Journal[] @relation("JournalReversal")
+  createdAt         DateTime  @default(now())
 
   lines JournalLine[]
 
   @@index([entityId, periodId, status])
+  @@index([reversesJournalId])
 }
 
 model JournalLine {
@@ -228,6 +281,8 @@ model Unit {
   bathsTenths     Int // 10 = 1.0 bath, 15 = 1.5
   sqft            Int
   status          UnitStatus
+  /// MODEL, EMPLOYEE, ADMIN, or DOWN. Null on ordinary occupied and vacant units.
+  substatus       String?
   marketRent      BigInt
   inPlaceRent     BigInt     @default(0)
   leaseStart      DateTime?
@@ -357,7 +412,11 @@ model CloseChecklistItem {
   sortOrder  Int
   status     ChecklistItemStatus  @default(PENDING)
   notes      String?
-  reviewedAt DateTime?
+  preparedByUserId       String?
+  preparedAt             DateTime?
+  reviewedByUserId       String?
+  reviewedAt             DateTime?
+  ownerSelfApproveReason String?
 
   @@unique([periodId, code])
 }
@@ -366,10 +425,11 @@ model PeriodCloseEvent {
   id        String            @id @default(cuid())
   periodId  String
   period    Period            @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  action    PeriodCloseAction
-  reason    String?
-  ticket    String?
-  createdAt DateTime          @default(now())
+  action      PeriodCloseAction
+  reason      String?
+  ticket      String?
+  actorUserId String?
+  createdAt   DateTime          @default(now())
 
   @@index([periodId])
 }
@@ -487,8 +547,9 @@ model VaultDocument {
   mimeType    String
   storagePath String
   byteSize    Int
-  notes       String?
-  uploadedAt  DateTime @default(now())
+  notes            String?
+  uploadedByUserId String?
+  uploadedAt       DateTime @default(now())
 
   @@index([entityId, kind])
 }
@@ -551,9 +612,10 @@ model DealIntakeFile {
   mimeType        String
   byteSize        Int
   storagePath     String
-  vaultDocumentId String?
-  remoteId        String?
-  status          String     @default("stored")
+  vaultDocumentId  String?
+  remoteId         String?
+  uploadedByUserId String?
+  status           String     @default("stored")
   lastError       String?
   createdAt       DateTime   @default(now())
 
@@ -596,4 +658,135 @@ model ReportJobRun {
   periodLabel String
 
   @@index([jobId, startedAt])
+}
+
+/// Remembered vendor-line → RCP account map for one SPE. Additive. Never deletes history.
+model VendorAccountMap {
+  id              String   @id @default(cuid())
+  entityId        String
+  entity          Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sourceSystem    String   @default("")
+  sourceAccountNo String   @default("")
+  normalizedLabel String
+  accountCode     String
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([entityId, sourceSystem, sourceAccountNo, normalizedLabel])
+  @@index([entityId])
+}
+
+/// Original month-end file. Rows are insert-only — closed months are not overwritten by deleting these.
+model MonthEndUpload {
+  id             String   @id @default(cuid())
+  entityId       String
+  entity         Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  filename       String
+  mimeType       String   @default("application/octet-stream")
+  classification String
+  byteSize       Int
+  sha256           String
+  storagePath      String
+  parsedJson       String   @default("{}")
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+
+  @@index([entityId, year, month])
+}
+
+/// Period snapshot of the tenant/lease master. The live Unit table stays the current rent roll.
+model LeasePeriodSnapshot {
+  id          String   @id @default(cuid())
+  entityId    String
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year        Int
+  month       Int
+  unitCode    String
+  payloadJson String
+  createdAt   DateTime @default(now())
+
+  @@unique([entityId, year, month, unitCode])
+  @@index([entityId, year, month])
+}
+
+/// Per-SPE tie-out tolerance. No row means no threshold. Do not seed defaults.
+model TieOutTolerance {
+  id        String   @id @default(cuid())
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  key       String
+  cents     BigInt?
+  bps       Int?
+  days      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entityId, key])
+  @@index([entityId])
+}
+
+model MonthEndEvent {
+  id        String   @id @default(cuid())
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year      Int
+  month     Int
+  action      String
+  detail      String
+  actorUserId String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityId, year, month])
+}
+
+/// Login account. Roles and deal scopes live next to the books. Additive.
+enum AppRole {
+  OWNER
+  CONTROLLER
+  PREPARER
+  REVIEWER
+  LP_VIEWER
+  LENDER_VIEWER
+}
+
+model AppUser {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  passwordHash   String?
+  role           AppRole   @default(REVIEWER)
+  active         Boolean   @default(true)
+  invitedAt      DateTime  @default(now())
+  deactivatedAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  scopes UserEntityScope[]
+
+  @@index([role, active])
+}
+
+/// LP and lender viewers are limited to these entities. Other roles ignore scopes.
+model UserEntityScope {
+  id        String   @id @default(cuid())
+  userId    String
+  user      AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, entityId])
+  @@index([entityId])
+}
+
+/// Failed sign-ins. A burst from one email or one IP locks that bucket.
+model AuthLoginFailure {
+  id        String   @id @default(cuid())
+  bucket    String
+  createdAt DateTime @default(now())
+
+  @@index([bucket, createdAt])
 }

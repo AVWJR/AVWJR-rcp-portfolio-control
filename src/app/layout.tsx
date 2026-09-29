@@ -3,6 +3,7 @@ import { Cormorant_Garamond, IBM_Plex_Sans } from "next/font/google";
 import { Suspense } from "react";
 import { RCP_NAME, RCP_PRODUCT } from "@rcp/rcp-brand";
 import { AccessBanner } from "@/components/access-banner";
+import { AuthWall } from "@/components/auth-wall";
 import { ExpertRoot } from "@/components/expert/expert-root";
 import "./globals.css";
 
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-US">
       <body className={`${display.variable} ${sans.variable} font-sans antialiased`}>
+        <AuthWall />
         <AccessBanner />
         {children}
         <Suspense fallback={null}>

@@ -5,8 +5,12 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // One SQLite file is shared by every suite. Parallel files race period writes and archive cleanup.
+    fileParallelism: false,
     env: {
       DATABASE_URL: process.env.DATABASE_URL ?? "file:./dev.db",
+      // Existing suites keep the pre-login principal path even if a test inserts users.
+      LEGACY_PARTNER_TOKEN: "1",
     },
   },
   resolve: {

@@ -1,3 +1,6 @@
+import { AuthzError, assertCan, enforceAll } from "@/lib/auth/actor";
+import { closeActionCapabilities } from "@/lib/auth/roles";
+import { signPeriodPackage } from "@/lib/close/sign-off";
 import {
   postCloseToBooks,
   rememberMap,
@@ -6,6 +9,7 @@ import {
   storeCloseUpload,
   transitionClose,
 } from "@/lib/close/workspace";
+import { openPeriod } from "@/lib/deals/periods";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -35,6 +39,14 @@ function textOrEmpty(value: unknown): string {
 function uploadIdFrom(value: unknown): string | undefined {
   const text = textOrEmpty(value).trim();
   return text || undefined;
+}
+
+function overrideFlag(value: unknown): boolean {
+  return value === true || value === "yes" || value === "true";
+}
+
+async function authorizeClose(action: string, controllerOverride: boolean, entityId: string) {
+  return enforceAll(closeActionCapabilities(action, controllerOverride), entityId);
 }
 
 async function speOrThrow(code: string) {
@@ -86,6 +98,32 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       year = Number(body.year);
       month = Number(body.month);
       if (!year || !month) throw new Error("Pick a period first.");
+      const action = body.action ?? "upload";
+      const denied = await authorizeClose(action, overrideFlag(body.controllerOverride), entity.id);
+      if (denied) return denied;
+      if (action === "sign-prepare-all" || action === "sign-review-all") {
+        const actor = await assertCan(action === "sign-prepare-all" ? "close.sign_prepare" : "close.sign_review", entity.id);
+        if (!actor.userId || !actor.role) throw new AuthzError("Sign in is required.", 401);
+        const period = await openPeriod(entity.id, year, month);
+        await signPeriodPackage({
+          periodId: period.id,
+          userId: actor.userId,
+          role: actor.role,
+          kind: action === "sign-prepare-all" ? "prepare" : "review",
+          ownerSelfApproveReason: textOrEmpty(body.reason),
+        });
+        await prisma.monthEndEvent.create({
+          data: {
+            entityId: entity.id,
+            year,
+            month,
+            action: action === "sign-prepare-all" ? "SIGN_PREPARE" : "SIGN_REVIEW",
+            detail: textOrEmpty(body.reason) || action,
+            actorUserId: actor.userId,
+          },
+        });
+        return NextResponse.json({ ok: true });
+      }
       if (body.action === "upload") {
         if (!body.filename || body.text == null) throw new Error("Drop at least one file.");
         const stored = await storeCloseUpload({
@@ -168,6 +206,31 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     month = Number(form.get("month"));
     if (!year || !month) throw new Error("Pick a period first.");
     const action = String(form.get("action") ?? "upload");
+    const denied = await authorizeClose(action, overrideFlag(form.get("controllerOverride")), entity.id);
+    if (denied) return denied;
+    if (action === "sign-prepare-all" || action === "sign-review-all") {
+      const actor = await assertCan(action === "sign-prepare-all" ? "close.sign_prepare" : "close.sign_review", entity.id);
+      if (!actor.userId || !actor.role) throw new AuthzError("Sign in is required.", 401);
+      const period = await openPeriod(entity.id, year, month);
+      await signPeriodPackage({
+        periodId: period.id,
+        userId: actor.userId,
+        role: actor.role,
+        kind: action === "sign-prepare-all" ? "prepare" : "review",
+        ownerSelfApproveReason: String(form.get("reason") ?? ""),
+      });
+      await prisma.monthEndEvent.create({
+        data: {
+          entityId: entity.id,
+          year,
+          month,
+          action: action === "sign-prepare-all" ? "SIGN_PREPARE" : "SIGN_REVIEW",
+          detail: String(form.get("reason") ?? "") || action,
+          actorUserId: actor.userId,
+        },
+      });
+      return wantsHtml ? back() : NextResponse.json({ ok: true });
+    }
     if (action === "map") {
       await rememberMap({
         entityId: entity.id,
@@ -248,6 +311,10 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     return NextResponse.json({ ok: true, files: stored });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Month-end close failed.";
+    if (error instanceof AuthzError) {
+      if (wantsHtml && !contentType.includes("application/json") && year && month) return back(message);
+      return NextResponse.json({ ok: false, error: message }, { status: error.status });
+    }
     if (wantsHtml && !contentType.includes("application/json") && year && month) return back(message);
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }

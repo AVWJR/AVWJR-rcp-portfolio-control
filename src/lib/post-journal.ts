@@ -4,6 +4,7 @@ import {
   type JournalDraftLine,
   type PeriodCloseStatus,
 } from "@rcp/ledger";
+import { actingUserId } from "@/lib/auth/actor";
 import { prisma } from "./prisma";
 
 export async function postJournal(input: {
@@ -25,6 +26,7 @@ export async function postJournal(input: {
   assertCanPostToPeriod(period.status as PeriodCloseStatus, {
     allowControllerAdjustment: input.allowControllerAdjustment,
   });
+  const postedByUserId = await actingUserId();
 
   const accounts = await prisma.account.findMany({
     where: { entityId: input.entityId, code: { in: input.lines.map((l) => l.accountCode) } },
@@ -46,6 +48,7 @@ export async function postJournal(input: {
       source: input.source ?? "manual",
       status: "POSTED",
       postedAt: new Date(),
+      postedByUserId,
       reversesJournalId: input.reversesJournalId,
       lines: {
         create: input.lines.map((line) => ({

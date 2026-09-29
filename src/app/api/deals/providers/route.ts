@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { describeFileStore, isBlobTokenConfigured, isOnVercel, resolveFileStoreBackend } from "@/lib/file-store";
 import { listProviderStatus } from "@/lib/deals/providers";
 import { rcpMailboxAddress } from "@/lib/deals/providers";
@@ -13,6 +14,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await enforce("read");
+  if (denied) return denied;
   return NextResponse.json({
     providers: listProviderStatus(),
     rcpMailbox: rcpMailboxAddress() || null,

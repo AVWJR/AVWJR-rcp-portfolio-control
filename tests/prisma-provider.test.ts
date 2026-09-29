@@ -6,6 +6,7 @@ import {
   isPostgresUrl,
   isPrismaDataLossAbort,
   isSqliteUrl,
+  previewSchemaPushPlan,
   resolveDatabaseUrl,
   resolveDirectUrl,
   resolvePrismaProvider,
@@ -79,6 +80,23 @@ describe("prisma provider selection", () => {
     expect(provider).toBe("postgresql");
     expect(isPostgresUrl(env.DATABASE_URL)).toBe(true);
     expect(isPostgresUrl(env.DIRECT_URL)).toBe(true);
+  });
+
+  it("does not let a preview build push the shared production database", () => {
+    expect(previewSchemaPushPlan({ VERCEL_ENV: "preview" }).push).toBe(false);
+    expect(previewSchemaPushPlan({ VERCEL_ENV: "production" })).toMatchObject({ push: true, reason: "production" });
+    expect(previewSchemaPushPlan({}).push).toBe(true);
+    expect(
+      previewSchemaPushPlan({
+        VERCEL_ENV: "preview",
+        PREVIEW_DATABASE_URL: "postgresql://preview/db",
+        PREVIEW_DIRECT_URL: "postgresql://preview-direct/db",
+      }),
+    ).toMatchObject({
+      push: true,
+      databaseUrl: "postgresql://preview/db",
+      directUrl: "postgresql://preview-direct/db",
+    });
   });
 
   it("recognizes prisma db push CI aborts that would drop sibling-preview columns", () => {

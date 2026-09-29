@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { currentAccessRole } from "@/lib/access-server";
 import {
   ACCESS_COOKIE,
@@ -15,6 +16,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const role = await currentAccessRole();
   return NextResponse.json({
     role,

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
+import { actingUserId } from "@/lib/auth/actor";
 import { isArchivedSpe } from "@/lib/archive";
 import { ensureMasterCoaCurrent } from "@/lib/entities";
 import { openPeriod } from "@/lib/deals/periods";
 import { parseRentRollSource } from "@/lib/deals/workbook";
 import { hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
 import { assertTieOutsAllowLock } from "@/lib/close/guards";
+import { clearReviewerSignOff } from "@/lib/close/sign-off";
 import { putStoredFile } from "@/lib/file-store";
 import { postJournal } from "@/lib/post-journal";
 import { importRentRollSource } from "@/lib/rent-roll";
@@ -98,6 +100,18 @@ async function rememberedMaps(entityId: string) {
   return prisma.vendorAccountMap.findMany({ where: { entityId } });
 }
 
+async function logMonthEnd(data: {
+  entityId: string;
+  year: number;
+  month: number;
+  action: string;
+  detail: string;
+}) {
+  await prisma.monthEndEvent.create({
+    data: { ...data, actorUserId: await actingUserId() },
+  });
+}
+
 export async function rememberMap(opts: {
   entityId: string;
   sourceSystem: string;
@@ -108,6 +122,7 @@ export async function rememberMap(opts: {
   month?: number;
 }) {
   const normalizedLabel = normalizeVendorLabel(opts.label);
+  const actorUserId = await actingUserId();
   await prisma.vendorAccountMap.upsert({
     where: {
       entityId_sourceSystem_sourceAccountNo_normalizedLabel: {
@@ -117,23 +132,22 @@ export async function rememberMap(opts: {
         normalizedLabel,
       },
     },
-    update: { accountCode: opts.accountCode },
+    update: { accountCode: opts.accountCode, updatedByUserId: actorUserId },
     create: {
       entityId: opts.entityId,
       sourceSystem: opts.sourceSystem,
       sourceAccountNo: opts.sourceAccountNo,
       normalizedLabel,
       accountCode: opts.accountCode,
+      updatedByUserId: actorUserId,
     },
   });
-  await prisma.monthEndEvent.create({
-    data: {
-      entityId: opts.entityId,
-      year: opts.year ?? 0,
-      month: opts.month ?? 0,
-      action: "MAP",
-      detail: `${opts.label} → ${opts.accountCode}`,
-    },
+  await logMonthEnd({
+    entityId: opts.entityId,
+    year: opts.year ?? 0,
+    month: opts.month ?? 0,
+    action: "MAP",
+    detail: `${opts.label} → ${opts.accountCode}`,
   });
 }
 
@@ -197,6 +211,7 @@ export async function storeCloseUpload(opts: {
       sha256: sha,
       storagePath,
       parsedJson: JSON.stringify({ ...parsed, lines, unmapped: unmappedLabels(lines) }),
+      uploadedByUserId: await actingUserId(),
     },
   });
   let rentRollUnits = 0;
@@ -240,14 +255,12 @@ export async function storeCloseUpload(opts: {
       });
     }
   }
-  await prisma.monthEndEvent.create({
-    data: {
-      entityId: opts.entityId,
-      year: opts.year,
-      month: opts.month,
-      action: "UPLOAD",
-      detail: `${opts.filename} · ${classification} · ${lines.length} lines · ${rentRollUnits || "no"} rent-roll units`,
-    },
+  await logMonthEnd({
+    entityId: opts.entityId,
+    year: opts.year,
+    month: opts.month,
+    action: "UPLOAD",
+    detail: `${opts.filename} · ${classification} · ${lines.length} lines · ${rentRollUnits || "no"} rent-roll units`,
   });
   return { uploadId: upload.id, classification, unmapped: unmappedLabels(lines), rentRollUnits, note: parsed.note };
 }
@@ -413,14 +426,12 @@ function softCloseOverrideReason(
 }
 
 async function logControllerOverride(entityId: string, year: number, month: number, reason: string) {
-  await prisma.monthEndEvent.create({
-    data: {
-      entityId,
-      year,
-      month,
-      action: "CONTROLLER_OVERRIDE",
-      detail: reason,
-    },
+  await logMonthEnd({
+    entityId,
+    year,
+    month,
+    action: "CONTROLLER_OVERRIDE",
+    detail: reason,
   });
 }
 
@@ -594,15 +605,14 @@ export async function postCloseToBooks(opts: {
       });
     }
   }
-  await prisma.monthEndEvent.create({
-    data: {
-      entityId: opts.entityId,
-      year: opts.year,
-      month: opts.month,
-      action: "POST",
-      detail: `Posted ${income.length} income lines from ${chosen?.filename ?? "no income file"} and ${balanceDesired.size} balance-sheet lines from ${chosenBalance?.filename ?? "no balance sheet"}`,
-    },
+  await logMonthEnd({
+    entityId: opts.entityId,
+    year: opts.year,
+    month: opts.month,
+    action: "POST",
+    detail: `Posted ${income.length} income lines from ${chosen?.filename ?? "no income file"} and ${balanceDesired.size} balance-sheet lines from ${chosenBalance?.filename ?? "no balance sheet"}`,
   });
+  await clearReviewerSignOff(period.id);
   const explicitIncome = opts.incomeUploadId?.trim();
   const explicitBalance = opts.balanceUploadId?.trim();
   const incomeToSave =
@@ -652,7 +662,10 @@ function savedSourceMissing(
 export async function loadCloseWorkspace(entityId: string, year: number, month: number) {
   const period = await prisma.period.findUnique({
     where: { entityId_year_month: { entityId, year, month } },
-    include: { closeEvents: { orderBy: { createdAt: "asc" } } },
+    include: {
+      closeEvents: { orderBy: { createdAt: "asc" } },
+      checklist: { orderBy: { sortOrder: "asc" } },
+    },
   });
   const uploads = await prisma.monthEndUpload.findMany({
     where: { entityId, year, month },
@@ -860,6 +873,21 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
       postingLabel,
     };
   });
+  const signIds = [
+    period?.preparedByUserId,
+    period?.reviewedByUserId,
+    ...(period?.checklist ?? []).flatMap((item) => [item.preparedByUserId, item.reviewedByUserId]),
+    ...events.map((event) => event.actorUserId),
+    ...(period?.closeEvents ?? []).map((event) => event.actorUserId),
+  ].filter((id): id is string => Boolean(id));
+  const signUsers = signIds.length
+    ? await prisma.appUser.findMany({ where: { id: { in: [...new Set(signIds)] } } })
+    : [];
+  const signName = (id: string | null | undefined) => {
+    if (!id) return null;
+    const user = signUsers.find((row) => row.id === id);
+    return user?.name || user?.email || id;
+  };
   return {
     periodStatus: (period?.status ?? "OPEN") as PeriodCloseStatus,
     defaultIncomeUploadId: effectiveIncome?.id ?? null,
@@ -875,12 +903,34 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     newerBalanceNotice: newerBalance ? newerBalanceNotice(newerBalance.filename) : null,
     missingBalanceNotice: balanceMissing ? MISSING_BALANCE_SOURCE_MESSAGE : null,
     uploads: fileViews,
+    signOff: {
+      preparedBy: signName(period?.preparedByUserId),
+      preparedAt: period?.preparedAt?.toISOString() ?? null,
+      reviewedBy: signName(period?.reviewedByUserId),
+      reviewedAt: period?.reviewedAt?.toISOString() ?? null,
+      ownerSelfApproveReason: period?.ownerSelfApproveReason ?? null,
+      items: (period?.checklist ?? []).map((item) => ({
+        code: item.code,
+        label: item.label,
+        preparedBy: signName(item.preparedByUserId),
+        preparedAt: item.preparedAt?.toISOString() ?? null,
+        reviewedBy: signName(item.reviewedByUserId),
+        reviewedAt: item.reviewedAt?.toISOString() ?? null,
+        ownerSelfApproveReason: item.ownerSelfApproveReason ?? null,
+      })),
+    },
     events: [
-      ...events.map((event) => ({ at: event.createdAt.toISOString(), action: event.action, detail: event.detail })),
+      ...events.map((event) => ({
+        at: event.createdAt.toISOString(),
+        action: event.action,
+        detail: event.detail,
+        actor: signName(event.actorUserId),
+      })),
       ...(period?.closeEvents ?? []).map((event) => ({
         at: event.createdAt.toISOString(),
         action: event.action,
         detail: [event.reason, event.ticket].filter(Boolean).join(" · "),
+        actor: signName(event.actorUserId),
       })),
     ],
     tieOuts,
@@ -920,14 +970,12 @@ export async function setTieOutTolerance(opts: {
       days: opts.days ?? null,
     },
   });
-  await prisma.monthEndEvent.create({
-    data: {
-      entityId: opts.entityId,
-      year: opts.year ?? 0,
-      month: opts.month ?? 0,
-      action: "TOLERANCE",
-      detail: `${key} · cents ${opts.cents ?? "—"} · bps ${opts.bps ?? "—"} · days ${opts.days ?? "—"}`,
-    },
+  await logMonthEnd({
+    entityId: opts.entityId,
+    year: opts.year ?? 0,
+    month: opts.month ?? 0,
+    action: "TOLERANCE",
+    detail: `${key} · cents ${opts.cents ?? "—"} · bps ${opts.bps ?? "—"} · days ${opts.days ?? "—"}`,
   });
 }
 
@@ -1116,15 +1164,14 @@ export async function reverseOperatingJournals(opts: {
       lines: journal.lines,
     });
   }
-  await prisma.monthEndEvent.create({
-    data: {
-      entityId: opts.entityId,
-      year: opts.year,
-      month: opts.month,
-      action: "REVERSE_OPERATING",
-      detail: `${reason} · ${actionable.length} above-NOI journal(s)`,
-    },
+  await logMonthEnd({
+    entityId: opts.entityId,
+    year: opts.year,
+    month: opts.month,
+    action: "REVERSE_OPERATING",
+    detail: `${reason} · ${actionable.length} above-NOI journal(s)`,
   });
+  await clearReviewerSignOff(period.id);
   return {
     reversed: actionable.length,
     journals: actionable.map(({ lines: _lines, ...preview }) => preview),

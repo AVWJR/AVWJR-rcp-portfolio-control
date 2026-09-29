@@ -1,4 +1,4 @@
-import { ChecklistSelect, HardLockButton, ReopenForm, SoftCloseButton } from "@/components/close-forms";
+import { ChecklistSelect, HardLockButton, ReopenForm, SignOffButtons, SoftCloseButton } from "@/components/close-forms";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { periodStatusLabel } from "@/lib/period-close";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +9,12 @@ export default async function ClosePage({
   searchParams: Promise<ReportSearch>;
 }) {
   const params = await searchParams;
+  const people = await prisma.appUser.findMany({ select: { id: true, name: true, email: true } });
+  const nameOf = (id: string | null | undefined) => {
+    if (!id) return "—";
+    const person = people.find((row) => row.id === id);
+    return person?.name || person?.email || id;
+  };
   const periods = await prisma.period.findMany({
     include: { entity: true, checklist: { orderBy: { sortOrder: "asc" } }, closeEvents: true },
     orderBy: [{ year: "asc" }, { month: "asc" }, { entity: { code: "asc" } }],
@@ -75,11 +81,38 @@ export default async function ClosePage({
                     {current.status !== "OPEN" ? <ReopenForm periodId={current.id} /> : null}
                   </div>
                 </div>
+                <div className="border border-cream-300 bg-cream-100 px-4 py-3 text-sm">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-ink-500">Sign-off</p>
+                  <p className="mt-1">
+                    Prepared by {nameOf(current.preparedByUserId)}
+                    {current.preparedAt ? ` · ${current.preparedAt.toISOString().slice(0, 16).replace("T", " ")}` : ""}
+                  </p>
+                  <p>
+                    Reviewed by {nameOf(current.reviewedByUserId)}
+                    {current.reviewedAt ? ` · ${current.reviewedAt.toISOString().slice(0, 16).replace("T", " ")}` : ""}
+                  </p>
+                  {current.ownerSelfApproveReason ? (
+                    <p>Owner self-approval: {current.ownerSelfApproveReason}</p>
+                  ) : (
+                    <p className="text-ink-600">Hard lock needs a reviewer who is not the preparer.</p>
+                  )}
+                  <div className="mt-3">
+                    <SignOffButtons periodId={current.id} />
+                  </div>
+                  <a
+                    className="mt-3 inline-block text-navy-800 underline"
+                    href={`/api/close/audit?entity=${current.entity.code}&period=${current.label}`}
+                  >
+                    Download audit trail
+                  </a>
+                </div>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-cream-300 text-[11px] uppercase tracking-[0.12em] text-ink-500">
                       <th className="py-2 text-left">Controller item</th>
                       <th className="py-2 text-left">Status</th>
+                      <th className="py-2 text-left">Prepared</th>
+                      <th className="py-2 text-left">Reviewed</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -89,6 +122,8 @@ export default async function ClosePage({
                         <td className="py-2">
                           <ChecklistSelect periodId={current.id} code={item.code} status={item.status} />
                         </td>
+                        <td className="py-2 text-ink-600">{nameOf(item.preparedByUserId)}</td>
+                        <td className="py-2 text-ink-600">{nameOf(item.reviewedByUserId)}</td>
                       </tr>
                     ))}
                   </tbody>

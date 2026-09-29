@@ -12,7 +12,7 @@ Entity tree: **HoldCo → OpCo → Property SPE/LLC**. Seed SPEs are 100% owned 
 
 Prisma cannot put `sqlite` and `postgresql` in one schema file. This repo keeps **SQLite as the committed default** so a non-technical Principal can run the demo on a laptop. A generate step (`scripts/prisma-prepare.mjs`) copies `prisma/schema.prisma` → `prisma/schema.active.prisma` for local, or writes a PostgreSQL `prisma/schema.prod.prisma` (pooled `DATABASE_URL` + unpooled `DIRECT_URL`) when the URL is `postgres://` / `postgresql://` or when Vercel builds.
 
-`npm run build` only runs `prisma generate` (no live database). Vercel’s build command is `npm run vercel-build`, which also runs `prisma db push` against Neon so the first deploy creates tables.
+`npm run build` only runs `prisma generate` (no live database). Vercel’s build command is `npm run vercel-build`. That command runs `prisma db push` only when `VERCEL_ENV` is `production` (or when you build on a laptop, where `VERCEL_ENV` is unset). A **preview** deployment skips `prisma db push`, because preview and production share one Neon database and a preview must not change the live schema. Set `PREVIEW_DATABASE_URL` (and optional `PREVIEW_DIRECT_URL`) only when that preview has its own database; the preview then pushes that URL instead of production.
 
 ### Local SQLite demo
 
@@ -111,9 +111,13 @@ curl -X POST "https://<your-app>/api/admin/seed" \
 
 If rows already exist, the route does nothing unless you send `{ "force": true }` (wipes the demo database). Wrong or missing `SEED_SECRET` is rejected; if `SEED_SECRET` is unset, the route returns 404.
 
-### Partner viewer link (optional)
+### People, roles, and backups
 
-This is **not** multi-tenant auth. When `PARTNER_VIEW_TOKEN` (or `VIEWER_PASSWORD`) and/or `PRINCIPAL_PASSWORD` are set (8+ characters), the public URL defaults to **partner view**: dashboards, narratives, and packs are readable; Add Deal, `/admin/seed`, intake uploads, and other writes return 403. Local `npm run dev` stays Principal if those vars are unset.
+Each person signs in with their own email and password. Accounts live in the same Neon database as the books. The owner invites people at **Users** (`/admin/users`). With zero users, the only way to create an account is the first-time owner form, which accepts only `OWNER_EMAIL`. The old shared principal cannot invite anyone. Five failed sign-ins for the same email or the same IP lock that bucket for 15 minutes. Roles are Owner, Controller, Preparer, Reviewer, LP viewer, and Lender viewer. LP and lender viewers only see the deals you check. A hard lock needs a reviewer who is not the preparer. Signing again as preparer, posting the package, or reversing operating journals clears the reviewer sign-off. Click-by-click setup, nightly backups, and restore steps: [docs/RCP_ACCESS_AND_BACKUPS.md](./docs/RCP_ACCESS_AND_BACKUPS.md).
+
+### Partner viewer link (optional, until the first user exists)
+
+This is **not** multi-tenant auth. When `PARTNER_VIEW_TOKEN` (or `VIEWER_PASSWORD`) and/or `PRINCIPAL_PASSWORD` are set (8+ characters), the public URL defaults to **partner view**: dashboards, narratives, and packs are readable; Add Deal, `/admin/seed`, intake uploads, and other writes return 403. Local `npm run dev` stays Principal if those vars are unset. After the first named account exists, the share link stops working unless `LEGACY_PARTNER_TOKEN` is set to `on`.
 
 **Share with an LP / lender:** `https://<your-app>/?share=<PARTNER_VIEW_TOKEN>` (or `/partner`). A gold **Partner view — read only** banner appears.
 
@@ -128,7 +132,9 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | Name | Required | Value |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Neon **pooled** URL (`-pooler` in the hostname), e.g. `postgresql://USER:PASSWORD@ep-xxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require` |
-| `DIRECT_URL` | Yes | Neon **unpooled** URL (no `-pooler`) for `prisma db push` |
+| `DIRECT_URL` | Yes | Neon **unpooled** URL (no `-pooler`) for production `prisma db push` |
+| `PREVIEW_DATABASE_URL` | No | Separate database for a preview. Leave unset so preview builds do not change production |
+| `PREVIEW_DIRECT_URL` | No | Unpooled URL for that preview database. Defaults to `PREVIEW_DATABASE_URL` |
 | `SEED_SECRET` | Yes (to seed) | Random string, **at least 16 characters**. Protects `POST /api/admin/seed` |
 | `TZ` | Yes | `America/New_York` |
 | `NEXT_PUBLIC_RCP_CURRENCY` | Yes | `USD` |
@@ -145,8 +151,12 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | `RCP_DEFAULT_OPCO` | No | Parent OpCo code for new deals, default `RCP-OPCO` |
 | `BLOB_READ_WRITE_TOKEN` | **Required on Vercel for OM / files over ~3.5 MB** | Vercel Blob read-write token. Without it, a 5.5 MB OM gets a Principal message — not a naked 413. Small files still persist in Neon (`StoredBlob`) |
 | `RCP_FILE_STORE` | No | Force `blob`, `db`, or `fs`. Default: Blob when the token is set, `db` on Vercel, `fs` on a laptop |
-| `PARTNER_VIEW_TOKEN` / `VIEWER_PASSWORD` | No | 8+ chars. Turns the public URL into partner view (share `/?share=<token>`). Alias: `VIEWER_PASSWORD` |
-| `PRINCIPAL_PASSWORD` | No | 8+ chars. Unlock writes at `/unlock` or `/?unlock=<password>` |
+| `AUTH_SECRET` | Yes, once you turn on named logins | At least 16 characters. `openssl rand -base64 32`. Alias: `NEXTAUTH_SECRET` |
+| `OWNER_EMAIL` | Yes, for the first account | The owner's email. Open `/login` and create that account once |
+| `LEGACY_PARTNER_TOKEN` | No | Leave unset. `on` keeps the old share link after users exist. `off` turns it off now |
+| `BACKUP_ENCRYPTION_KEY` | Yes, for the nightly backup | Passphrase for AES-256-GCM dumps. GitHub Actions secret, not a Vercel env var |
+| `PARTNER_VIEW_TOKEN` / `VIEWER_PASSWORD` | No | 8+ chars. Old partner view (share `/?share=<token>`). Stops after the first user unless the flag above is `on` |
+| `PRINCIPAL_PASSWORD` | No | 8+ chars. Unlock writes at `/unlock` or `/?unlock=<password>` while the old gate is still on |
 
 Accepted aliases if the Marketplace names differ: `POSTGRES_PRISMA_URL` or `POSTGRES_URL` for the pooled URL; `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` for the direct URL.
 

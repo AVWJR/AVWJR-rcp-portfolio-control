@@ -10,9 +10,19 @@ import {
   signAccessRole,
   viewerForbiddenApi,
 } from "@/lib/access";
+import { legacyFlagMode } from "@/lib/auth/policy";
+import { readValidSessionUserId } from "@/lib/auth/session-cookie";
 import { NextResponse, type NextRequest } from "next/server";
 
 export const runtime = "nodejs";
+
+function nextWithPath(request: NextRequest, role?: string) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-rcp-path", request.nextUrl.pathname);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  if (role) response.headers.set("x-rcp-role", role);
+  return response;
+}
 
 function withRoleCookie(response: NextResponse, role: "principal" | "viewer") {
   response.cookies.set(ACCESS_COOKIE, signAccessRole(role), {
@@ -25,17 +35,26 @@ function withRoleCookie(response: NextResponse, role: "principal" | "viewer") {
   return response;
 }
 
-export function middleware(request: NextRequest) {
-  if (!accessControlEnabled()) return NextResponse.next();
-
+export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
+  const sessionUserId = await readValidSessionUserId(request);
+  if (
+    legacyFlagMode() === "off" ||
+    sessionUserId ||
+    !accessControlEnabled() ||
+    pathname === "/login" ||
+    pathname.startsWith("/api/auth")
+  ) {
+    return nextWithPath(request);
+  }
+
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname === "/unlock" ||
     pathname === "/partner"
   ) {
-    return NextResponse.next();
+    return nextWithPath(request);
   }
 
   const share = searchParams.get("share") ?? searchParams.get("partner");
@@ -53,7 +72,7 @@ export function middleware(request: NextRequest) {
   }
 
   const role = readAccessRole(request.cookies.get(ACCESS_COOKIE)?.value) ?? defaultRoleWhenGated();
-  if (role === "principal") return NextResponse.next();
+  if (role === "principal") return nextWithPath(request, "principal");
 
   if (isViewerBlockedPath(pathname)) {
     const dest = request.nextUrl.clone();
@@ -73,9 +92,7 @@ export function middleware(request: NextRequest) {
     );
   }
 
-  const response = NextResponse.next();
-  response.headers.set("x-rcp-role", "viewer");
-  return response;
+  return nextWithPath(request, "viewer");
 }
 
 export const config = {
