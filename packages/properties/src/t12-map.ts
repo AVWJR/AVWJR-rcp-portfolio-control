@@ -1,3 +1,4 @@
+import { isStatementTotalLabel, mapNormalizedLabel, normalizeVendorLabel } from "./coa-crosswalk";
 import { parseUsdToCents } from "./csv";
 
 export type T12MappedLine = {
@@ -25,32 +26,18 @@ export type T12WorkbookParse = {
 const SKIP_LABEL =
   /^(income|expense|expenses|operating expenses|revenue|revenues|other|totals?|subtotals?|net operating|noi|egi|egr|effective gross|net income|ebitda|below noi|debt service|cap(?:ital)? ex|depreciation|amortization)$/i;
 
-const ACCOUNT_ALIASES: { code: string; re: RegExp }[] = [
-  { code: "4010", re: /\b(gpr|gross potential|potential rent|apartment rent|residential rent|unit rent|rental income|base rent|gross rent)\b/i },
-  { code: "4020", re: /\b(vacancy|vacancy loss|loss to vacancy)\b/i },
-  { code: "4030", re: /\b(concessions?|free rent|loss to lease|ltl)\b/i },
-  { code: "4100", re: /\b(other income|laundry|parking|pet(s)? fee|misc(?:ellaneous)? income|utility reimb|ancillary)\b/i },
-  { code: "5110", re: /\b(payroll|salar|wage|bonus|benefits?)\b/i },
-  { code: "5210", re: /\b(repair|maintenance|make.?ready|turnover|unit turn|r&m)\b/i },
-  { code: "5310", re: /\b(utilit|electric|water|sewer|gas|trash|cable)/i },
-  { code: "5410", re: /\b(contract|landscap|pest|security|elevator|hvac contract)\b/i },
-  { code: "5510", re: /\b(marketing|advertis|promotion)\b/i },
-  { code: "5610", re: /\b(admin|office|legal|professional|telephone|software)/i },
-  { code: "5710", re: /\b(insurance)\b/i },
-  { code: "5810", re: /\b(real estate tax|property tax|taxes)\b/i },
-  { code: "5910", re: /\b(management fee|pm fee|property manag)/i },
-  { code: "5990", re: /\b(other (opex|operating|expense)|miscellaneous expense)\b/i },
-  { code: "6110", re: /\b(interest|mortgage interest)\b/i },
-];
+const OTHER_INCOME_CODES = ["4100", "4110", "4120", "4130", "4140", "4150", "4160", "4170", "4180", "4190"] as const;
+const OPEX_CODES = ["5110", "5120", "5210", "5220", "5310", "5320", "5330", "5340", "5350", "5410", "5510", "5610", "5710", "5810", "5910", "5990"] as const;
 
 /** Yardi cash-book prefixes (4022-000 Unit Rent) → RCP CoA. */
 export function mapYardiCodeToAccount(code: string, label = ""): string | null {
   const n = Number(code);
   if (!Number.isInteger(n)) return null;
   const hay = `${code} ${label}`;
+  if (/loss to lease|gain to lease|\bltl\b/i.test(hay)) return "4015";
   if (n >= 4022 && n <= 4029) return "4010";
   if (n >= 4000 && n <= 4019) return "4010";
-  if (n >= 4030 && n <= 4034) return /concession|free rent|ltl|loss to lease/i.test(hay) ? "4030" : "4020";
+  if (n >= 4030 && n <= 4034) return /concession|free rent/i.test(hay) ? "4030" : "4020";
   if (n >= 4035 && n <= 4039) return "4030";
   if (n >= 4100 && n <= 4199) return "4100";
   if (n >= 5100 && n <= 5199) return "5110";
@@ -85,12 +72,11 @@ export function mapT12LabelToAccount(label: string): string | null {
   if (!text) return null;
   const { code: yardi, rest } = stripYardiPrefix(text);
   const desc = normalizeLabel(rest || text);
-  if (SKIP_LABEL.test(desc) || SKIP_LABEL.test(text)) return null;
-  for (const row of ACCOUNT_ALIASES) {
-    if (row.re.test(desc) || row.re.test(text)) return row.code;
-  }
+  if (SKIP_LABEL.test(desc) || SKIP_LABEL.test(text) || isStatementTotalLabel(desc)) return null;
+  const mapped = mapNormalizedLabel(normalizeVendorLabel(desc));
+  if (mapped.accountCode && !mapped.balanceSheet) return mapped.accountCode;
   if (yardi) return mapYardiCodeToAccount(yardi, desc);
-  return null;
+  return mapped.accountCode;
 }
 
 function cellLooksLikeMonth(raw: string): boolean {
@@ -150,6 +136,87 @@ function absCents(value: bigint): bigint {
   return value < 0n ? -value : value;
 }
 
+const MONTH_NUMBER: Record<string, number> = {
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
+};
+
+/** Month (and optional year) from a T12 column header. */
+export function monthFromHeader(raw: string): { month: number; year: number | null } | null {
+  const value = raw.trim().split(/\n/)[0]?.trim() ?? "";
+  if (!value) return null;
+  const iso = value.match(/^(\d{4})-(\d{2})/);
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]) };
+  const named = value.match(
+    /^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)/i,
+  );
+  if (named) {
+    const month = MONTH_NUMBER[named[1]!.slice(0, 3).toLowerCase()];
+    const year4 = value.match(/(20\d{2}|19\d{2})/);
+    return { month: month ?? 0, year: year4 ? Number(year4[1]) : null };
+  }
+  const slash = value.match(/^(\d{1,2})[./-](\d{4})$/);
+  if (slash) return { month: Number(slash[1]), year: Number(slash[2]) };
+  return null;
+}
+
+export type T12MonthLine = {
+  label: string;
+  accountCode: string | null;
+  /** Null when the close-month cell is blank or not a number. */
+  cents: bigint | null;
+};
+
+/** Amounts from the close-month column. Does not divide the T12 total. */
+export function t12CloseMonthLines(
+  rows: string[][],
+  year: number,
+  month: number,
+): { header: string | null; lines: T12MonthLine[] } {
+  const header = findT12Header(rows);
+  if (!header) return { header: null, lines: [] };
+  const headers = rows[header.index] ?? [];
+  let col: number | null = null;
+  let headerText: string | null = null;
+  for (const idx of header.months) {
+    const parsed = monthFromHeader(headers[idx] ?? "");
+    if (!parsed || parsed.month !== month) continue;
+    if (parsed.year != null && parsed.year !== year) continue;
+    col = idx;
+    headerText = (headers[idx] ?? "").trim();
+    break;
+  }
+  if (col == null) return { header: null, lines: [] };
+  const lines: T12MonthLine[] = [];
+  for (let i = header.index + 1; i < rows.length; i += 1) {
+    const cols = rows[i] ?? [];
+    const label = normalizeLabel(cols[header.labelCol] ?? cols[0] ?? "");
+    if (!label || SKIP_LABEL.test(label) || isStatementTotalLabel(label)) continue;
+    const raw = (cols[col] ?? "").trim();
+    const accountCode = mapT12LabelToAccount(label);
+    if (!raw) {
+      lines.push({ label, accountCode, cents: null });
+      continue;
+    }
+    try {
+      lines.push({ label, accountCode, cents: parseUsdToCents(raw, i + 1, "month") });
+    } catch {
+      lines.push({ label, accountCode, cents: null });
+    }
+  }
+  return { header: headerText, lines };
+}
+
 export function parseT12WorkbookRows(rows: string[][], sheet: string): T12WorkbookParse {
   const header = findT12Header(rows);
   const detected = (header ? rows[header.index] : rows[0] ?? []).filter((c) => c.trim());
@@ -194,15 +261,16 @@ export function parseT12WorkbookRows(rows: string[][], sheet: string): T12Workbo
   }
 
   const amount = (code: string) => byCode.get(code)?.t12Cents ?? 0n;
+  const sumCodes = (codes: readonly string[]) => codes.reduce((acc, code) => acc + amount(code), 0n);
   const gpr = amount("4010");
+  const lossToLease = amount("4015");
   const vacancy = amount("4020");
   const concessions = amount("4030");
-  const otherIncome = amount("4100");
-  const egi = gpr - vacancy - concessions + otherIncome;
-  const opex = (["5110", "5210", "5310", "5410", "5510", "5610", "5710", "5810", "5910", "5990"] as const).reduce(
-    (acc, code) => acc + amount(code),
-    0n,
-  );
+  const nonRevenue = amount("4040");
+  const badDebt = amount("4050");
+  const otherIncome = sumCodes(OTHER_INCOME_CODES);
+  const egi = gpr - lossToLease - vacancy - concessions - nonRevenue - badDebt + otherIncome;
+  const opex = sumCodes(OPEX_CODES);
   return {
     sheet,
     monthCount,

@@ -27,13 +27,39 @@ export function vacantUnits(units: UnitSnapshot[]): UnitSnapshot[] {
   return units.filter((u) => u.status === "VACANT");
 }
 
-/** Σ market rent of rentable units (excludes DOWN). */
-export function rentRollGpr(units: UnitSnapshot[]): bigint {
-  return rentableUnits(units).reduce((acc, u) => acc + u.marketRent, 0n);
+const NON_REVENUE_SUBSTATUS = new Set(["MODEL", "EMPLOYEE", "ADMIN"]);
+
+export function unitSubstatus(unit: { substatus?: string | null }): string {
+  return (unit.substatus ?? "").trim().toUpperCase();
 }
 
+/** Model, employee, and admin units are deducted on 4040 only. They are not loss-to-lease. */
+export function isNonRevenueSubstatus(substatus: string | null | undefined): boolean {
+  return NON_REVENUE_SUBSTATUS.has((substatus ?? "").trim().toUpperCase());
+}
+
+function revenueOccupied(units: UnitSnapshot[]): UnitSnapshot[] {
+  return occupiedUnits(units).filter((unit) => !isNonRevenueSubstatus(unit.substatus));
+}
+
+/**
+ * Σ market rent of rentable units plus model, employee, and admin units.
+ * Truly offline DOWN units stay out of GPR (standard §8.2 / C-4 / RR-1).
+ */
+export function rentRollGpr(units: UnitSnapshot[]): bigint {
+  return units.filter((u) => u.status !== "DOWN").reduce((acc, u) => acc + u.marketRent, 0n);
+}
+
+/** Market rent of model, employee, and admin units. Deducted on 4040. Offline DOWN is excluded. */
+export function rentRollNonRevenue(units: UnitSnapshot[]): bigint {
+  return units
+    .filter((u) => NON_REVENUE_SUBSTATUS.has(unitSubstatus(u)))
+    .reduce((acc, u) => acc + u.marketRent, 0n);
+}
+
+/** Scheduled rent of revenue occupied units. Model, employee, and admin are excluded. */
 export function rentRollInPlace(units: UnitSnapshot[]): bigint {
-  return occupiedUnits(units).reduce((acc, u) => acc + u.inPlaceRent, 0n);
+  return revenueOccupied(units).reduce((acc, u) => acc + u.inPlaceRent, 0n);
 }
 
 /** Vacancy loss from the rent roll = market rent of VACANT units. */
@@ -46,15 +72,24 @@ export function rentRollConcessions(units: UnitSnapshot[]): bigint {
 }
 
 /**
- * Loss-to-lease (monthly) = Σ max(0, market − in-place) on OCCUPIED units.
- * Vacant and DOWN units do not contribute. In-place above market is ignored (no
- * negative LTL). This is not loan-to-value (Phase C).
+ * Loss-to-lease (monthly) = Σ max(0, market − in-place) on revenue occupied units.
+ * Vacant, DOWN, model, employee, and admin units do not contribute. In-place above
+ * market is ignored (no negative LTL). This is not loan-to-value (Phase C).
  */
 export function lossToLease(units: UnitSnapshot[]): bigint {
-  return occupiedUnits(units).reduce((acc, u) => {
+  return revenueOccupied(units).reduce((acc, u) => {
     const gap = u.marketRent - u.inPlaceRent;
     return acc + (gap > 0n ? gap : 0n);
   }, 0n);
+}
+
+/**
+ * Signed loss-to-lease on revenue occupied units. Positive = loss, negative = gain-to-lease.
+ * Model, employee, and admin units are omitted so they hit 4040 only.
+ * The floored KPI remains `lossToLease`.
+ */
+export function signedLossToLease(units: UnitSnapshot[]): bigint {
+  return revenueOccupied(units).reduce((acc, u) => acc + (u.marketRent - u.inPlaceRent), 0n);
 }
 
 /**
@@ -145,6 +180,8 @@ export function summarizeRentRoll(units: UnitSnapshot[]): RentRollKpis {
     economicOccupancyBps: rentRollEconomicOccupancyBps(units),
     economicOccupancyBasis: "rent_roll_in_place_less_concessions_over_gpr",
     lossToLease: lossToLease(units),
+    signedLossToLease: signedLossToLease(units),
+    nonRevenueDeduction: rentRollNonRevenue(units),
     vacancyLoss: rentRollVacancyLoss(units),
     concessions: rentRollConcessions(units),
     gpr: rentRollGpr(units),

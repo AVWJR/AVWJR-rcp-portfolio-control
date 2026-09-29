@@ -27,8 +27,8 @@ export function audienceCfads(snap: PeriodSnapshot, audience: AudienceId): Audie
   if (!snap.waterfallApplied) {
     return {
       cents: pool,
-      label: "CFADS",
-      hint: "Distributions proxy · NOI − PPE − reserve req. 100% look-through until a deal waterfall is saved.",
+      label: "Cash flow before debt service",
+      hint: "Distributions proxy · NOI − PPE − reserve req. Same dollars as CFADS. 100% look-through until a deal waterfall is saved.",
     };
   }
   switch (audience) {
@@ -60,8 +60,8 @@ export function audienceCfads(snap: PeriodSnapshot, audience: AudienceId): Audie
     case "lender":
       return {
         cents: pool,
-        label: "SPE CFADS (book pool)",
-        hint: "Property CFADS before LP/GP split — collateral / coverage stack, not an LP distribution.",
+        label: "Cash flow before debt service (book pool)",
+        hint: "Cash flow before debt service (CFBDS). Same dollars as property CFADS: NOI − capex − reserves, before LP/GP split. Cash flow after debt service subtracts debt service. The AM fee is in neither.",
       };
   }
 }

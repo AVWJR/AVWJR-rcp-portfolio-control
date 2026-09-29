@@ -1,0 +1,447 @@
+import { createHash } from "node:crypto";
+import { inferFileRole } from "@/lib/deals/infer";
+import { MASTER_COA_BY_CODE } from "@rcp/ledger";
+import {
+  isStatementTotalLabel,
+  mapNormalizedLabel,
+  normalizeVendorLabel,
+  parseCsvLines,
+  parseUsdToCents,
+  t12CloseMonthLines,
+  type MapConfidence,
+} from "@rcp/properties";
+import { read, utils } from "xlsx";
+
+export type CloseFileClass =
+  | "rent_roll"
+  | "t12"
+  | "income_statement"
+  | "balance_sheet"
+  | "gl_detail"
+  | "budget"
+  | "pdf"
+  | "other";
+
+export type ParsedCloseLine = {
+  sourceLabel: string;
+  sourceAccountNo: string;
+  accountCode: string | null;
+  signedCents: string;
+  confidence: MapConfidence;
+  balanceSheet: boolean;
+  /** Set when the row has a label but the amount column could not be read. */
+  flag?: string;
+  budgetCents?: string | null;
+  varianceCents?: string | null;
+  ytdCents?: string | null;
+};
+
+export type ImportControl = {
+  sourceNoiCents: string | null;
+  mappedNoiCents: string;
+  noiTies: boolean;
+  sourceNetIncomeCents: string | null;
+  mappedNetIncomeCents: string;
+  netIncomeTies: boolean;
+  blocksPosting: boolean;
+  detail: string;
+};
+
+export type ClassifiedCloseFile = {
+  classification: CloseFileClass;
+  lines: ParsedCloseLine[];
+  unmapped: string[];
+  flagged: string[];
+  note: string;
+  control: ImportControl;
+};
+
+export type CloseParseOptions = {
+  classification?: CloseFileClass;
+  year?: number;
+  month?: number;
+};
+
+const CONTRA_DEBIT = new Set(["4020", "4030", "4040", "4050"]);
+const NOI_GROUPS = new Set(["ltl", "vacancy", "concessions", "nru", "bad_debt"]);
+
+function sha256(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+export { sha256 };
+
+export function classifyCloseFile(filename: string, bytes?: Buffer): CloseFileClass {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (/balance[\s_-]*sheet|\btrial balance\b/.test(lower)) return "balance_sheet";
+  if (/general ledger|gl detail|gl_detail|transaction detail/.test(lower)) return "gl_detail";
+  if (/income statement|profit|p&l|p_l|operating statement/.test(lower) && !/t-?12|trailing/.test(lower)) {
+    return "income_statement";
+  }
+  const role = inferFileRole(filename, bytes);
+  if (role === "rent_roll_csv") return "rent_roll";
+  if (role === "t12_pl") return "t12";
+  if (role === "budget_csv") return "budget";
+  return "other";
+}
+
+function splitAccount(label: string): { sourceAccountNo: string; rest: string } {
+  const match = label.match(/^(\d{3,6})(?:-\d{3})?\s+(.*)$/);
+  if (!match) return { sourceAccountNo: "", rest: label.trim() };
+  return { sourceAccountNo: match[1] ?? "", rest: (match[2] ?? label).trim() };
+}
+
+export function mapStatementLabel(
+  label: string,
+  client?: { accountCode: string } | null,
+): { accountCode: string | null; confidence: MapConfidence; balanceSheet: boolean } {
+  if (client?.accountCode && MASTER_COA_BY_CODE.has(client.accountCode)) {
+    return { accountCode: client.accountCode, confidence: "CLIENT_MAP", balanceSheet: false };
+  }
+  const { rest } = splitAccount(label);
+  if (MASTER_COA_BY_CODE.has(rest)) {
+    return { accountCode: rest, confidence: "EXACT", balanceSheet: false };
+  }
+  const hit = mapNormalizedLabel(rest || label);
+  return { accountCode: hit.accountCode, confidence: hit.confidence, balanceSheet: hit.balanceSheet };
+}
+
+const MONTH_NAMES = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+];
+
+function normHeader(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+type ColumnRole = "label" | "actual" | "budget" | "var" | "ytd" | "debit" | "credit" | "balance" | "amount" | "other" | "blank";
+
+function columnRole(header: string, period?: { year: number; month: number }): ColumnRole {
+  const text = normHeader(header);
+  if (!text) return "blank";
+  if (text.includes("budget") || text === "plan" || text === "bdgt") return "budget";
+  if (text === "var" || text.startsWith("var ") || text.includes("variance")) return "var";
+  if (text.includes("ytd") || text.includes("year to date")) return "ytd";
+  if (text === "debit" || text === "debits") return "debit";
+  if (text === "credit" || text === "credits") return "credit";
+  if (text.includes("balance") || text.includes("running")) return "balance";
+  if (text === "actual" || text === "actuals" || text.endsWith(" actual") || text === "mtd" || text === "current period") {
+    return "actual";
+  }
+  if (/account|description|line item|label|name/.test(text) && !/account no/.test(text)) return "label";
+  if (text === "amount" || text === "amt" || text === "period amount") return "amount";
+  if (period) {
+    const name = MONTH_NAMES[period.month - 1] ?? "";
+    const short = name.slice(0, 3);
+    const ym = `${period.year} ${String(period.month).padStart(2, "0")}`;
+    const compact = text.replace(/\s+/g, "");
+    if (
+      text === name ||
+      text === short ||
+      text.startsWith(`${name} `) ||
+      text.startsWith(`${short} `) ||
+      compact.includes(`${period.year}${String(period.month).padStart(2, "0")}`) ||
+      text.includes(ym)
+    ) {
+      return "actual";
+    }
+  }
+  return "other";
+}
+
+function looksLikeHeader(row: string[], period?: { year: number; month: number }): boolean {
+  const roles = row.map((cell) => columnRole(cell, period));
+  const interesting = roles.filter((role) =>
+    ["actual", "budget", "var", "ytd", "debit", "credit", "balance", "amount"].includes(role),
+  );
+  return interesting.length >= 2 || roles.includes("actual") || (roles.includes("debit") && roles.includes("credit"));
+}
+
+function readAmount(raw: string, line: number): bigint | null {
+  const text = raw.trim();
+  if (!text || /^[a-z\s%]+$/i.test(text)) return null;
+  try {
+    return parseUsdToCents(text, line, "amount");
+  } catch {
+    return null;
+  }
+}
+
+function contraDebit(code: string | null, amount: bigint): bigint {
+  if (!code || !CONTRA_DEBIT.has(code)) return amount;
+  return amount < 0n ? -amount : amount;
+}
+
+type MatrixMode = "statement" | "gl" | "balance";
+
+export function rowsFromMatrix(
+  rows: string[][],
+  opts: { period?: { year: number; month: number }; mode?: MatrixMode } = {},
+): { lines: ParsedCloseLine[]; controlRows: { kind: "noi" | "net_income"; cents: bigint }[] } {
+  const mode = opts.mode ?? "statement";
+  const headerIndex = rows.findIndex((row) => looksLikeHeader(row, opts.period));
+  const header = headerIndex >= 0 ? rows[headerIndex]! : [];
+  const roles = header.map((cell) => columnRole(cell, opts.period));
+  const indexOf = (role: ColumnRole) => roles.indexOf(role);
+  const actualIdx = indexOf("actual") >= 0 ? indexOf("actual") : indexOf("amount");
+  const debitIdx = indexOf("debit");
+  const creditIdx = indexOf("credit");
+  const labelIdx = indexOf("label");
+  const body = headerIndex >= 0 ? rows.slice(headerIndex + 1) : rows;
+  const lines: ParsedCloseLine[] = [];
+  const controlRows: { kind: "noi" | "net_income"; cents: bigint }[] = [];
+
+  body.forEach((row, offset) => {
+    const cells = row.map((cell) => String(cell ?? "").trim());
+    if (cells.every((cell) => !cell)) return;
+    const labelCell =
+      (labelIdx >= 0 ? cells[labelIdx] : "") ||
+      cells.find((cell) => /[a-z]/i.test(cell) && !/^[\d$(),.\-]+$/.test(cell)) ||
+      "";
+    if (!labelCell) return;
+    const labelKey = normalizeVendorLabel(labelCell);
+    const isNoi = /^net operating income$|^noi$/.test(labelKey);
+    const isNet = /^net income$|^grand total$/.test(labelKey);
+    const amountAt = (idx: number): bigint | null => (idx >= 0 ? readAmount(cells[idx] ?? "", offset + 2) : null);
+    let amount: bigint | null = null;
+    let flag: string | undefined;
+    if (mode === "gl" && debitIdx >= 0 && creditIdx >= 0) {
+      const debit = amountAt(debitIdx);
+      const credit = amountAt(creditIdx);
+      if (debit == null && credit == null) flag = "No debit or credit in the activity columns.";
+      else amount = (debit ?? 0n) - (credit ?? 0n);
+    } else if (actualIdx >= 0) {
+      const raw = cells[actualIdx] ?? "";
+      if (!raw.trim()) flag = "No amount in the Actual column.";
+      else {
+        amount = readAmount(raw, offset + 2);
+        if (amount == null) flag = `Could not read the Actual amount "${raw}".`;
+      }
+    } else if (mode === "gl") {
+      flag = "GL detail has no debit/credit or amount column. The running balance was not used.";
+    } else {
+      flag = "No Actual, month, or period column was found. Budget, variance, and YTD were not used.";
+    }
+    if (isNoi || isNet) {
+      if (amount != null) controlRows.push({ kind: isNoi ? "noi" : "net_income", cents: amount });
+      return;
+    }
+    if (isStatementTotalLabel(labelCell)) return;
+    const { sourceAccountNo, rest } = splitAccount(labelCell);
+    const mapped = mapStatementLabel(rest || labelCell);
+    let signed = amount ?? 0n;
+    if (mode === "gl" && amount != null) {
+      const account = mapped.accountCode ? MASTER_COA_BY_CODE.get(mapped.accountCode) : undefined;
+      const keepDebitSign =
+        mapped.accountCode === "4015" || (mapped.accountCode != null && CONTRA_DEBIT.has(mapped.accountCode));
+      if (account?.type === "REVENUE" && !keepDebitSign) signed = -signed;
+    } else {
+      signed = contraDebit(mapped.accountCode, signed);
+    }
+    lines.push({
+      sourceLabel: rest || labelCell,
+      sourceAccountNo,
+      accountCode: mapped.accountCode,
+      signedCents: signed.toString(),
+      confidence: mapped.confidence,
+      balanceSheet: mapped.balanceSheet || mode === "balance",
+      flag,
+      budgetCents: amountAt(indexOf("budget"))?.toString() ?? null,
+      varianceCents: amountAt(indexOf("var"))?.toString() ?? null,
+      ytdCents: amountAt(indexOf("ytd"))?.toString() ?? null,
+    });
+  });
+  return { lines: dedupe(lines), controlRows };
+}
+
+function dedupe(lines: ParsedCloseLine[]): ParsedCloseLine[] {
+  const byKey = new Map<string, ParsedCloseLine>();
+  for (const line of lines) {
+    const key = `${line.flag ? "FLAG|" : ""}${line.accountCode ?? "UNMAPPED"}|${normalizeVendorLabel(line.sourceLabel)}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { ...line });
+      continue;
+    }
+    if (line.flag || existing.flag) {
+      existing.flag = existing.flag ?? line.flag;
+      continue;
+    }
+    existing.signedCents = (BigInt(existing.signedCents) + BigInt(line.signedCents)).toString();
+  }
+  return [...byKey.values()];
+}
+
+function workbookRows(bytes: Buffer): string[][] {
+  const workbook = read(bytes, { type: "buffer", raw: false });
+  const sheetName =
+    workbook.SheetNames.find((name) => /income|p&l|profit|balance|gl|general|operating|t12|trailing/i.test(name)) ??
+    workbook.SheetNames[0];
+  const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+  if (!sheet) return [];
+  return utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" }) as string[][];
+}
+
+function pdfText(bytes: Buffer): string {
+  const raw = bytes.toString("latin1");
+  const parts: string[] = [];
+  const re = /\((?:\\\)|\\.|[^)]){2,160}\)/g;
+  for (const match of raw.match(re) ?? []) {
+    const text = match.slice(1, -1).replace(/\\n/g, " ").replace(/\\(.)/g, "$1");
+    if (/[A-Za-z]/.test(text)) parts.push(text);
+  }
+  return parts.join("\n");
+}
+
+function lineEffect(line: ParsedCloseLine, which: "noi" | "net"): bigint {
+  if (!line.accountCode || line.flag) return 0n;
+  const account = MASTER_COA_BY_CODE.get(line.accountCode);
+  if (!account) return 0n;
+  const amount = BigInt(line.signedCents);
+  const mag = amount < 0n ? -amount : amount;
+  const group = account.reportGroup;
+  if (group === "gpr" || group === "other_income" || group === "am_income") return amount;
+  if (line.accountCode === "4015") return -amount;
+  if (NOI_GROUPS.has(group) || group.startsWith("opex_")) return -mag;
+  if (which === "net" && (account.isBelowNoi || group === "interest" || group === "depreciation")) return -mag;
+  return 0n;
+}
+
+export function importControl(lines: ParsedCloseLine[], controlRows: { kind: "noi" | "net_income"; cents: bigint }[]): ImportControl {
+  const mappedNoi = lines.reduce((acc, line) => acc + lineEffect(line, "noi"), 0n);
+  const mappedNi = lines.reduce((acc, line) => acc + lineEffect(line, "net"), 0n);
+  const noiRow = controlRows.find((row) => row.kind === "noi") ?? null;
+  const niRow = controlRows.find((row) => row.kind === "net_income") ?? null;
+  const noiTies = noiRow == null || noiRow.cents === mappedNoi;
+  const netIncomeTies = niRow == null || niRow.cents === mappedNi;
+  const flagged = lines.filter((line) => line.flag);
+  const blocksPosting = !noiTies || !netIncomeTies || flagged.length > 0;
+  const parts: string[] = [];
+  if (noiRow && !noiTies) parts.push(`Source NOI ${noiRow.cents} does not equal mapped NOI ${mappedNoi}.`);
+  if (niRow && !netIncomeTies) parts.push(`Source net income ${niRow.cents} does not equal mapped net income ${mappedNi}.`);
+  if (flagged.length) parts.push(`${flagged.length} labeled row(s) had no readable amount and were not dropped.`);
+  if (!noiRow && !niRow) parts.push("No NOI or net-income control total was found in the file.");
+  if (!blocksPosting) parts.push("Import control totals tie to the mapped lines.");
+  return {
+    sourceNoiCents: noiRow ? noiRow.cents.toString() : null,
+    mappedNoiCents: mappedNoi.toString(),
+    noiTies,
+    sourceNetIncomeCents: niRow ? niRow.cents.toString() : null,
+    mappedNetIncomeCents: mappedNi.toString(),
+    netIncomeTies,
+    blocksPosting,
+    detail: parts.join(" "),
+  };
+}
+
+function finish(kind: CloseFileClass, lines: ParsedCloseLine[], note: string, controlRows: { kind: "noi" | "net_income"; cents: bigint }[] = []): ClassifiedCloseFile {
+  const control = importControl(lines, controlRows);
+  return {
+    classification: kind,
+    lines,
+    unmapped: lines.filter((line) => !line.accountCode).map((line) => line.sourceLabel),
+    flagged: lines.filter((line) => line.flag).map((line) => `${line.sourceLabel}: ${line.flag}`),
+    note: control.blocksPosting ? `${note} ${control.detail}` : note,
+    control,
+  };
+}
+
+function linesFromT12(bytes: Buffer, filename: string, period?: { year: number; month: number }): { lines: ParsedCloseLine[]; note: string } {
+  const rows = workbookRows(bytes);
+  if (!period) {
+    return { lines: [], note: `${filename}: a close period is required so the T12 posts that month's column, not the trailing total.` };
+  }
+  const parsed = t12CloseMonthLines(rows, period.year, period.month);
+  if (!parsed.header) {
+    return {
+      lines: [],
+      note: `T12 has no column for ${period.year}-${String(period.month).padStart(2, "0")}. The trailing total was not divided into the month.`,
+    };
+  }
+  const lines: ParsedCloseLine[] = parsed.lines.map((line) => {
+    const mapped = mapStatementLabel(line.label);
+    const code = line.accountCode ?? mapped.accountCode;
+    const amount = line.cents == null ? 0n : contraDebit(code, line.cents);
+    return {
+      sourceLabel: line.label,
+      sourceAccountNo: "",
+      accountCode: code,
+      signedCents: amount.toString(),
+      confidence: mapped.confidence,
+      balanceSheet: false,
+      flag: line.cents == null ? "No amount in the close-month column." : undefined,
+    };
+  });
+  return { lines, note: `T12 column ${parsed.header} is the period actual.` };
+}
+
+export function parseCloseFile(filename: string, bytes: Buffer, opts: CloseParseOptions = {}): ClassifiedCloseFile {
+  const kind = opts.classification ?? classifyCloseFile(filename, bytes);
+  const period = opts.year && opts.month ? { year: opts.year, month: opts.month } : undefined;
+  if (kind === "rent_roll") {
+    return finish(kind, [], "Rent roll — parsed by the existing multi-dialect ingest, not the GL crosswalk.");
+  }
+  try {
+    if (kind === "t12") {
+      const parsed = linesFromT12(bytes, filename, period);
+      return finish(kind, parsed.lines, parsed.note);
+    }
+    if (kind === "pdf") {
+      const text = pdfText(bytes);
+      const rows = text.split(/\n/).map((line) => line.split(/\s{2,}|\t/));
+      const matrix = rowsFromMatrix(rows, { period, mode: "statement" });
+      return finish(
+        kind,
+        matrix.lines,
+        matrix.lines.length
+          ? "PDF text was extracted and mapped. Confirm the lines before posting."
+          : "PDF stored with the package. No statement lines could be read — keep the Excel or CSV beside it.",
+        matrix.controlRows,
+      );
+    }
+    const tabular = filename.toLowerCase().endsWith(".csv") ? parseCsvLines(bytes.toString("utf8")) : workbookRows(bytes);
+    const mode: MatrixMode = kind === "gl_detail" ? "gl" : kind === "balance_sheet" ? "balance" : "statement";
+    const matrix = rowsFromMatrix(tabular, { period, mode });
+    return finish(
+      kind,
+      matrix.lines,
+      kind === "balance_sheet"
+        ? "Balance sheet lines. Posting applies the change from the current books."
+        : kind === "gl_detail"
+          ? "GL detail uses debit, credit, or amount. The running balance is not posted."
+          : "Statement lines use the Actual, month, or period column. Budget, variance, and YTD stay off the books.",
+      matrix.controlRows,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not read this file.";
+    return finish(kind, [], message);
+  }
+}
+
+export function applyRememberedMaps(
+  lines: ParsedCloseLine[],
+  maps: { normalizedLabel: string; sourceAccountNo: string; accountCode: string }[],
+): ParsedCloseLine[] {
+  return lines.map((line) => {
+    const key = normalizeVendorLabel(line.sourceLabel);
+    const hit = maps.find(
+      (row) =>
+        row.normalizedLabel === key &&
+        (row.sourceAccountNo === "" || row.sourceAccountNo === line.sourceAccountNo),
+    );
+    if (!hit || !MASTER_COA_BY_CODE.has(hit.accountCode)) return line;
+    return { ...line, accountCode: hit.accountCode, confidence: "CLIENT_MAP" };
+  });
+}

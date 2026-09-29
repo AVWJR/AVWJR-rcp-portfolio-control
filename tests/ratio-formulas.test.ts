@@ -93,9 +93,9 @@ describe("ratio helpers", () => {
     expect(concentrationBps(1n, 0n)).toBeNull();
   });
 
-  it("tags controllable OpEx separately from insurance, taxes, and PM fees", () => {
-    expect(CONTROLLABLE_OPEX_CODES).toEqual(["5110", "5210", "5310", "5410", "5510", "5610", "5990"]);
-    expect(NON_CONTROLLABLE_OPEX_CODES).toEqual(["5710", "5810"]);
+  it("tags utilities, insurance, and taxes as non-controllable and the PM fee as controllable", () => {
+    expect(CONTROLLABLE_OPEX_CODES).toEqual(["5110", "5120", "5210", "5220", "5410", "5510", "5610", "5910", "5990"]);
+    expect(NON_CONTROLLABLE_OPEX_CODES).toEqual(["5310", "5320", "5330", "5340", "5350", "5710", "5810"]);
     expect(OPCO_GA_CODES).toEqual(["5110", "5610", "5990"]);
   });
 });

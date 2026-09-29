@@ -125,21 +125,21 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
   {
     id: "controllable_opex",
     label: "Controllable OpEx",
-    formula: "5110 + 5210 + 5310 + 5410 + 5510 + 5610 + 5990",
+    formula: "5110 + 5120 + 5210 + 5220 + 5410 + 5510 + 5610 + 5910 + 5990",
     unit: "usd_cents",
     noiDefinition: "period",
     source: "gl",
     status: "ready",
     phase: "D",
     description:
-      "Tagged controllable: payroll, R&M, utilities, contracts, marketing, admin, other. Non-controllable: insurance 5710 and RE taxes 5810. PM fees 5910 are contractual and excluded from this tag.",
+      "Controllable: payroll, R&M, contracts, marketing, admin, property management fee, other. Non-controllable: utilities 5310, insurance 5710, and RE taxes 5810.",
     contributors: [
       { kind: "account", code: "5110", label: "Payroll (controllable)", statement: "os" },
       { kind: "account", code: "5210", label: "Repairs & Maintenance (controllable)", statement: "os" },
-      { kind: "account", code: "5310", label: "Utilities (controllable)", statement: "os" },
       { kind: "account", code: "5410", label: "Contract Services (controllable)", statement: "os" },
       { kind: "account", code: "5510", label: "Marketing (controllable)", statement: "os" },
       { kind: "account", code: "5610", label: "Administrative (controllable)", statement: "os" },
+      { kind: "account", code: "5910", label: "Property Management Fees (controllable)", statement: "os" },
       { kind: "account", code: "5990", label: "Other Operating Expenses (controllable)", statement: "os" },
     ],
   },
@@ -196,8 +196,9 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
   },
   {
     id: "cfads",
-    label: "CFADS",
-    formula: "Period NOI − period PPE additions − monthly reserve requirement",
+    label: "Cash flow before debt service",
+    formula:
+      "Period NOI − period PPE additions − monthly reserve requirement. Alias CFADS / CFBDS. Cash flow after debt service = this figure − (interest + principal). The AM fee is not deducted.",
     unit: "usd_cents",
     noiDefinition: "period",
     source: "mixed",

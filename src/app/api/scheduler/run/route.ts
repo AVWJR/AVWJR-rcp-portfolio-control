@@ -1,3 +1,4 @@
+import { resolveReportingPeriod } from "@/lib/period-default";
 import { runScheduledPack } from "@/lib/scheduler";
 import { serialize } from "@/lib/serialize";
 import { NextResponse } from "next/server";
@@ -8,7 +9,7 @@ export async function POST(request: Request) {
   const body = (await request.json()) as { packId?: string; entity?: string; period?: string; jobCode?: string };
   const packId = body.packId ?? "monthly_investor";
   const entity = body.entity ?? "SPE-WBG";
-  const period = body.period ?? "2026-08";
+  const period = await resolveReportingPeriod(entity, body.period);
   try {
     const result = await runScheduledPack({
       packId,

@@ -22,6 +22,29 @@ export async function loadBudgetMap(opts: {
   return map;
 }
 
+/** Sum of monthly budget lines from January through the close month. */
+export async function loadYtdBudgetMap(opts: {
+  entityIds: string[];
+  year: number;
+  month: number;
+  eliminate?: boolean;
+}): Promise<BudgetByCode> {
+  const rows = await prisma.budgetLine.findMany({
+    where: {
+      entityId: { in: opts.entityIds },
+      year: opts.year,
+      month: { gte: 1, lte: opts.month },
+    },
+  });
+  const map: BudgetByCode = new Map();
+  const skip = new Set<string>(opts.eliminate ? ELIMINATION_CODES : []);
+  for (const row of rows) {
+    if (skip.has(row.accountCode)) continue;
+    map.set(row.accountCode, (map.get(row.accountCode) ?? 0n) + row.amount);
+  }
+  return map;
+}
+
 export async function replaceBudget(opts: {
   entityId: string;
   year: number;

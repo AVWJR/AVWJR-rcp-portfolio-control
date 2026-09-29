@@ -1,3 +1,4 @@
+import { resolveReportingPeriod } from "@/lib/period-default";
 import { buildAllStatements } from "@/lib/reports-server";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -10,7 +11,7 @@ export async function GET(
   const { statement } = await context.params;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "RCP-OPCO";
-  const period = url.searchParams.get("period") ?? "2026-08";
+  const period = await resolveReportingPeriod(code, url.searchParams.get("period"));
   const [year, month] = period.split("-").map(Number);
   const view = url.searchParams.get("view");
   const consolidated = view === "consolidated" || view === "combined";

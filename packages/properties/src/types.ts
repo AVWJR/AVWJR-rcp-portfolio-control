@@ -19,6 +19,8 @@ export type UnitSnapshot = {
   bathsTenths: number;
   sqft: number;
   status: UnitStatus;
+  /** MODEL, EMPLOYEE, ADMIN, or DOWN. Offline DOWN is not collapsed from model/employee/admin. */
+  substatus?: string;
   marketRent: bigint;
   inPlaceRent: bigint;
   leaseStart: Date | null;
@@ -37,6 +39,10 @@ export type RentRollKpis = {
   economicOccupancyBps: number | null;
   economicOccupancyBasis: "rent_roll_in_place_less_concessions_over_gpr";
   lossToLease: bigint;
+  /** Signed market − lease on occupied units. Positive = loss. */
+  signedLossToLease: bigint;
+  /** Market rent of model, employee, and admin units, deducted on 4040. Offline DOWN is not included. */
+  nonRevenueDeduction: bigint;
   vacancyLoss: bigint;
   concessions: bigint;
   gpr: bigint;

@@ -22,6 +22,7 @@ import {
   normalizeHeader,
   parseBrokerDate,
   parseRentRollStatus,
+  parseUnitSubstatus,
 } from "../rent-roll-map";
 import type { UnitStatus } from "../types";
 
@@ -44,6 +45,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   leaseExpiration: ["lease expiration", "lease expire", "lease end", "lease to", "expiration"],
   moveOut: ["move out date", "move out", "move-out"],
   balance: ["balance", "amt balance", "ar balance"],
+  status: ["occupancy status", "occ status", "unit status", "status"],
 };
 
 type ColMap = Partial<Record<keyof typeof FIELD_ALIASES, number>>;
@@ -91,6 +93,7 @@ function mapLeaseChargeHeaders(headers: string[]): { map: ColMap; used: Set<numb
       "market",
       "amount",
       "balance",
+      "status",
       "deposit",
       "resident",
       "unit",
@@ -321,26 +324,50 @@ function parseMetaLabelRows(
   }
 }
 
+/** Resident name / id tokens for model, employee, admin, and down, mapped onto the sub-status. */
+function nonRevenueIdentity(raw: string): { status: UnitStatus; substatus: string } | null {
+  const sub = parseUnitSubstatus(raw);
+  if (sub === "DOWN") return { status: "DOWN", substatus: "DOWN" };
+  if (sub === "MODEL" || sub === "EMPLOYEE" || sub === "ADMIN") return { status: "OCCUPIED", substatus: sub };
+  const status = parseRentRollStatus(raw);
+  if (status === "DOWN") return { status: "DOWN", substatus: "DOWN" };
+  return null;
+}
+
 function inferStatus(opts: {
   section: string | null;
   residentId: string;
   residentName: string;
+  statusCell: string;
   inPlace: bigint;
-}): UnitStatus {
-  const fromResident = parseRentRollStatus(opts.residentName) ?? parseRentRollStatus(opts.residentId);
-  if (fromResident) return fromResident;
+}): { status: UnitStatus; substatus: string } {
+  const explicit = parseUnitSubstatus(opts.statusCell);
+  if (explicit === "DOWN") return { status: "DOWN", substatus: "DOWN" };
+  if (explicit === "MODEL" || explicit === "EMPLOYEE" || explicit === "ADMIN") {
+    return { status: "OCCUPIED", substatus: explicit };
+  }
+  const fromStatus = parseRentRollStatus(opts.statusCell);
+  if (fromStatus) return { status: fromStatus, substatus: fromStatus === "DOWN" ? "DOWN" : "" };
+  for (const raw of [opts.residentName, opts.residentId]) {
+    const named = nonRevenueIdentity(raw);
+    if (named) return named;
+  }
   if (/^(vacant|vac|empty|n\/a|-)$/i.test(opts.residentName) || /^(vacant|vac)$/i.test(opts.residentId)) {
-    return "VACANT";
+    return { status: "VACANT", substatus: "" };
   }
   const section = (opts.section ?? "").toLowerCase();
   const mixedSection = /current/.test(section) && /vacant/.test(section);
-  if (/\b(down|model|admin|offline)\b/.test(`${section} ${opts.residentName} ${opts.residentId}`)) return "DOWN";
+  const hay = `${section} ${opts.statusCell}`;
+  if (/\bmodel\b/.test(hay)) return { status: "OCCUPIED", substatus: "MODEL" };
+  if (/\bemployee\b/.test(hay)) return { status: "OCCUPIED", substatus: "EMPLOYEE" };
+  if (/\b(admin|office)\b/.test(hay)) return { status: "OCCUPIED", substatus: "ADMIN" };
+  if (/\b(down|offline)\b/.test(hay)) return { status: "DOWN", substatus: "DOWN" };
   if (!mixedSection && /^vacant\b|vacant residents/.test(section) && !opts.residentName && !opts.residentId) {
-    return "VACANT";
+    return { status: "VACANT", substatus: "" };
   }
-  if (opts.residentName || opts.residentId || opts.inPlace > 0n) return "OCCUPIED";
-  if (!mixedSection && /vacant/.test(section)) return "VACANT";
-  return "VACANT";
+  if (opts.residentName || opts.residentId || opts.inPlace > 0n) return { status: "OCCUPIED", substatus: "" };
+  if (!mixedSection && /vacant/.test(section)) return { status: "VACANT", substatus: "" };
+  return { status: "VACANT", substatus: "" };
 }
 
 function unusedCells(
@@ -375,6 +402,7 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
   const unmapped: NormalizedRentRoll["unmapped"] = [];
   const warnings: string[] = [];
   parseMetaLabelRows(rows, found.index, meta, unmapped);
+  if (map.balance != null) meta.extras.has_balance_column = "yes";
   if (!meta.monthYear && meta.asOfDate) {
     const d = new Date(`${meta.asOfDate}T16:00:00.000Z`);
     if (!Number.isNaN(d.getTime())) {
@@ -493,15 +521,17 @@ export function parseYardiLeaseCharges(rows: string[][], opts: DialectParseOpts 
         section,
         residentId,
         residentName,
+        statusCell: cell(row, map.status),
         inPlace: amount,
       });
+      if (status.substatus) extras.unit_substatus = status.substatus;
       const unit: CanonicalUnit = {
         unitCode: rawUnit,
         unitType,
         beds: inferBedsFromUnitType(unitType),
         bathsTenths: 0,
         sqft: sqftRaw ? Number(sqftRaw.replace(/[, ]/g, "")) || 0 : 0,
-        status,
+        status: status.status,
         section,
         residentId: residentName && residentId === residentName ? "" : residentId,
         residentName: residentName || (residentId && !/^\d+$/.test(residentId) ? residentId : ""),

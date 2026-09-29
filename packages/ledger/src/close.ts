@@ -21,6 +21,13 @@ export class ReopenRequiresReasonError extends Error {
   }
 }
 
+export class SuspenseOpenError extends Error {
+  constructor(message = "Suspense 1999 must be zero before a hard lock") {
+    super(message);
+    this.name = "SuspenseOpenError";
+  }
+}
+
 export class ChecklistIncompleteError extends Error {
   constructor(message = "Hard lock requires every checklist item to be DONE or N/A") {
     super(message);
@@ -124,6 +131,12 @@ export function assertChecklistComplete(items: { status: string }[]) {
 export function assertSoftClose(status: PeriodCloseStatus) {
   if (status !== "OPEN") {
     throw new InvalidCloseTransitionError("Soft close is allowed only from OPEN");
+  }
+}
+
+export function assertSuspenseClear(suspenseNetCents: bigint) {
+  if (suspenseNetCents !== 0n) {
+    throw new SuspenseOpenError();
   }
 }
 

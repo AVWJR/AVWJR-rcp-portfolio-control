@@ -96,7 +96,7 @@ function pp(bps: number): string {
 export function chartSoWhat(id: ChartId, snap: PeriodSnapshot, suite: ChartSuite): string {
   switch (id) {
     case "waterfall_gpr_noi_btcf":
-      return `BTCF is ${formatUsd(snap.btcfCents)} after debt service — AM fees sit below NOI and are not in this stack.`;
+      return `Cash flow after debt service is ${formatUsd(snap.btcfCents)} (NOI − interest − principal). Cash flow before debt service is NOI − capex − reserves, the same dollars as CFADS. Section 2.5 subtracts debt service from that before-debt-service figure. AM fees sit below NOI and are not in this stack.`;
     case "trends_noi_occupancy_opex_dscr":
       return suite.trends.occupancyNote;
     case "opex_composition":
@@ -455,7 +455,7 @@ function appendixTables(snap: PeriodSnapshot, suite: ChartSuite, leftover: Chart
       soWhat: waterfallSplitSentence(snap),
       headers: ["Slice", "Amount"],
       rows: [
-        ["CFADS pool (look-through)", formatUsd(snap.cfadsLookThroughCents)],
+        ["Cash flow before debt service (CFADS pool, look-through)", formatUsd(snap.cfadsLookThroughCents)],
         ["LP share after waterfall", formatUsd(snap.lpShareOfDistributableCents)],
         ["GP/RCP after waterfall", formatUsd(snap.rcpShareOfDistributableCents)],
         ...(snap.coGpShareOfDistributableCents > 0n

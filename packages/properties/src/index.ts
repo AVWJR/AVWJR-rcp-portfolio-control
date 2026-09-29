@@ -8,5 +8,8 @@ export * from "./rent-roll-canonical";
 export * from "./rent-roll-dialects";
 export * from "./rent-roll-template";
 export * from "./t12-map";
+export * from "./coa-crosswalk";
+export * from "./lease-summary";
+export * from "./tie-outs";
 export * from "./demo-rent-roll";
 export * from "./demo-budget";

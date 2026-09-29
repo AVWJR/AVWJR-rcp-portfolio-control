@@ -2,6 +2,8 @@
 
 Master template cloned onto every HoldCo, OpCo, and SPE. Numbered practical multifamily CoA. Amounts are USD.
 
+Monthly statement codes added for the close workspace (`4015` loss/gain to lease, `4040` non-revenue units, `4050` bad debt, `1999` suspense, and the other income / utility splits) are in `docs/RCP_MONTHLY_FS_STANDARD.md`. `4015` and `4040` are their own groups so they do not fold into concessions or vacancy. `6120` is not inside the interest group used for DSCR. `2215` is not inside long-term debt, so principal paydown is unchanged. Unused codes contribute zero.
+
 | Code | Name | Type | Notes |
 | --- | --- | --- | --- |
 | **1000s Assets** | | | |

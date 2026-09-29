@@ -34,6 +34,14 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    test: /^\/deals\/[^/]+\/close$/,
+    title: "Month-end close",
+    hints: [
+      "Drop the manager package. Files are classified and kept.",
+      "Map unmapped lines before hard lock. Reopen needs a reason and a ticket.",
+    ],
+  },
+  {
     test: /^\/dashboard$/,
     title: "Dashboards",
     hints: ["OpCo combined roll-up and SPE property dashboards. HoldCo has no operating dashboard."],
@@ -224,6 +232,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "debt", href: "/debt", label: "Debt", hint: "Loan file and covenants" },
   { id: "capex", href: "/capex", label: "CapEx", hint: "CIP and R&M" },
   { id: "close", href: "/close", label: "Close", hint: "Soft close / hard lock" },
+  { id: "month_end", href: "/deals", label: "Month-end close", hint: "Upload a manager package on the SPE card — how do I upload August close for Hampton?" },
   { id: "tax", href: "/tax", label: "Tax bridge", hint: "CPA worksheet — does not file" },
   { id: "k1", href: "/tax/k1", label: "K-1 export", hint: "Partner capital — not a filed K-1" },
   { id: "vault", href: "/vault", label: "Vault", hint: "Entity documents" },

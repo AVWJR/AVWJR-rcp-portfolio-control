@@ -137,6 +137,11 @@ model Entity {
   reportJobs       ReportJob[]
   dealIntakes      DealIntake[]
   waterfall        SpeWaterfall?
+  vendorAccountMaps VendorAccountMap[]
+  monthEndUploads  MonthEndUpload[]
+  leaseSnapshots   LeasePeriodSnapshot[]
+  monthEndEvents   MonthEndEvent[]
+  tieOutTolerances TieOutTolerance[]
 }
 
 /// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
@@ -207,6 +212,7 @@ model Period {
   reopenedAt     DateTime?
   reopenReason   String?
   reopenTicket   String?
+  basis          String       @default("ACCRUAL")
   createdAt      DateTime     @default(now())
 
   journals  Journal[]
@@ -226,12 +232,16 @@ model Journal {
   memo        String
   source      String        @default("manual")
   status      JournalStatus @default(DRAFT)
-  postedAt    DateTime?
-  createdAt   DateTime      @default(now())
+  postedAt          DateTime?
+  reversesJournalId String?
+  reversesJournal   Journal?  @relation("JournalReversal", fields: [reversesJournalId], references: [id], onDelete: SetNull)
+  reversedBy        Journal[] @relation("JournalReversal")
+  createdAt         DateTime  @default(now())
 
   lines JournalLine[]
 
   @@index([entityId, periodId, status])
+  @@index([reversesJournalId])
 }
 
 model JournalLine {
@@ -259,6 +269,8 @@ model Unit {
   bathsTenths     Int // 10 = 1.0 bath, 15 = 1.5
   sqft            Int
   status          UnitStatus
+  /// MODEL, EMPLOYEE, ADMIN, or DOWN. Null on ordinary occupied and vacant units.
+  substatus       String?
   marketRent      BigInt
   inPlaceRent     BigInt     @default(0)
   leaseStart      DateTime?
@@ -627,4 +639,83 @@ model ReportJobRun {
   periodLabel String
 
   @@index([jobId, startedAt])
+}
+
+/// Remembered vendor-line → RCP account map for one SPE. Additive. Never deletes history.
+model VendorAccountMap {
+  id              String   @id @default(cuid())
+  entityId        String
+  entity          Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sourceSystem    String   @default("")
+  sourceAccountNo String   @default("")
+  normalizedLabel String
+  accountCode     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([entityId, sourceSystem, sourceAccountNo, normalizedLabel])
+  @@index([entityId])
+}
+
+/// Original month-end file. Rows are insert-only — closed months are not overwritten by deleting these.
+model MonthEndUpload {
+  id             String   @id @default(cuid())
+  entityId       String
+  entity         Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  filename       String
+  mimeType       String   @default("application/octet-stream")
+  classification String
+  byteSize       Int
+  sha256         String
+  storagePath    String
+  parsedJson     String   @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@index([entityId, year, month])
+}
+
+/// Period snapshot of the tenant/lease master. The live Unit table stays the current rent roll.
+model LeasePeriodSnapshot {
+  id          String   @id @default(cuid())
+  entityId    String
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year        Int
+  month       Int
+  unitCode    String
+  payloadJson String
+  createdAt   DateTime @default(now())
+
+  @@unique([entityId, year, month, unitCode])
+  @@index([entityId, year, month])
+}
+
+/// Per-SPE tie-out tolerance. No row means no threshold. Do not seed defaults.
+model TieOutTolerance {
+  id        String   @id @default(cuid())
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  key       String
+  cents     BigInt?
+  bps       Int?
+  days      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entityId, key])
+  @@index([entityId])
+}
+
+model MonthEndEvent {
+  id        String   @id @default(cuid())
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year      Int
+  month     Int
+  action    String
+  detail    String
+  createdAt DateTime @default(now())
+
+  @@index([entityId, year, month])
 }
