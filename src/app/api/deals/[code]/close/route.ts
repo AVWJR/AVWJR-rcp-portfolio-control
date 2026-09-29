@@ -27,6 +27,16 @@ function optionalInt(value: unknown): number | null {
   return parsed;
 }
 
+function textOrEmpty(value: unknown): string {
+  if (value == null) return "";
+  return String(value);
+}
+
+function incomeUploadIdFrom(value: unknown): string | undefined {
+  const text = textOrEmpty(value).trim();
+  return text || undefined;
+}
+
 async function speOrThrow(code: string) {
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity || entity.type !== "SPE") {
@@ -69,6 +79,8 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         bps?: string | number | null;
         days?: string | number | null;
         confirm?: boolean | string;
+        controllerOverride?: boolean | string;
+        incomeUploadId?: string;
       };
       year = Number(body.year);
       month = Number(body.month);
@@ -100,7 +112,14 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         return NextResponse.json({ ok: true });
       }
       if (body.action === "post") {
-        await postCloseToBooks({ entityId: entity.id, year, month });
+        await postCloseToBooks({
+          entityId: entity.id,
+          year,
+          month,
+          incomeUploadId: incomeUploadIdFrom(body.incomeUploadId),
+          controllerOverride: body.controllerOverride,
+          reason: textOrEmpty(body.reason),
+        });
         return NextResponse.json({ ok: true });
       }
       if (body.action === "reverse-operating") {
@@ -112,6 +131,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
           year,
           month,
           reason: body.reason ?? "",
+          controllerOverride: body.controllerOverride,
         });
         return NextResponse.json({ ok: true, reversed: reversed.reversed });
       }
@@ -159,7 +179,14 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       return wantsHtml ? back() : NextResponse.json({ ok: true });
     }
     if (action === "post") {
-      await postCloseToBooks({ entityId: entity.id, year, month });
+      await postCloseToBooks({
+        entityId: entity.id,
+        year,
+        month,
+        incomeUploadId: incomeUploadIdFrom(form.get("incomeUploadId")),
+        controllerOverride: textOrEmpty(form.get("controllerOverride")),
+        reason: textOrEmpty(form.get("reason")),
+      });
       return wantsHtml ? back() : NextResponse.json({ ok: true });
     }
     if (action === "reverse-operating") {
@@ -171,6 +198,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         year,
         month,
         reason: String(form.get("reason") ?? ""),
+        controllerOverride: textOrEmpty(form.get("controllerOverride")),
       });
       return wantsHtml ? back() : NextResponse.json({ ok: true });
     }

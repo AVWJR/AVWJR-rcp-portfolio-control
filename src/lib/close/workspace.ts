@@ -37,6 +37,7 @@ import {
   type TieOut,
   type TieTolerance,
 } from "@rcp/properties";
+import { chooseIncomeUpload, isIncomeSource } from "./income-source";
 import {
   applyRememberedMaps,
   classifyCloseFile,
@@ -360,30 +361,74 @@ function linesFromUpload(parsedJson: string): ParsedCloseLine[] {
   }
 }
 
-export async function postCloseToBooks(opts: { entityId: string; year: number; month: number }) {
+function controllerOverrideAccepted(value: boolean | string | undefined): boolean {
+  return value === true || value === "yes";
+}
+
+/** Soft-closed months stay put until a controller checks the override and writes a reason. */
+function softCloseOverrideReason(
+  status: string,
+  opts: { controllerOverride?: boolean | string; reason?: string },
+): string | null {
+  if (status !== "SOFT_CLOSED") return null;
+  const reason = opts.reason?.trim() ?? "";
+  if (!controllerOverrideAccepted(opts.controllerOverride) || !reason) {
+    throw new Error(
+      "This month is soft-closed. Check the controller override and enter a reason before posting or reversing. Without that, the books stay as they are.",
+    );
+  }
+  return reason;
+}
+
+async function logControllerOverride(entityId: string, year: number, month: number, reason: string) {
+  await prisma.monthEndEvent.create({
+    data: {
+      entityId,
+      year,
+      month,
+      action: "CONTROLLER_OVERRIDE",
+      detail: reason,
+    },
+  });
+}
+
+export async function postCloseToBooks(opts: {
+  entityId: string;
+  year: number;
+  month: number;
+  /** Income statement, T12, or other file to post. Blank uses the most recent income statement. */
+  incomeUploadId?: string | null;
+  controllerOverride?: boolean | string;
+  reason?: string;
+}) {
   await ensureMasterCoaCurrent();
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (period.status === "CLOSED") {
     throw new PeriodLockedError("Closed months are not overwritten. Reopen with a reason and a ticket.");
   }
+  const overrideReason = softCloseOverrideReason(period.status, opts);
   const uploads = await prisma.monthEndUpload.findMany({
     where: { entityId: opts.entityId, year: opts.year, month: opts.month },
     orderBy: { createdAt: "asc" },
   });
+  const chosen = chooseIncomeUpload(uploads, opts.incomeUploadId);
   const maps = await rememberedMaps(opts.entityId);
   const income: ImportAmount[] = [];
   const balanceDesired = new Map<string, bigint>();
   for (const upload of uploads) {
     const kind = upload.classification as CloseFileClass;
     if (kind === "rent_roll" || (kind === "pdf" && linesFromUpload(upload.parsedJson).length === 0)) continue;
+    const incomeFile = isIncomeSource(kind);
+    if (incomeFile && upload.id !== chosen?.id) continue;
     const control = uploadControl(upload.parsedJson);
     if (control?.blocksPosting) throw new Error(control.detail || "Import control totals do not tie. Posting is blocked.");
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
-    if ((kind === "t12" || kind === "income_statement") && mappedIncomeLines(lines).length === 0) {
+    if (incomeFile && mappedIncomeLines(lines).length === 0) {
       throw new Error(
         `${upload.filename} has no mapped income lines for this close month, so posting is blocked. Remember an RCP account for each line, then post again.`,
       );
     }
+    const postIncome = incomeFile || !chosen;
     for (const line of lines) {
       if (line.flag) continue;
       const code = line.accountCode ?? "1999";
@@ -401,7 +446,8 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
               ? displayed
               : -displayed;
         balanceDesired.set(code, (balanceDesired.get(code) ?? 0n) + net);
-      } else {
+      } else if (postIncome) {
+        // A chosen T12 already stores only the close-month column. Budget, variance, YTD, and the trailing total stay off the books.
         income.push({ accountCode: code, signedCents: signed, memo: line.sourceLabel });
       }
     }
@@ -432,6 +478,8 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
     );
   }
   const importSources = ["month_end_is", "month_end_bs"] as const;
+  if (overrideReason) await logControllerOverride(opts.entityId, opts.year, opts.month, overrideReason);
+  const controller = overrideReason != null;
   if (period.status === "SOFT_CLOSED") {
     const stillInEffect = existing.filter(
       (row) => (row.source === "month_end_is" || row.source === "month_end_bs") && !reversedIds.has(row.id),
@@ -444,7 +492,7 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
         memo: `Reversal of ${journal.memo}`,
         source: `${journal.source}_reversal`,
         reversesJournalId: journal.id,
-        allowControllerAdjustment: true,
+        allowControllerAdjustment: controller,
         lines: journal.lines.map((line) => ({
           accountCode: line.account.code,
           debit: line.credit,
@@ -466,7 +514,6 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
     });
   }
   const date = new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`);
-  const controller = period.status === "SOFT_CLOSED";
   if (income.length) {
     const journal = incomeStatementJournal(income);
     if (!journalBalances(journal)) throw new Error("Income statement import did not balance.");
@@ -503,7 +550,7 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
       year: opts.year,
       month: opts.month,
       action: "POST",
-      detail: `Posted ${income.length} income lines and ${balanceDesired.size} balance-sheet lines`,
+      detail: `Posted ${income.length} income lines from ${chosen?.filename ?? "no income file"} and ${balanceDesired.size} balance-sheet lines`,
     },
   });
 }
@@ -644,9 +691,15 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     chargeMismatchCount: rentMeta.chargeMismatchCount ?? 0,
     tolerances,
   });
+  const defaultIncome = chooseIncomeUpload(uploads);
   const fileViews = uploads.map((upload) => {
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
     const meta = postingBlockAfterMaps(upload.classification, lines, uploadNote(upload.parsedJson));
+    const incomePosting = !isIncomeSource(upload.classification)
+      ? null
+      : upload.id === defaultIncome?.id
+        ? ("source" as const)
+        : ("superseded" as const);
     return {
       id: upload.id,
       filename: upload.filename,
@@ -660,10 +713,12 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
       unmapped: unmappedLabels(lines),
       note: meta.note,
       blocksPosting: meta.blocksPosting,
+      incomePosting,
     };
   });
   return {
     periodStatus: (period?.status ?? "OPEN") as PeriodCloseStatus,
+    defaultIncomeUploadId: defaultIncome?.id ?? null,
     uploads: fileViews,
     events: [
       ...events.map((event) => ({ at: event.createdAt.toISOString(), action: event.action, detail: event.detail })),
@@ -873,6 +928,7 @@ export async function reverseOperatingJournals(opts: {
   year: number;
   month: number;
   reason: string;
+  controllerOverride?: boolean | string;
 }) {
   const reason = opts.reason.trim();
   if (!reason) throw new Error("A reason is required to reverse operating journals.");
@@ -880,6 +936,7 @@ export async function reverseOperatingJournals(opts: {
   if (period.status === "CLOSED") {
     throw new PeriodLockedError("Closed months are not overwritten. Reopen with a reason and a ticket.");
   }
+  const overrideReason = softCloseOverrideReason(period.status, opts);
   const planned = await plannedOperatingReversals(opts.entityId, opts.year, opts.month);
   const blocking = planned?.plans ?? [];
   const actionable = blocking.filter((journal) => !journal.needsManualSplit);
@@ -891,6 +948,7 @@ export async function reverseOperatingJournals(opts: {
     }
     throw new Error("No above-NOI operating journals are blocking this month.");
   }
+  if (overrideReason) await logControllerOverride(opts.entityId, opts.year, opts.month, overrideReason);
   for (const journal of actionable) {
     await postJournal({
       entityId: opts.entityId,
@@ -899,7 +957,7 @@ export async function reverseOperatingJournals(opts: {
       memo: journal.partial ? `Reversal of above-NOI lines in ${journal.memo}` : `Reversal of ${journal.memo}`,
       source: "operating_reversal",
       reversesJournalId: journal.journalId,
-      allowControllerAdjustment: period.status === "SOFT_CLOSED",
+      allowControllerAdjustment: overrideReason != null,
       lines: journal.lines,
     });
   }

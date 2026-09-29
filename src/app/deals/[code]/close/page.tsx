@@ -1,10 +1,35 @@
 import { CloseDropzone } from "@/components/deals/close-dropzone";
+import { IncomeSourcePicker } from "@/components/deals/income-source-picker";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { loadYtdBudgetMap } from "@/lib/budgets";
+import { DEFAULT_INCOME_STATEMENT_LABEL, SUPERSEDED_INCOME_LABEL } from "@/lib/close/income-source";
 import { loadCloseWorkspace, previewOperatingReversals } from "@/lib/close/workspace";
 import { buildIncomeStatement, formatUsd, MASTER_COA } from "@rcp/ledger";
 import { incomeStatementFromBudget, incomeStatementKeyedAmounts } from "@rcp/reporting";
 import { notFound } from "next/navigation";
+
+function ControllerOverrideFields({ active, includeReason }: { active: boolean; includeReason: boolean }) {
+  if (!active) return null;
+  return (
+    <div className="space-y-2">
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="controllerOverride" value="yes" required />
+        <span>I am the controller and I am changing this soft-closed month</span>
+      </label>
+      {includeReason ? (
+        <label className="block text-xs">
+          Reason
+          <input
+            name="reason"
+            required
+            className="mt-1 block w-full max-w-md rounded border px-2 py-1"
+            placeholder="Why the books are changing"
+          />
+        </label>
+      ) : null}
+    </div>
+  );
+}
 
 export default async function MonthEndClosePage({
   params,
@@ -38,6 +63,8 @@ export default async function MonthEndClosePage({
         const ytdBudget = ytdBudgetMap.size > 0 ? incomeStatementKeyedAmounts(incomeStatementFromBudget(ytdBudgetMap)) : null;
         const momByKey = ctx.statements.mom ? incomeStatementKeyedAmounts(ctx.statements.mom) : null;
         const period = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
+        const softClosed = workspace.periodStatus === "SOFT_CLOSED";
+        const incomeFiles = workspace.uploads.filter((file) => file.incomePosting);
         return (
           <div className="space-y-8">
             <div>
@@ -74,6 +101,18 @@ export default async function MonthEndClosePage({
                     <p className="font-medium text-navy-900">
                       {file.filename} · {file.classification.replaceAll("_", " ")} · {file.byteSize.toLocaleString()} bytes
                     </p>
+                    {file.incomePosting === "superseded" ? (
+                      <p className="mt-1 font-medium text-navy-900">{SUPERSEDED_INCOME_LABEL}</p>
+                    ) : null}
+                    {file.incomePosting === "source" ? (
+                      <p className="mt-1 text-ink-700">
+                        {file.classification === "income_statement"
+                          ? `${DEFAULT_INCOME_STATEMENT_LABEL}. This file posts the month’s income.`
+                          : file.classification === "t12"
+                            ? "This file posts the month’s income. Only its close-month column is posted."
+                            : "This file posts the month’s income."}
+                      </p>
+                    ) : null}
                     {file.blocksPosting && file.note ? (
                       <p className="mt-2 text-red-800">{file.note}</p>
                     ) : null}
@@ -109,6 +148,12 @@ export default async function MonthEndClosePage({
               </datalist>
               {workspace.periodStatus !== "CLOSED" ? (
                 <div className="space-y-3">
+                  {softClosed ? (
+                    <p className="max-w-3xl text-sm text-ink-700">
+                      This month is soft-closed. The books stay as posted unless a controller checks the box and writes a
+                      reason. Post and Reverse are refused without that.
+                    </p>
+                  ) : null}
                   <p className="max-w-3xl text-ink-700">
                     Above-NOI journals (accounts 4xxx and 5xxx) are listed before they can be reversed. Interest, depreciation, amortization, and a journal that is only the OpCo mirror (1310, 2310, 6310, or 7010) stay on the books. A journal that mixes operating lines with one of those mirror codes needs a manual split.
                   </p>
@@ -151,9 +196,10 @@ export default async function MonthEndClosePage({
                               ? "Reverse the operating journals that are not marked needs manual split"
                               : "Reverse the journals listed above"}
                           </label>
+                          <ControllerOverrideFields active={softClosed} includeReason={false} />
                           <label className="text-xs">
                             Reason
-                            <input name="reason" required className="mt-1 block rounded border px-2 py-1" placeholder="Why these journals reverse" />
+                            <input name="reason" required className="mt-1 block rounded border px-2 py-1" placeholder={softClosed ? "Why this soft-closed month is changing" : "Why these journals reverse"} />
                           </label>
                           <button className="rounded border border-navy-900 px-3 py-2" type="submit">
                             Reverse operating journals
@@ -164,10 +210,23 @@ export default async function MonthEndClosePage({
                   ) : (
                     <p className="text-sm text-ink-500">No above-NOI operating journals are blocking this month.</p>
                   )}
-                  <form action={`/api/deals/${code}/close`} method="post">
+                  <form className="space-y-3" action={`/api/deals/${code}/close`} method="post">
                     <input type="hidden" name="action" value="post" />
                     <input type="hidden" name="year" value={ctx.year} />
                     <input type="hidden" name="month" value={ctx.month} />
+                    {incomeFiles.length === 1 ? (
+                      <p className="text-sm text-ink-700">
+                        Income source: {incomeFiles[0]?.filename} —{" "}
+                        {incomeFiles[0]?.classification === "income_statement"
+                          ? DEFAULT_INCOME_STATEMENT_LABEL
+                          : "Default, most recent income file"}
+                        {incomeFiles[0]?.classification === "t12" ? ". Only its close-month column is posted." : "."}
+                      </p>
+                    ) : null}
+                    {workspace.defaultIncomeUploadId ? (
+                      <IncomeSourcePicker files={incomeFiles} defaultId={workspace.defaultIncomeUploadId} />
+                    ) : null}
+                    <ControllerOverrideFields active={softClosed} includeReason />
                     <button className="rounded bg-navy-900 px-4 py-2 text-sm text-white" type="submit">
                       Post this period into the SPE books
                     </button>

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { POST } from "@/app/api/deals/[code]/close/route";
 import { openPeriod } from "@/lib/deals/periods";
 import { createEntityWithCoa } from "@/lib/entities";
@@ -369,6 +371,217 @@ describe("POST /api/deals/[code]/close", () => {
     const jsonBody = (await jsonOk.json()) as { ok: boolean; reversed: number };
     expect(jsonBody.ok).toBe(true);
     expect(jsonBody.reversed).toBe(1);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(2);
+  });
+
+  it("requires a controller override and reason on form and JSON before a soft-closed post or reversal", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO first");
+    const entity = await createEntityWithCoa({
+      code: `SPE-QOV${Date.now().toString(36).slice(-4).toUpperCase()}`,
+      name: "QC Soft Override LLC",
+      type: "SPE",
+      parentId: opco.id,
+      unitCount: 1,
+    });
+    ids.push(entity.id);
+    const profit = readFileSync(path.join(process.cwd(), "tests/fixtures/wbg-2026-08-profit.csv"), "utf8");
+
+    const uploaded = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "upload",
+          year: 2026,
+          month: 8,
+          filename: "wbg-2026-08-profit.csv",
+          text: profit,
+          mimeType: "text/csv",
+        }),
+      }),
+    );
+    expect(uploaded.status).toBe(200);
+    const posted = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "post", year: 2026, month: 8 }),
+      }),
+    );
+    expect(posted.status).toBe(200);
+    const softened = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "soft", year: 2026, month: 8 }),
+      }),
+    );
+    expect(softened.status).toBe(200);
+
+    const jsonRefused = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "post", year: 2026, month: 8 }),
+      }),
+    );
+    expect(jsonRefused.status).toBe(400);
+    expect(((await jsonRefused.json()) as { error: string }).error).toMatch(/soft-closed|controller override/i);
+
+    const formRefused = new FormData();
+    formRefused.set("action", "post");
+    formRefused.set("year", "2026");
+    formRefused.set("month", "8");
+    const formNo = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: formRefused }),
+    );
+    expect(formNo.status).toBe(303);
+    expect(decodeURIComponent(formNo.headers.get("location") ?? "")).toMatch(/soft-closed|controller override/i);
+    expect(await prisma.monthEndEvent.count({ where: { entityId: entity.id, action: "CONTROLLER_OVERRIDE" } })).toBe(0);
+
+    const jsonBlank = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "post", year: 2026, month: 8, controllerOverride: "yes", reason: "  " }),
+      }),
+    );
+    expect(jsonBlank.status).toBe(400);
+    expect(((await jsonBlank.json()) as { error: string }).error).toMatch(/reason/i);
+
+    const jsonYes = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "post",
+          year: 2026,
+          month: 8,
+          controllerOverride: "yes",
+          reason: "JSON controller post",
+        }),
+      }),
+    );
+    expect(jsonYes.status).toBe(200);
+
+    const formYes = new FormData();
+    formYes.set("action", "post");
+    formYes.set("year", "2026");
+    formYes.set("month", "8");
+    formYes.set("controllerOverride", "yes");
+    formYes.set("reason", "Form controller post");
+    const formOk = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: formYes }),
+    );
+    expect(formOk.status).toBe(303);
+    expect(formOk.headers.get("location") ?? "").not.toMatch(/error=/);
+    const reasons = await prisma.monthEndEvent.findMany({
+      where: { entityId: entity.id, action: "CONTROLLER_OVERRIDE" },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(reasons.map((row) => row.detail)).toEqual(["JSON controller post", "Form controller post"]);
+
+    async function seedOperating(month: number) {
+      const period = await openPeriod(entity.id, 2026, month);
+      await postJournal({
+        entityId: entity.id,
+        periodId: period.id,
+        date: new Date(Date.UTC(2026, month - 1, 28, 16, 0, 0)),
+        memo: `Seeded operating ${month}`,
+        source: "seed",
+        lines: [
+          { accountCode: "1110", debit: dollars(100), credit: 0n },
+          { accountCode: "4010", debit: 0n, credit: dollars(100) },
+        ],
+      });
+      const soft = await call(
+        entity.code,
+        new Request(endpoint(entity.code), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "soft", year: 2026, month }),
+        }),
+      );
+      expect(soft.status).toBe(200);
+    }
+    await seedOperating(4);
+    await seedOperating(5);
+
+    const jsonReverseNo = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "reverse-operating",
+          year: 2026,
+          month: 4,
+          confirm: "yes",
+          reason: "Replace seeded books",
+        }),
+      }),
+    );
+    expect(jsonReverseNo.status).toBe(400);
+    expect(((await jsonReverseNo.json()) as { error: string }).error).toMatch(/soft-closed|controller override/i);
+
+    const formReverseNo = new FormData();
+    formReverseNo.set("action", "reverse-operating");
+    formReverseNo.set("year", "2026");
+    formReverseNo.set("month", "5");
+    formReverseNo.set("confirm", "yes");
+    formReverseNo.set("reason", "Replace seeded books");
+    const formReverseRefused = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: formReverseNo }),
+    );
+    expect(formReverseRefused.status).toBe(303);
+    expect(decodeURIComponent(formReverseRefused.headers.get("location") ?? "")).toMatch(/soft-closed|controller override/i);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(0);
+
+    const jsonReverseYes = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "reverse-operating",
+          year: 2026,
+          month: 4,
+          confirm: true,
+          reason: "JSON controller reversal",
+          controllerOverride: true,
+        }),
+      }),
+    );
+    expect(jsonReverseYes.status).toBe(200);
+
+    const formReverseYes = new FormData();
+    formReverseYes.set("action", "reverse-operating");
+    formReverseYes.set("year", "2026");
+    formReverseYes.set("month", "5");
+    formReverseYes.set("confirm", "yes");
+    formReverseYes.set("reason", "Form controller reversal");
+    formReverseYes.set("controllerOverride", "yes");
+    const formReverseOk = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: formReverseYes }),
+    );
+    expect(formReverseOk.status).toBe(303);
+    expect(formReverseOk.headers.get("location") ?? "").not.toMatch(/error=/);
+    const reversalReasons = await prisma.monthEndEvent.findMany({
+      where: { entityId: entity.id, action: "CONTROLLER_OVERRIDE", month: { in: [4, 5] } },
+      orderBy: { month: "asc" },
+    });
+    expect(reversalReasons.map((row) => row.detail)).toEqual(["JSON controller reversal", "Form controller reversal"]);
     expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(2);
   });
 });
