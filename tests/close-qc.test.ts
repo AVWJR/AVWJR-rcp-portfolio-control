@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { utils, write } from "xlsx";
 import { buildIncomeStatement, dollars, incomeStatementJournal, type PostedLine } from "@rcp/ledger";
 import {
@@ -70,6 +72,34 @@ function sheet(rows: string[][]): Buffer {
   const book = utils.book_new();
   utils.book_append_sheet(book, utils.aoa_to_sheet(rows), "Sheet1");
   return Buffer.from(write(book, { type: "buffer", bookType: "xlsx" }));
+}
+
+function wbgProfitCsv(): Buffer {
+  return readFileSync(path.join(process.cwd(), "tests/fixtures/wbg-2026-08-profit.csv"));
+}
+
+function wbgAugustT12(): Buffer {
+  return sheet([
+    ["Account", "Jul 2026", "Aug 2026", "T12"],
+    ["Gross Potential Rent", "5000", "110000", "900000"],
+    ["Payroll", "1000", "30000", "400000"],
+  ]);
+}
+
+async function uploadProfit(entity: { id: string; code: string }, filename: string) {
+  return storeCloseUpload({
+    entityId: entity.id,
+    entityCode: entity.code,
+    year: 2026,
+    month: 8,
+    filename,
+    mimeType: "text/csv",
+    bytes: wbgProfitCsv(),
+  });
+}
+
+async function stampUpload(id: string, iso: string) {
+  await prisma.monthEndUpload.update({ where: { id }, data: { createdAt: new Date(iso) } });
 }
 
 function pnlCsv(): Buffer {
@@ -387,7 +417,8 @@ describe("close upload, posting, and tie-outs", () => {
     expect(await resolveReportingPeriod("RCP-HOLD", null)).toBe("2026-08");
     expect(await resolveReportingPeriod("SPE-WBG", "2026-08")).toBe("2026-08");
     const stillOpen = await spesStillOpen("RCP-OPCO", "2026-07");
-    expect(stillOpen.map((spe) => spe.code).filter((code) => !code.startsWith("SPE-Q"))).toEqual(["SPE-CVC", "SPE-HCR"]);
+    const seededSpes = new Set(["SPE-WBG", "SPE-CVC", "SPE-HCR"]);
+    expect(stillOpen.map((spe) => spe.code).filter((code) => seededSpes.has(code))).toEqual(["SPE-CVC", "SPE-HCR"]);
   });
 
   it("runs the close path on a 511-unit Lease Charges file without replacing a past month or the SPE unit count", async () => {
@@ -578,7 +609,13 @@ describe("close upload, posting, and tie-outs", () => {
     const first = await prisma.journal.findFirst({ where: { entityId: entity.id, source: "month_end_is" } });
     expect(first).toBeTruthy();
     await transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" });
-    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    await postCloseToBooks({
+      entityId: entity.id,
+      year: 2026,
+      month: 8,
+      controllerOverride: "yes",
+      reason: "Repost the soft-closed package",
+    });
     const stillThere = await prisma.journal.findUnique({ where: { id: first!.id } });
     expect(stillThere).toBeTruthy();
     expect(await prisma.journal.count({ where: { entityId: entity.id, source: "month_end_is_reversal" } })).toBe(1);
@@ -719,7 +756,13 @@ describe("close upload, posting, and tie-outs", () => {
     expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
     await transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" });
     for (let i = 0; i < 3; i += 1) {
-      await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+      await postCloseToBooks({
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        controllerOverride: "yes",
+        reason: "Controller repost",
+      });
       expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
     }
     const reversals = await prisma.journal.findMany({
@@ -728,6 +771,166 @@ describe("close upload, posting, and tie-outs", () => {
     expect(reversals).toHaveLength(3);
     expect(new Set(reversals.map((row) => row.reversesJournalId)).size).toBe(3);
     expect(reversals.every((row) => row.reversesJournalId)).toBe(true);
+  });
+
+  it("posts one wbg-2026-08-profit file when two P&Ls are uploaded", async () => {
+    const entity = await freshSpe("SPE-Q2PL", "QC Two P&L LLC");
+    const older = await uploadProfit(entity, "wbg-2026-08-profit.csv");
+    const newer = await uploadProfit(entity, "wbg-2026-08-profit-v2.csv");
+    await stampUpload(older.uploadId, "2026-08-01T12:00:00.000Z");
+    await stampUpload(newer.uploadId, "2026-08-02T12:00:00.000Z");
+    const view = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(view.defaultIncomeUploadId).toBe(newer.uploadId);
+    expect(view.uploads.find((file) => file.id === older.uploadId)?.incomePosting).toBe("superseded");
+    expect(view.uploads.find((file) => file.id === newer.uploadId)?.incomePosting).toBe("source");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+  });
+
+  it("posts wbg-2026-08-profit instead of adding a T12 with an August column", async () => {
+    const entity = await freshSpe("SPE-QPLT", "QC P&L Plus T12 LLC");
+    const profit = await uploadProfit(entity, "wbg-2026-08-profit.csv");
+    const t12 = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "wbg-2026-08-t12.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: wbgAugustT12(),
+    });
+    await stampUpload(profit.uploadId, "2026-08-01T12:00:00.000Z");
+    await stampUpload(t12.uploadId, "2026-08-03T12:00:00.000Z");
+    const view = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(view.uploads.find((file) => file.id === profit.uploadId)?.incomePosting).toBe("source");
+    expect(view.uploads.find((file) => file.id === t12.uploadId)?.incomePosting).toBe("superseded");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+  });
+
+  it("posts only the T12 close-month column when that file is the chosen source", async () => {
+    const entity = await freshSpe("SPE-QT12", "QC Chosen T12 LLC");
+    await uploadProfit(entity, "wbg-2026-08-profit.csv");
+    const t12 = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "wbg-2026-08-t12.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: wbgAugustT12(),
+    });
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8, incomeUploadId: t12.uploadId });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(80_000));
+  });
+
+  it("keeps wbg-2026-08-profit NOI when a v2 file is posted after soft close", async () => {
+    const entity = await freshSpe("SPE-QV2", "QC V2 Repost LLC");
+    const first = await uploadProfit(entity, "wbg-2026-08-profit.csv");
+    await stampUpload(first.uploadId, "2026-08-01T12:00:00.000Z");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    await transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" });
+    const v2 = await uploadProfit(entity, "wbg-2026-08-profit-v2.csv");
+    await stampUpload(v2.uploadId, "2026-08-20T12:00:00.000Z");
+    await postCloseToBooks({
+      entityId: entity.id,
+      year: 2026,
+      month: 8,
+      controllerOverride: "yes",
+      reason: "Post the v2 profit file",
+    });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    const source = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(source.uploads.find((file) => file.id === v2.uploadId)?.incomePosting).toBe("source");
+    expect(source.uploads.find((file) => file.filename === "wbg-2026-08-profit.csv")?.incomePosting).toBe("superseded");
+  });
+
+  it("refuses posting or reversing a soft-closed month without a controller override", async () => {
+    const entity = await freshSpe("SPE-QOVR", "QC Override Refuse LLC");
+    await uploadProfit(entity, "wbg-2026-08-profit.csv");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    await transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" });
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(
+      /soft-closed|controller override/i,
+    );
+    await expect(
+      postCloseToBooks({ entityId: entity.id, year: 2026, month: 8, controllerOverride: "yes" }),
+    ).rejects.toThrow(/reason/i);
+    await expect(
+      postCloseToBooks({ entityId: entity.id, year: 2026, month: 8, controllerOverride: "yes", reason: "   " }),
+    ).rejects.toThrow(/reason/i);
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    expect(await prisma.monthEndEvent.count({ where: { entityId: entity.id, action: "CONTROLLER_OVERRIDE" } })).toBe(0);
+
+    const april = await openPeriod(entity.id, 2026, 4);
+    await postJournal({
+      entityId: entity.id,
+      periodId: april.id,
+      date: new Date("2026-04-30T16:00:00.000Z"),
+      memo: "Seeded April GPR",
+      source: "seed",
+      lines: [
+        { accountCode: "1110", debit: dollars(100), credit: 0n },
+        { accountCode: "4010", debit: 0n, credit: dollars(100) },
+      ],
+    });
+    await transitionClose({ entityId: entity.id, year: 2026, month: 4, action: "soft" });
+    await expect(
+      reverseOperatingJournals({
+        entityId: entity.id,
+        year: 2026,
+        month: 4,
+        reason: "Replace the seeded journal",
+      }),
+    ).rejects.toThrow(/soft-closed|controller override/i);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(0);
+    expect(await prisma.monthEndEvent.count({ where: { entityId: entity.id, action: "CONTROLLER_OVERRIDE" } })).toBe(0);
+  });
+
+  it("logs the controller override reason when a soft-closed post or reversal is allowed", async () => {
+    const entity = await freshSpe("SPE-QLOG", "QC Override Log LLC");
+    await uploadProfit(entity, "wbg-2026-08-profit.csv");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    await transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" });
+    await postCloseToBooks({
+      entityId: entity.id,
+      year: 2026,
+      month: 8,
+      controllerOverride: "yes",
+      reason: "Correct the August package",
+    });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    const posted = await prisma.monthEndEvent.findFirst({
+      where: { entityId: entity.id, month: 8, action: "CONTROLLER_OVERRIDE" },
+    });
+    expect(posted?.detail).toBe("Correct the August package");
+
+    const march = await openPeriod(entity.id, 2026, 3);
+    await postJournal({
+      entityId: entity.id,
+      periodId: march.id,
+      date: new Date("2026-03-31T16:00:00.000Z"),
+      memo: "Seeded March GPR",
+      source: "seed",
+      lines: [
+        { accountCode: "1110", debit: dollars(100), credit: 0n },
+        { accountCode: "4010", debit: 0n, credit: dollars(100) },
+      ],
+    });
+    await transitionClose({ entityId: entity.id, year: 2026, month: 3, action: "soft" });
+    await reverseOperatingJournals({
+      entityId: entity.id,
+      year: 2026,
+      month: 3,
+      reason: "Replace seeded March books",
+      controllerOverride: true,
+    });
+    const reversed = await prisma.monthEndEvent.findFirst({
+      where: { entityId: entity.id, month: 3, action: "CONTROLLER_OVERRIDE" },
+    });
+    expect(reversed?.detail).toBe("Replace seeded March books");
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(1);
   });
 
   it("ties and posts a loss NOI without taking the absolute value", async () => {

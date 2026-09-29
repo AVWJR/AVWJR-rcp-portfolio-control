@@ -297,6 +297,9 @@ describe("month-end expert playbook", () => {
     expect(reply.content).toMatch(/\/deals\/SPE-HMTOS\/close/);
     expect(reply.content).toMatch(/2026-08/);
     expect(reply.content).toMatch(/511 units/);
+    expect(reply.content).toMatch(/exactly one/);
+    expect(reply.content).toMatch(/Superseded — not posted/);
+    expect(reply.content).toMatch(/close-month column/);
     expect(reply.content).toMatch(/1PW/);
     expect(reply.content).toMatch(/Hard lock/);
     expect(reply.content).toMatch(/reason/);
