@@ -177,32 +177,64 @@ export type T12MonthLine = {
   cents: bigint | null;
 };
 
+function isNonActivityHeader(raw: string): boolean {
+  return /budget|\bplan\b|variance|\bvar\b|\bytd\b|year to date|\bt12\b|\bttm\b|trailing/i.test(raw);
+}
+
+/** Close-month activity column, including an "Aug Actual" header. Budget, variance, YTD, and T12 totals are not activity. */
+function matchesCloseMonth(raw: string, year: number, month: number): boolean {
+  if (isNonActivityHeader(raw)) return false;
+  const parsed = monthFromHeader(raw);
+  if (!parsed || parsed.month !== month) return false;
+  if (parsed.year != null && parsed.year !== year) return false;
+  if (cellLooksLikeMonth(raw)) return true;
+  return /\bactuals?\b|\bmtd\b|\bcurrent\b/i.test(raw);
+}
+
+function findCloseMonthColumn(
+  rows: string[][],
+  year: number,
+  month: number,
+): { index: number; col: number; headerText: string; labelCol: number } | null {
+  const classic = findT12Header(rows);
+  if (classic) {
+    const headers = rows[classic.index] ?? [];
+    const order = [...classic.months];
+    headers.forEach((_, idx) => {
+      if (!order.includes(idx)) order.push(idx);
+    });
+    for (const idx of order) {
+      const raw = headers[idx] ?? "";
+      if (!matchesCloseMonth(raw, year, month)) continue;
+      return { index: classic.index, col: idx, headerText: raw.trim(), labelCol: classic.labelCol };
+    }
+    return null;
+  }
+  for (let i = 0; i < Math.min(rows.length, 30); i += 1) {
+    const row = rows[i] ?? [];
+    const idx = row.findIndex((cell) => matchesCloseMonth(cell, year, month));
+    if (idx < 0) continue;
+    const labelCol = row.findIndex((cell) => /account|description|line|name/i.test(String(cell)));
+    if (labelCol < 0 && !/\bactuals?\b/i.test(row[idx] ?? "")) continue;
+    return { index: i, col: idx, headerText: String(row[idx] ?? "").trim(), labelCol: labelCol >= 0 ? labelCol : 0 };
+  }
+  return null;
+}
+
 /** Amounts from the close-month column. Does not divide the T12 total. */
 export function t12CloseMonthLines(
   rows: string[][],
   year: number,
   month: number,
 ): { header: string | null; lines: T12MonthLine[] } {
-  const header = findT12Header(rows);
+  const header = findCloseMonthColumn(rows, year, month);
   if (!header) return { header: null, lines: [] };
-  const headers = rows[header.index] ?? [];
-  let col: number | null = null;
-  let headerText: string | null = null;
-  for (const idx of header.months) {
-    const parsed = monthFromHeader(headers[idx] ?? "");
-    if (!parsed || parsed.month !== month) continue;
-    if (parsed.year != null && parsed.year !== year) continue;
-    col = idx;
-    headerText = (headers[idx] ?? "").trim();
-    break;
-  }
-  if (col == null) return { header: null, lines: [] };
   const lines: T12MonthLine[] = [];
   for (let i = header.index + 1; i < rows.length; i += 1) {
     const cols = rows[i] ?? [];
     const label = normalizeLabel(cols[header.labelCol] ?? cols[0] ?? "");
     if (!label || SKIP_LABEL.test(label) || isStatementTotalLabel(label)) continue;
-    const raw = (cols[col] ?? "").trim();
+    const raw = (cols[header.col] ?? "").trim();
     const accountCode = mapT12LabelToAccount(label);
     if (!raw) {
       lines.push({ label, accountCode, cents: null });
@@ -214,7 +246,7 @@ export function t12CloseMonthLines(
       lines.push({ label, accountCode, cents: null });
     }
   }
-  return { header: headerText, lines };
+  return { header: header.headerText, lines };
 }
 
 export function parseT12WorkbookRows(rows: string[][], sheet: string): T12WorkbookParse {

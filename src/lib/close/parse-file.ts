@@ -71,12 +71,20 @@ function sha256(bytes: Buffer): string {
 
 export { sha256 };
 
+/** Underscores are separators, so WBG_PnL_Aug and WBG_P&L_Aug match after lowercasing. */
+function looksLikeIncomeStatementName(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  if (/t-?12|trailing/.test(lower)) return false;
+  const hay = lower.replace(/_+/g, " ");
+  return /income statement|profit|p&l|p-l|\bpnl\b|\bp l\b|operating statement/.test(hay);
+}
+
 export function classifyCloseFile(filename: string, bytes?: Buffer): CloseFileClass {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".pdf")) return "pdf";
   if (/balance[\s_-]*sheet|\btrial balance\b/.test(lower)) return "balance_sheet";
   if (/general ledger|gl detail|gl_detail|transaction detail/.test(lower)) return "gl_detail";
-  if (/income statement|profit|p&l|p_l|operating statement/.test(lower) && !/t-?12|trailing/.test(lower)) {
+  if (looksLikeIncomeStatementName(filename)) {
     return "income_statement";
   }
   const role = inferFileRole(filename, bytes);
@@ -128,6 +136,31 @@ function normHeader(value: string): string {
 
 type ColumnRole = "label" | "actual" | "budget" | "var" | "ytd" | "debit" | "credit" | "balance" | "amount" | "other" | "blank";
 
+function monthNumberInHeader(text: string): number | null {
+  for (let i = 0; i < MONTH_NAMES.length; i += 1) {
+    const full = MONTH_NAMES[i]!;
+    const short = full.slice(0, 3);
+    const extra = full === "september" ? "|sept" : "";
+    if (new RegExp(`\\b(${full}|${short}${extra})\\b`).test(text)) return i + 1;
+  }
+  return null;
+}
+
+function yearInHeader(text: string): number | null {
+  const match = text.match(/\b(?:19|20)\d{2}\b/);
+  return match ? Number(match[0]) : null;
+}
+
+/** A month-named actual column counts only for that close month. "Aug Actual" is August, not every month. */
+function activityHeaderMatchesPeriod(text: string, period?: { year: number; month: number }): boolean {
+  if (!period) return true;
+  const namedMonth = monthNumberInHeader(text);
+  const namedYear = yearInHeader(text);
+  if (namedMonth != null && namedMonth !== period.month) return false;
+  if (namedYear != null && namedYear !== period.year) return false;
+  return true;
+}
+
 function columnRole(header: string, period?: { year: number; month: number }): ColumnRole {
   const text = normHeader(header);
   if (!text) return "blank";
@@ -137,7 +170,13 @@ function columnRole(header: string, period?: { year: number; month: number }): C
   if (text === "debit" || text === "debits") return "debit";
   if (text === "credit" || text === "credits") return "credit";
   if (text.includes("balance") || text.includes("running")) return "balance";
-  if (text === "actual" || text === "actuals" || text.endsWith(" actual") || text === "mtd" || text === "current period") {
+  if (text === "actual" || text === "actuals" || text === "mtd" || text === "current period") {
+    return "actual";
+  }
+  if (
+    (text.endsWith(" actual") || text.endsWith(" actuals")) &&
+    activityHeaderMatchesPeriod(text, period)
+  ) {
     return "actual";
   }
   if (/account|description|line item|label|name/.test(text) && !/account no/.test(text)) return "label";
@@ -232,7 +271,12 @@ export function rowsFromMatrix(
     } else if (mode === "gl") {
       flag = "GL detail has no debit/credit or amount column. The running balance was not used.";
     } else {
-      flag = "No Actual, month, or period column was found. Budget, variance, and YTD were not used.";
+      const monthLabel = opts.period
+        ? `${MONTH_NAMES[opts.period.month - 1]!.slice(0, 1).toUpperCase()}${MONTH_NAMES[opts.period.month - 1]!.slice(1)} ${opts.period.year}`
+        : null;
+      flag = monthLabel
+        ? `No column for ${monthLabel} was found. Budget, variance, and YTD were not used.`
+        : "No Actual, month, or period column was found. Budget, variance, and YTD were not used.";
     }
     if (isNoi || isNet) {
       if (amount != null) controlRows.push({ kind: isNoi ? "noi" : "net_income", cents: amount });
@@ -346,14 +390,38 @@ export function importControl(lines: ParsedCloseLine[], controlRows: { kind: "no
   };
 }
 
+/** Empty file, or every row is flagged because the close month has no column. Unmapped labels are not this case. */
+function fileHasNoCloseMonthColumn(lines: ParsedCloseLine[]): boolean {
+  if (lines.length === 0) return true;
+  return lines.every(
+    (line) => line.flag != null && /no column for |no actual, month, or period column/i.test(line.flag),
+  );
+}
+
 function finish(kind: CloseFileClass, lines: ParsedCloseLine[], note: string, controlRows: { kind: "noi" | "net_income"; cents: bigint }[] = []): ClassifiedCloseFile {
   const control = importControl(lines, controlRows);
+  if ((kind === "t12" || kind === "income_statement") && fileHasNoCloseMonthColumn(lines)) {
+    control.blocksPosting = true;
+    const plain = "No income lines were mapped from this file, so posting is blocked.";
+    const columnFlag = lines.find((line) => line.flag && /column for /i.test(line.flag))?.flag;
+    if (lines.length === 0) {
+      control.detail = /posting is blocked/i.test(note) ? note : `${note} ${plain}`.trim();
+    } else if (!/posting is blocked/i.test(control.detail)) {
+      control.detail = [columnFlag, control.detail, plain].filter(Boolean).join(" ");
+    }
+  }
+  const noteText =
+    lines.length === 0 && (kind === "t12" || kind === "income_statement")
+      ? control.detail
+      : control.blocksPosting
+        ? `${note} ${control.detail}`.trim()
+        : note;
   return {
     classification: kind,
     lines,
     unmapped: lines.filter((line) => !line.accountCode).map((line) => line.sourceLabel),
     flagged: lines.filter((line) => line.flag).map((line) => `${line.sourceLabel}: ${line.flag}`),
-    note: control.blocksPosting ? `${note} ${control.detail}` : note,
+    note: noteText,
     control,
   };
 }
@@ -365,9 +433,12 @@ function linesFromT12(bytes: Buffer, filename: string, period?: { year: number; 
   }
   const parsed = t12CloseMonthLines(rows, period.year, period.month);
   if (!parsed.header) {
+    const name = MONTH_NAMES[period.month - 1] ?? "that month";
+    const pretty = `${name.slice(0, 1).toUpperCase()}${name.slice(1)} ${period.year}`;
+    const short = name.slice(0, 1).toUpperCase() + name.slice(1, 3);
     return {
       lines: [],
-      note: `T12 has no column for ${period.year}-${String(period.month).padStart(2, "0")}. The trailing total was not divided into the month.`,
+      note: `No column for ${pretty} was found, so no income lines were mapped. Posting is blocked. Use a header such as “${short} Actual” for that month. The trailing total was not used.`,
     };
   }
   const lines: ParsedCloseLine[] = parsed.lines.map((line) => {

@@ -1,7 +1,10 @@
 import { POST } from "@/app/api/deals/[code]/close/route";
+import { openPeriod } from "@/lib/deals/periods";
 import { createEntityWithCoa } from "@/lib/entities";
 import { completeChecklist } from "@/lib/period-close";
+import { postJournal } from "@/lib/post-journal";
 import { prisma } from "@/lib/prisma";
+import { dollars } from "@rcp/ledger";
 import { afterAll, describe, expect, it } from "vitest";
 
 const ids: string[] = [];
@@ -256,5 +259,116 @@ describe("POST /api/deals/[code]/close", () => {
     const badBody = (await badJson.json()) as { ok: boolean; error: string };
     expect(badBody.ok).toBe(false);
     expect(badBody.error).toMatch(/period/i);
+  });
+
+  it("refuses reverse-operating without confirm=yes or a reason, and accepts form and JSON when both are present", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO first");
+    const entity = await createEntityWithCoa({
+      code: `SPE-QRV${Date.now().toString(36).slice(-4).toUpperCase()}`,
+      name: "QC Reverse Route LLC",
+      type: "SPE",
+      parentId: opco.id,
+      unitCount: 1,
+    });
+    ids.push(entity.id);
+
+    async function seedOperating(month: number) {
+      const period = await openPeriod(entity.id, 2026, month);
+      await postJournal({
+        entityId: entity.id,
+        periodId: period.id,
+        date: new Date(Date.UTC(2026, month - 1, 28, 16, 0, 0)),
+        memo: `Seeded operating ${month}`,
+        source: "seed",
+        lines: [
+          { accountCode: "1110", debit: dollars(100), credit: 0n },
+          { accountCode: "4010", debit: 0n, credit: dollars(100) },
+        ],
+      });
+    }
+    await seedOperating(8);
+    await seedOperating(6);
+
+    const formNoConfirm = new FormData();
+    formNoConfirm.set("action", "reverse-operating");
+    formNoConfirm.set("year", "2026");
+    formNoConfirm.set("month", "8");
+    formNoConfirm.set("reason", "Replace seeded books");
+    const refusedConfirm = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: formNoConfirm }),
+    );
+    expect(refusedConfirm.status).toBe(303);
+    expect(decodeURIComponent(refusedConfirm.headers.get("location") ?? "")).toMatch(/confirm/i);
+
+    const jsonNoConfirm = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reverse-operating", year: 2026, month: 8, reason: "Replace seeded books" }),
+      }),
+    );
+    expect(jsonNoConfirm.status).toBe(400);
+    expect(((await jsonNoConfirm.json()) as { ok: boolean; error: string }).error).toMatch(/confirm/i);
+
+    const formBlank = new FormData();
+    formBlank.set("action", "reverse-operating");
+    formBlank.set("year", "2026");
+    formBlank.set("month", "8");
+    formBlank.set("confirm", "yes");
+    formBlank.set("reason", "   ");
+    const refusedReason = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: formBlank }),
+    );
+    expect(refusedReason.status).toBe(303);
+    expect(decodeURIComponent(refusedReason.headers.get("location") ?? "")).toMatch(/reason/i);
+
+    const jsonBlank = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reverse-operating", year: 2026, month: 6, confirm: "yes", reason: "" }),
+      }),
+    );
+    expect(jsonBlank.status).toBe(400);
+    expect(((await jsonBlank.json()) as { ok: boolean; error: string }).error).toMatch(/reason/i);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(0);
+
+    const formYes = new FormData();
+    formYes.set("action", "reverse-operating");
+    formYes.set("year", "2026");
+    formYes.set("month", "8");
+    formYes.set("confirm", "yes");
+    formYes.set("reason", "Replace seeded August books");
+    const formOk = await call(
+      entity.code,
+      new Request(endpoint(entity.code), { method: "POST", headers: { accept: "text/html" }, body: formYes }),
+    );
+    expect(formOk.status).toBe(303);
+    expect(formOk.headers.get("location") ?? "").not.toMatch(/error=/);
+
+    const jsonOk = await call(
+      entity.code,
+      new Request(endpoint(entity.code), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "reverse-operating",
+          year: 2026,
+          month: 6,
+          confirm: "yes",
+          reason: "Replace seeded June books",
+        }),
+      }),
+    );
+    expect(jsonOk.status).toBe(200);
+    const jsonBody = (await jsonOk.json()) as { ok: boolean; reversed: number };
+    expect(jsonBody.ok).toBe(true);
+    expect(jsonBody.reversed).toBe(1);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(2);
   });
 });

@@ -294,6 +294,37 @@ function extraLeaseStart(unit: CanonicalUnit): string | null {
   return null;
 }
 
+function uploadNote(parsedJson: string): { note: string; blocksPosting: boolean } {
+  try {
+    const parsed = JSON.parse(parsedJson) as { note?: string; control?: { blocksPosting?: boolean } };
+    return { note: parsed.note ?? "", blocksPosting: Boolean(parsed.control?.blocksPosting) };
+  } catch {
+    return { note: "", blocksPosting: false };
+  }
+}
+
+function mappedIncomeLines(lines: ParsedCloseLine[]): ParsedCloseLine[] {
+  return lines.filter((line) => line.accountCode && !line.flag && !line.balanceSheet);
+}
+
+/**
+ * Unmapped labels are not frozen at upload. After remembered maps, zero mapped
+ * income lines still block; a file that now maps does not.
+ */
+function postingBlockAfterMaps(
+  classification: string,
+  lines: ParsedCloseLine[],
+  saved: { note: string; blocksPosting: boolean },
+): { note: string; blocksPosting: boolean } {
+  if (saved.blocksPosting) return saved;
+  if (classification !== "t12" && classification !== "income_statement") return saved;
+  if (!lines.some((line) => !line.flag) || mappedIncomeLines(lines).length > 0) return saved;
+  return {
+    blocksPosting: true,
+    note: "No income lines are mapped yet, so posting is blocked. Remember an RCP account for each line, then post. You do not need to upload the file again.",
+  };
+}
+
 function uploadControl(parsedJson: string): { blocksPosting: boolean; detail: string } | null {
   try {
     const parsed = JSON.parse(parsedJson) as { control?: { blocksPosting?: boolean; detail?: string } };
@@ -348,6 +379,11 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
     const control = uploadControl(upload.parsedJson);
     if (control?.blocksPosting) throw new Error(control.detail || "Import control totals do not tie. Posting is blocked.");
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
+    if ((kind === "t12" || kind === "income_statement") && mappedIncomeLines(lines).length === 0) {
+      throw new Error(
+        `${upload.filename} has no mapped income lines for this close month, so posting is blocked. Remember an RCP account for each line, then post again.`,
+      );
+    }
     for (const line of lines) {
       if (line.flag) continue;
       const code = line.accountCode ?? "1999";
@@ -382,8 +418,17 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
     return plan ? [plan] : [];
   });
   if (foreignPnl.length > 0) {
+    const manual = foreignPnl.filter((plan) => plan.needsManualSplit);
+    if (manual.length === foreignPnl.length) {
+      throw new Error(
+        `${manual.length} journal(s) mix above-NOI accounts with an OpCo mirror (1310, 2310, 6310, or 7010) and need a manual split. Posting is blocked so those operating lines are not counted twice.`,
+      );
+    }
+    const extra = manual.length
+      ? ` ${manual.length} of them mix in an OpCo mirror and need a manual split.`
+      : "";
     throw new Error(
-      `This month already has ${foreignPnl.length} above-NOI operating journal(s). Posting the package would count NOI twice. Reverse those journals before posting the close.`,
+      `This month already has ${foreignPnl.length} above-NOI operating journal(s). Posting the package would count NOI twice. Reverse those journals before posting the close.${extra}`,
     );
   }
   const importSources = ["month_end_is", "month_end_bs"] as const;
@@ -601,6 +646,7 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
   });
   const fileViews = uploads.map((upload) => {
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
+    const meta = postingBlockAfterMaps(upload.classification, lines, uploadNote(upload.parsedJson));
     return {
       id: upload.id,
       filename: upload.filename,
@@ -612,6 +658,8 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
         signedCents: line.signedCents,
       })),
       unmapped: unmappedLabels(lines),
+      note: meta.note,
+      blocksPosting: meta.blocksPosting,
     };
   });
   return {
@@ -693,8 +741,11 @@ export type OperatingReversalPreview = {
   journalId: string;
   memo: string;
   source: string;
+  /** Sum of the absolute above-NOI line amounts. Full and partial journals use this same figure. */
   amountCents: bigint;
   partial: boolean;
+  /** Above-NOI lines share a journal with an OpCo mirror code. Do not reverse it automatically. */
+  needsManualSplit: boolean;
 };
 
 type PlannedReversal = OperatingReversalPreview & {
@@ -707,23 +758,45 @@ function isAboveNoiLine(line: ReversibleJournal["lines"][number]): boolean {
   return /^[45]\d{3}$/.test(line.account.code);
 }
 
+/** Absolute amount of one journal line (debit or credit, not both added together). */
+function lineAmountCents(line: { debit: bigint; credit: bigint }): bigint {
+  const net = line.debit - line.credit;
+  return net < 0n ? -net : net;
+}
+
+/** One amount for every preview row: the above-NOI activity that would be reversed. */
+function aboveNoiAmountCents(lines: { debit: bigint; credit: bigint }[]): bigint {
+  return lines.reduce((acc, line) => acc + lineAmountCents(line), 0n);
+}
+
 function planOperatingReversal(journal: ReversibleJournal, reversedIds: Set<string>): PlannedReversal | null {
   if (journal.reversesJournalId || reversedIds.has(journal.id) || journal.source.startsWith("month_end_")) return null;
-  if (journal.lines.some((line) => MIRROR_CODES.has(line.account.code))) return null;
   const above = journal.lines.filter(isAboveNoiLine);
+  if (journal.lines.some((line) => MIRROR_CODES.has(line.account.code))) {
+    if (!above.length) return null;
+    return {
+      journalId: journal.id,
+      memo: journal.memo,
+      source: journal.source,
+      amountCents: aboveNoiAmountCents(above),
+      partial: false,
+      needsManualSplit: true,
+      lines: [],
+    };
+  }
   if (!above.length) return null;
   const otherPnl = journal.lines.some(
     (line) =>
       (line.account.type === "REVENUE" || line.account.type === "EXPENSE") && !isAboveNoiLine(line),
   );
   if (!otherPnl) {
-    const amountCents = journal.lines.reduce((acc, line) => acc + line.debit, 0n);
     return {
       journalId: journal.id,
       memo: journal.memo,
       source: journal.source,
-      amountCents,
+      amountCents: aboveNoiAmountCents(above),
       partial: false,
+      needsManualSplit: false,
       lines: journal.lines.map((line) => ({
         accountCode: line.account.code,
         debit: line.credit,
@@ -751,13 +824,13 @@ function planOperatingReversal(journal: ReversibleJournal, reversedIds: Set<stri
     if (imbalance > 0n) lines.push({ accountCode: plug, debit: 0n, credit: imbalance, memo: `Reversal balance: ${journal.memo}` });
     else lines.push({ accountCode: plug, debit: -imbalance, credit: 0n, memo: `Reversal balance: ${journal.memo}` });
   }
-  const amountCents = above.reduce((acc, line) => acc + line.debit + line.credit, 0n);
   return {
     journalId: journal.id,
     memo: journal.memo,
     source: journal.source,
-    amountCents,
+    amountCents: aboveNoiAmountCents(above),
     partial: true,
+    needsManualSplit: false,
     lines,
   };
 }
@@ -809,8 +882,16 @@ export async function reverseOperatingJournals(opts: {
   }
   const planned = await plannedOperatingReversals(opts.entityId, opts.year, opts.month);
   const blocking = planned?.plans ?? [];
-  if (!blocking.length) throw new Error("No above-NOI operating journals are blocking this month.");
-  for (const journal of blocking) {
+  const actionable = blocking.filter((journal) => !journal.needsManualSplit);
+  if (!actionable.length) {
+    if (blocking.some((journal) => journal.needsManualSplit)) {
+      throw new Error(
+        "A journal mixes above-NOI accounts with an OpCo mirror (1310, 2310, 6310, or 7010) and needs a manual split. It was not reversed.",
+      );
+    }
+    throw new Error("No above-NOI operating journals are blocking this month.");
+  }
+  for (const journal of actionable) {
     await postJournal({
       entityId: opts.entityId,
       periodId: period.id,
@@ -828,12 +909,12 @@ export async function reverseOperatingJournals(opts: {
       year: opts.year,
       month: opts.month,
       action: "REVERSE_OPERATING",
-      detail: `${reason} · ${blocking.length} above-NOI journal(s)`,
+      detail: `${reason} · ${actionable.length} above-NOI journal(s)`,
     },
   });
   return {
-    reversed: blocking.length,
-    journals: blocking.map(({ lines: _lines, ...preview }) => preview),
+    reversed: actionable.length,
+    journals: actionable.map(({ lines: _lines, ...preview }) => preview),
   };
 }
 

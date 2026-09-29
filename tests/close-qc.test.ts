@@ -18,11 +18,12 @@ import {
   type TieOutInput,
   type UnitSnapshot,
 } from "@rcp/properties";
-import { parseCloseFile } from "@/lib/close/parse-file";
+import { classifyCloseFile, parseCloseFile } from "@/lib/close/parse-file";
 import {
   loadCloseWorkspace,
   postCloseToBooks,
   previewOperatingReversals,
+  rememberMap,
   reverseOperatingJournals,
   setTieOutTolerance,
   storeCloseUpload,
@@ -197,6 +198,52 @@ describe("close file parser", () => {
     const parsed = parseCloseFile("t12.xlsx", bytes, { classification: "t12", year: 2026, month: 8 });
     expect(parsed.lines.find((line) => line.accountCode === "4010")?.signedCents).toBe("100000");
     expect(parsed.note).toMatch(/Aug 2026/);
+  });
+
+  it("treats pnl, p&l, and p-l filenames as income statements and reads an Aug Actual column", () => {
+    expect(classifyCloseFile("pnl.csv")).toBe("income_statement");
+    expect(classifyCloseFile("P&L.csv")).toBe("income_statement");
+    expect(classifyCloseFile("p-l.csv")).toBe("income_statement");
+    expect(classifyCloseFile("WBG_PnL_Aug.csv")).toBe("income_statement");
+    expect(classifyCloseFile("WBG_P&L_Aug.xlsx")).toBe("income_statement");
+    const file = Buffer.from(
+      [
+        "Account,Aug Actual,YTD Actual",
+        'Gross Potential Rent,"1,500.00","99,000.00"',
+        'Payroll,"300.00","40,000.00"',
+        'Net Operating Income,"1,200.00","59,000.00"',
+      ].join("\n"),
+      "utf8",
+    );
+    const august = parseCloseFile("pnl.csv", file, { year: 2026, month: 8 });
+    expect(august.classification).toBe("income_statement");
+    expect(august.control.blocksPosting).toBe(false);
+    expect(august.lines.find((line) => line.accountCode === "4010")?.signedCents).toBe("150000");
+    expect(august.lines.find((line) => line.accountCode === "5110")?.signedCents).toBe("30000");
+    const july = parseCloseFile("pnl.csv", file, { year: 2026, month: 7 });
+    expect(july.lines.filter((line) => line.accountCode && !line.flag)).toHaveLength(0);
+    expect(july.control.blocksPosting).toBe(true);
+    expect(july.note).toMatch(/posting is blocked/i);
+    expect(july.note).toMatch(/July 2026/);
+  });
+
+  it("maps an Aug Actual header to the close month for a T12 file and blocks a missing month", () => {
+    const bytes = sheet([
+      ["Account", "Jul Actual", "Aug Actual", "YTD Actual"],
+      ["Gross Potential Rent", "100", "1000", "12000"],
+      ["Payroll", "40", "300", "4000"],
+    ]);
+    const august = parseCloseFile("t12.xlsx", bytes, { classification: "t12", year: 2026, month: 8 });
+    expect(august.lines.find((line) => line.accountCode === "4010")?.signedCents).toBe("100000");
+    expect(august.lines.find((line) => line.accountCode === "5110")?.signedCents).toBe("30000");
+    expect(august.note).toMatch(/Aug Actual/);
+    expect(august.control.blocksPosting).toBe(false);
+    const missing = parseCloseFile("t12.xlsx", bytes, { classification: "t12", year: 2026, month: 9 });
+    expect(missing.lines).toHaveLength(0);
+    expect(missing.control.blocksPosting).toBe(true);
+    expect(missing.note).toMatch(/September 2026/);
+    expect(missing.note).toMatch(/posting is blocked/i);
+    expect(missing.note).toMatch(/trailing total was not used/i);
   });
 });
 
@@ -914,6 +961,226 @@ describe("close upload, posting, and tie-outs", () => {
     const statement = buildIncomeStatement({ throughEnd: lines, inPeriod: lines, eliminate: false });
     expect(statement.interest).toBe(dollars(40));
     expect(statement.noi).toBe(0n);
+  });
+
+  it("uses one above-NOI absolute amount for a full journal and a partial journal", async () => {
+    const entity = await freshSpe("SPE-QAMT", "QC Amount LLC");
+    const period = await openPeriod(entity.id, 2026, 8);
+    await postJournal({
+      entityId: entity.id,
+      periodId: period.id,
+      date: new Date("2026-08-31T16:00:00.000Z"),
+      memo: "Revenue and payroll",
+      source: "seed",
+      lines: [
+        { accountCode: "4010", debit: 0n, credit: dollars(1_500) },
+        { accountCode: "5110", debit: dollars(300), credit: 0n },
+        { accountCode: "1010", debit: dollars(1_200), credit: 0n },
+      ],
+    });
+    await postJournal({
+      entityId: entity.id,
+      periodId: period.id,
+      date: new Date("2026-08-31T16:00:00.000Z"),
+      memo: "Revenue, payroll, and interest",
+      source: "seed",
+      lines: [
+        { accountCode: "4010", debit: 0n, credit: dollars(1_500) },
+        { accountCode: "5110", debit: dollars(300), credit: 0n },
+        { accountCode: "6110", debit: dollars(200), credit: 0n },
+        { accountCode: "1010", debit: dollars(1_000), credit: 0n },
+      ],
+    });
+    const preview = await previewOperatingReversals({ entityId: entity.id, year: 2026, month: 8 });
+    expect(preview).toHaveLength(2);
+    for (const row of preview) {
+      expect(row.needsManualSplit).toBe(false);
+      expect(row.amountCents).toBe(dollars(1_800));
+    }
+    expect(preview.find((row) => row.memo === "Revenue and payroll")?.partial).toBe(false);
+    expect(preview.find((row) => row.memo === "Revenue, payroll, and interest")?.partial).toBe(true);
+  });
+
+  it("blocks a journal that mixes operating lines with an OpCo mirror instead of skipping it", async () => {
+    const entity = await freshSpe("SPE-QMAN", "QC Manual Split LLC");
+    const period = await openPeriod(entity.id, 2026, 8);
+    await postJournal({
+      entityId: entity.id,
+      periodId: period.id,
+      date: new Date("2026-08-31T16:00:00.000Z"),
+      memo: "GPR with related-party mirror",
+      source: "seed",
+      lines: [
+        { accountCode: "4010", debit: 0n, credit: dollars(1_500) },
+        { accountCode: "5110", debit: dollars(300), credit: 0n },
+        { accountCode: "1310", debit: dollars(1_200), credit: 0n },
+      ],
+    });
+    await postJournal({
+      entityId: entity.id,
+      periodId: period.id,
+      date: new Date("2026-08-31T16:00:00.000Z"),
+      memo: "OpCo asset management fee only",
+      source: "seed",
+      lines: [
+        { accountCode: "6310", debit: dollars(50), credit: 0n },
+        { accountCode: "2310", debit: 0n, credit: dollars(50) },
+      ],
+    });
+    const preview = await previewOperatingReversals({ entityId: entity.id, year: 2026, month: 8 });
+    expect(preview.map((row) => row.memo)).toEqual(["GPR with related-party mirror"]);
+    expect(preview[0]?.needsManualSplit).toBe(true);
+    expect(preview[0]?.amountCents).toBe(dollars(1_800));
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "august-pnl.csv",
+      mimeType: "text/csv",
+      bytes: pnlCsv(),
+    });
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(/manual split/);
+    await expect(
+      reverseOperatingJournals({
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        reason: "Try to reverse the mixed journal",
+      }),
+    ).rejects.toThrow(/manual split/);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "operating_reversal" } })).toBe(0);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "month_end_is" } })).toBe(0);
+    expect(await accountNet(entity.id, "4010")).toBe(-dollars(1_500));
+    expect(await accountNet(entity.id, "5110")).toBe(dollars(300));
+    await prisma.journalLine.deleteMany({ where: { journal: { entityId: entity.id } } });
+    await prisma.journal.deleteMany({ where: { entityId: entity.id } });
+  });
+
+  it("refuses to post a P&L or T12 that mapped no income lines", async () => {
+    const entity = await freshSpe("SPE-QNIL", "QC Empty P&L LLC");
+    const augustFile = Buffer.from(
+      [
+        "Account,Aug Actual,YTD Actual",
+        'Gross Potential Rent,"1,500.00","99,000.00"',
+        'Payroll,"300.00","40,000.00"',
+        'Net Operating Income,"1,200.00","59,000.00"',
+      ].join("\n"),
+      "utf8",
+    );
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "pnl.csv",
+      mimeType: "text/csv",
+      bytes: augustFile,
+    });
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(1_200));
+
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 7,
+      filename: "pnl.csv",
+      mimeType: "text/csv",
+      bytes: augustFile,
+    });
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 7 })).rejects.toThrow(
+      /posting is blocked|no income lines|no column/i,
+    );
+    const july = await loadCloseWorkspace(entity.id, 2026, 7);
+    expect(july.uploads[0]?.blocksPosting).toBe(true);
+    expect(july.uploads[0]?.note).toMatch(/posting is blocked/i);
+    expect(july.uploads[0]?.note).toMatch(/July 2026/);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "month_end_is", period: { month: 7 } } })).toBe(0);
+
+    const aug = await openPeriod(entity.id, 2026, 5);
+    await postJournal({
+      entityId: entity.id,
+      periodId: aug.id,
+      date: new Date("2026-05-31T16:00:00.000Z"),
+      memo: "Seeded May GPR",
+      source: "seed",
+      lines: [
+        { accountCode: "1110", debit: dollars(100), credit: 0n },
+        { accountCode: "4010", debit: 0n, credit: dollars(100) },
+      ],
+    });
+    await reverseOperatingJournals({
+      entityId: entity.id,
+      year: 2026,
+      month: 5,
+      reason: "Replace seeded May books with the manager package",
+    });
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 5,
+      filename: "t12.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: sheet([
+        ["Account", "Jul 2026", "T12"],
+        ["Gross Potential Rent", "100", "12000"],
+      ]),
+    });
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 5 })).rejects.toThrow(
+      /posting is blocked|no column/i,
+    );
+    expect(await periodNoi(entity.id, 2026, 5)).toBe(0n);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "month_end_is", period: { month: 5 } } })).toBe(0);
+    const may = await loadCloseWorkspace(entity.id, 2026, 5);
+    const t12 = may.uploads.find((file) => file.filename === "t12.xlsx");
+    expect(t12?.blocksPosting).toBe(true);
+    expect(t12?.note).toMatch(/May 2026/);
+    expect(t12?.note).toMatch(/posting is blocked/i);
+  });
+
+  it("posts an all-unmapped income statement after both labels are remembered, without uploading again", async () => {
+    const entity = await freshSpe("SPE-QMAP", "QC Remember Map LLC");
+    const file = Buffer.from(["Account,Aug Actual", "Zork Revenue Widget,1000", "Frobnicator Cost,200"].join("\n"), "utf8");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "august-profit.csv",
+      mimeType: "text/csv",
+      bytes: file,
+    });
+    const blocked = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(blocked.uploads[0]?.classification).toBe("income_statement");
+    expect(blocked.uploads[0]?.unmapped).toEqual(["Zork Revenue Widget", "Frobnicator Cost"]);
+    expect(blocked.uploads[0]?.blocksPosting).toBe(true);
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(/no mapped income lines/i);
+    await rememberMap({
+      entityId: entity.id,
+      sourceSystem: entity.code,
+      sourceAccountNo: "",
+      label: "Zork Revenue Widget",
+      accountCode: "4010",
+      year: 2026,
+      month: 8,
+    });
+    await rememberMap({
+      entityId: entity.id,
+      sourceSystem: entity.code,
+      sourceAccountNo: "",
+      label: "Frobnicator Cost",
+      accountCode: "5110",
+      year: 2026,
+      month: 8,
+    });
+    const ready = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(ready.uploads[0]?.unmapped).toEqual([]);
+    expect(ready.uploads[0]?.blocksPosting).toBe(false);
+    expect(await prisma.monthEndUpload.count({ where: { entityId: entity.id, year: 2026, month: 8 } })).toBe(1);
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(800));
   });
 
   it("keeps SPE-WBG interest, depreciation, and the AM fee when a P&L package replaces above-NOI journals", async () => {
