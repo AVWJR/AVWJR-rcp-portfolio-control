@@ -115,6 +115,17 @@ export default async function MonthEndClosePage({
                     {file.blocksPosting && file.note ? (
                       <p className="mt-2 text-red-800">{file.note}</p>
                     ) : null}
+                    {file.lines.some((line) => line.confidence === "CONTEXT" && line.accountCode) ? (
+                      <p className="mt-2 text-ink-700">
+                        Needs review — a leading account number was used because the caption shares a distinctive word
+                        with that account, not because the names match:{" "}
+                        {file.lines
+                          .filter((line) => line.confidence === "CONTEXT" && line.accountCode)
+                          .map((line) => `${line.sourceLabel} → ${line.accountCode}`)
+                          .join("; ")}
+                        .
+                      </p>
+                    ) : null}
                     {file.unmapped.length ? (
                       <div className="mt-3 space-y-2">
                         <p className="text-ink-700">Unmapped lines block hard close. Pick an RCP account — it is remembered for this SPE.</p>

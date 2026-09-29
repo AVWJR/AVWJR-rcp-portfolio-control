@@ -92,18 +92,23 @@ export function isStatementTotalLabel(label: string): boolean {
   return SKIP.test(text);
 }
 
-export function mapNormalizedLabel(label: string, section?: Rule["section"]): CrosswalkHit {
+export function mapNormalizedLabel(
+  label: string,
+  section?: Rule["section"],
+  accept?: (code: string) => boolean,
+): CrosswalkHit {
   const text = normalizeVendorLabel(label);
   if (!text || isStatementTotalLabel(text)) {
     return { accountCode: null, confidence: "NONE", balanceSheet: false };
   }
-  if (/vacant utilit/.test(text)) {
+  if (/vacant utilit/.test(text) && (!accept || accept("5310"))) {
     return { accountCode: "5310", confidence: "RULE", balanceSheet: false };
   }
   for (const rule of RULES) {
     if (rule.section && section && rule.section !== section) continue;
     if (!rule.re.test(text)) continue;
     if (rule.re.source.includes("vacancy") && /vacant utilit/.test(text)) continue;
+    if (accept && !accept(rule.code)) continue;
     return {
       accountCode: rule.code,
       confidence: "RULE",

@@ -218,6 +218,27 @@ describe("close file parser", () => {
     expect(mapStatementLabel("2030 Capital Plan").accountCode).toBeNull();
     expect(mapStatementLabel("1999 Misc").accountCode).toBeNull();
     expect(mapStatementLabel("2026 Budget").accountCode).toBeNull();
+    for (const label of [
+      "1010 Operating Expense",
+      "1010 Operating Income",
+      "1010 Operating Reserve",
+      "1010 Total Operating",
+      "1010 Cash Flow Adjustment",
+      "2010 Accounts Suspense",
+      "2010 Payable to Lender",
+      "2020 Expenses Reimbursed",
+    ]) {
+      expect(mapStatementLabel(label).accountCode, label).toBeNull();
+    }
+    expect(mapStatementLabel("1110 Accounts Written Off").accountCode).not.toBe("1110");
+    expect(mapStatementLabel("1010 Cash")).toMatchObject({ accountCode: "1010", confidence: "EXACT" });
+    expect(mapStatementLabel("2010 Accounts Payable")).toMatchObject({ accountCode: "2010", confidence: "EXACT" });
+    expect(mapStatementLabel("2020 Accrued Expenses")).toMatchObject({ accountCode: "2020", confidence: "EXACT" });
+    expect(mapStatementLabel("1210 Prepaid Expenses")).toMatchObject({ accountCode: "1210", confidence: "EXACT" });
+    expect(mapStatementLabel("1110 Accounts Receivable")).toMatchObject({ accountCode: "1110", confidence: "EXACT" });
+    // "operating" and "account" are generic, and the caption omits "cash", so this stays unmapped.
+    expect(mapStatementLabel("1010 Operating Account").accountCode).toBeNull();
+    expect(mapStatementLabel("1020 Replacement Holding")).toMatchObject({ accountCode: "1020", confidence: "CONTEXT" });
     const foreign = parseCloseFile(
       "balance-sheet.csv",
       Buffer.from(["Account,Actual", "9999 Mystery Vendor,100"].join("\n"), "utf8"),
@@ -243,6 +264,89 @@ describe("close file parser", () => {
     );
     expect(zero.control.blocksPosting).toBe(true);
     expect(zero.lines.some((line) => line.accountCode === "2010")).toBe(true);
+  });
+
+  it("keeps a generic caption off cash and balance-sheet lines off income-statement accounts", () => {
+    const bs = { balanceSheet: true as const };
+    for (const label of [
+      "1010 Operating Expense",
+      "1010 Operating Income",
+      "1010 Operating Reserve",
+      "1010 Total Operating",
+      "1010 Cash Flow Adjustment",
+      "2010 Accounts Suspense",
+      "2010 Payable to Lender",
+      "2020 Expenses Reimbursed",
+      "1110 Accounts Written Off",
+      "1010 Operating Account",
+    ]) {
+      const mapped = mapStatementLabel(label, null, bs);
+      expect(mapped.accountCode, label).not.toBe(label.slice(0, 4));
+      expect(mapped.confidence, label).not.toBe("EXACT");
+    }
+    expect(mapStatementLabel("1010 Cash - Operating", null, bs)).toMatchObject({
+      accountCode: "1010",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1010 Cash", null, bs)).toMatchObject({ accountCode: "1010", confidence: "EXACT" });
+    expect(mapStatementLabel("2010 Accounts Payable", null, bs)).toMatchObject({
+      accountCode: "2010",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("2020 Accrued Expenses", null, bs)).toMatchObject({
+      accountCode: "2020",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1210 Prepaid Expenses", null, bs)).toMatchObject({
+      accountCode: "1210",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1110 Accounts Receivable", null, bs)).toMatchObject({
+      accountCode: "1110",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1210 Prepaid Insurance", null, bs)).toMatchObject({
+      accountCode: "1210",
+      confidence: "RULE",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("2030 Accrued Payroll", null, bs)).toMatchObject({
+      accountCode: "2020",
+      confidence: "RULE",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("2030 Accrued Interest", null, bs)).toMatchObject({
+      accountCode: "2030",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("2010 Security Deposits Payable", null, bs)).toMatchObject({
+      accountCode: "2050",
+      confidence: "RULE",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("1210 Prepaid Insurance").accountCode).toBe("5710");
+    expect(mapStatementLabel("2030 Accrued Payroll").accountCode).toBe("5110");
+    expect(mapStatementLabel("2010 Security Deposits Payable").accountCode).toBe("5410");
+
+    const parsed = parseCloseFile(
+      "balance-sheet.csv",
+      Buffer.from(
+        ["Account,Actual", "1010 Cash - Operating,50000", "1010 Operating Expense,777", "1210 Prepaid Insurance,100", "2030 Accrued Payroll,200", "2010 Security Deposits Payable,300"].join("\n"),
+        "utf8",
+      ),
+      { year: 2026, month: 8 },
+    );
+    const cash = parsed.lines.find((line) => /cash - operating/i.test(line.sourceLabel));
+    expect(cash?.accountCode).toBe("1010");
+    expect(cash?.signedCents).toBe("5000000");
+    expect(parsed.lines.some((line) => line.accountCode === "1010" && /operating expense/i.test(line.sourceLabel))).toBe(false);
+    expect(parsed.unmapped.some((label) => /operating expense/i.test(label))).toBe(true);
+    expect(parsed.lines.find((line) => /prepaid insurance/i.test(line.sourceLabel))?.accountCode).toBe("1210");
+    expect(parsed.lines.find((line) => /accrued payroll/i.test(line.sourceLabel))?.accountCode).toBe("2020");
+    expect(parsed.lines.find((line) => /security deposits/i.test(line.sourceLabel))?.accountCode).toBe("2050");
+    expect(parsed.lines.some((line) => ["5710", "5110", "5410"].includes(line.accountCode ?? ""))).toBe(false);
+    const review = parsed.lines.find((line) => line.confidence === "CONTEXT");
+    expect(review).toBeUndefined();
   });
 
   it("keeps a labeled row with a blank Actual and blocks posting", () => {
@@ -924,6 +1028,27 @@ describe("close upload, posting, and tie-outs", () => {
     expect(noticed.uploads.find((file) => file.id === newer.uploadId)?.incomePosting).toBe("superseded");
     await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
     expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(75_000));
+  });
+
+  it("does not add a generic operating caption onto cash", async () => {
+    const entity = await freshSpe("SPE-QCSH", "QC Cash Caption LLC");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(
+        ["Account,Actual", "1010 Cash - Operating,50000", "1010 Operating Expense,777"].join("\n"),
+        "utf8",
+      ),
+    });
+    const view = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(view.uploads[0]?.unmapped.some((label) => /operating expense/i.test(label))).toBe(true);
+    expect(view.uploads[0]?.lines.find((line) => line.accountCode === "1010")?.signedCents).toBe("5000000");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "1010")).toBe(dollars(50_000));
   });
 
   it("posts one balance sheet when two identical files are uploaded", async () => {

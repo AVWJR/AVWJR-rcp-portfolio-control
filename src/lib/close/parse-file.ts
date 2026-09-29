@@ -102,6 +102,34 @@ function splitAccount(label: string): { sourceAccountNo: string; rest: string } 
 
 const MIRROR_CODES = new Set(["1310", "2310", "6310", "7010"]);
 
+/**
+ * Words that show up on many unrelated lines. Sharing only these with an RCP
+ * account name is not agreement. `1010 Operating Account` stays unmapped:
+ * both words are generic, and the caption does not include every word of
+ * Cash — Operating.
+ */
+const GENERIC_CAPTION_WORDS = new Set([
+  "operating",
+  "account",
+  "accounts",
+  "expense",
+  "expenses",
+  "income",
+  "total",
+  "other",
+  "net",
+  "payable",
+  "receivable",
+  "related",
+  "parties",
+  "cash",
+  "flow",
+  "adjustment",
+  "due",
+]);
+
+type MappedLabel = { accountCode: string | null; confidence: MapConfidence; balanceSheet: boolean };
+
 function contentWords(value: string): string[] {
   return normalizeVendorLabel(value)
     .split(" ")
@@ -114,66 +142,102 @@ function chartNameAgrees(accountName: string, text: string): boolean {
   return Boolean(label) && label === name;
 }
 
-/** A vendor caption that shares no word with the RCP account is a different line. */
-function captionSharesNoWord(accountName: string, text: string): boolean {
-  const labelWords = contentWords(text);
-  if (!labelWords.length) return false;
-  const nameWords = new Set(contentWords(accountName));
-  return labelWords.every((word) => !nameWords.has(word));
+function isIncomeStatementCode(code: string | null | undefined): boolean {
+  return Boolean(code && /^[4-7]/.test(code));
 }
 
 function balanceSheetAccount(account: { type: string } | undefined): boolean {
   return account != null && account.type !== "REVENUE" && account.type !== "EXPENSE";
 }
 
-/**
- * A leading RCP number maps only when the words agree with that account, or
- * when no label rule matches and the account is an ordinary balance-sheet
- * account. Vendor numbers that collide (payroll 6110, management-fee 6310,
- * roof 2020, capital 2030, suspense 1999) stay on the label rules.
- */
-function fromLeadingAccount(
-  sourceAccountNo: string,
-  text: string,
-): { accountCode: string; confidence: MapConfidence; balanceSheet: boolean } | null {
-  if (!sourceAccountNo || !MASTER_COA_BY_CODE.has(sourceAccountNo)) return null;
-  const account = MASTER_COA_BY_CODE.get(sourceAccountNo);
+/** A distinctive account word, or every word of the account name, including generic ones. */
+function captionHasDistinctiveOrEveryWord(accountName: string, text: string): boolean {
+  const nameWords = contentWords(accountName);
+  const labelWords = new Set(contentWords(text));
+  if (!nameWords.length) return false;
+  const distinctive = nameWords.filter((word) => !GENERIC_CAPTION_WORDS.has(word));
+  if (distinctive.some((word) => labelWords.has(word))) return true;
+  return nameWords.every((word) => labelWords.has(word));
+}
+
+function chartAccount(sourceAccountNo: string) {
+  if (!sourceAccountNo || !MASTER_COA_BY_CODE.has(sourceAccountNo)) return undefined;
+  return MASTER_COA_BY_CODE.get(sourceAccountNo);
+}
+
+/** Chart-name equality, or a label rule that names this same account. */
+function leadingAgreement(sourceAccountNo: string, text: string, balanceSheetFile: boolean): MappedLabel | null {
+  const account = chartAccount(sourceAccountNo);
   if (!account) return null;
+  if (balanceSheetFile && isIncomeStatementCode(sourceAccountNo)) return null;
   const rule = mapNormalizedLabel(text);
-  const agrees = chartNameAgrees(account.name, text) || rule.accountCode === sourceAccountNo;
-  if (agrees) {
-    return {
-      accountCode: sourceAccountNo,
-      confidence: "EXACT",
-      balanceSheet: balanceSheetAccount(account),
-    };
-  }
-  if (
-    !rule.accountCode &&
-    balanceSheetAccount(account) &&
-    !MIRROR_CODES.has(sourceAccountNo) &&
-    sourceAccountNo !== "1999" &&
-    !captionSharesNoWord(account.name, text)
-  ) {
-    return { accountCode: sourceAccountNo, confidence: "EXACT", balanceSheet: true };
-  }
+  const ruleAgrees = rule.accountCode === sourceAccountNo && !(balanceSheetFile && isIncomeStatementCode(rule.accountCode));
+  if (!chartNameAgrees(account.name, text) && !ruleAgrees) return null;
+  return {
+    accountCode: sourceAccountNo,
+    confidence: "EXACT",
+    balanceSheet: balanceSheetAccount(account),
+  };
+}
+
+/**
+ * No label rule matched. Use the leading number only when the caption shares a
+ * distinctive word with that balance-sheet account, or contains every word of
+ * its name. These lines need review — the match is not exact.
+ */
+function leadingFallback(sourceAccountNo: string, text: string, balanceSheetFile: boolean): MappedLabel | null {
+  const account = chartAccount(sourceAccountNo);
+  if (!account || !balanceSheetAccount(account)) return null;
+  if (MIRROR_CODES.has(sourceAccountNo) || sourceAccountNo === "1999") return null;
+  const rule = mapNormalizedLabel(text);
+  const ruleBlocks = Boolean(rule.accountCode) && !(balanceSheetFile && isIncomeStatementCode(rule.accountCode));
+  if (ruleBlocks || !captionHasDistinctiveOrEveryWord(account.name, text)) return null;
+  return { accountCode: sourceAccountNo, confidence: "CONTEXT", balanceSheet: true };
+}
+
+/** Balance-sheet captions that the income-statement rules would send to 4xxx–7xxx. */
+function preferBalanceSheetAccount(text: string): MappedLabel | null {
+  const label = normalizeVendorLabel(text);
+  if (/security deposit/.test(label)) return { accountCode: "2050", confidence: "RULE", balanceSheet: true };
+  if (/prepaid rent/.test(label)) return { accountCode: "2040", confidence: "RULE", balanceSheet: true };
+  if (/\bprepaid\b/.test(label)) return { accountCode: "1210", confidence: "RULE", balanceSheet: true };
+  if (/accrued interest|\binterest payable\b/.test(label)) return { accountCode: "2030", confidence: "RULE", balanceSheet: true };
+  if (/\baccru/.test(label)) return { accountCode: "2020", confidence: "RULE", balanceSheet: true };
   return null;
+}
+
+function mapBalanceSheetLabel(sourceAccountNo: string, text: string): MappedLabel {
+  const agreed = leadingAgreement(sourceAccountNo, text, true);
+  if (agreed) return agreed;
+  const ruled = mapNormalizedLabel(text, undefined, (code) => !isIncomeStatementCode(code));
+  if (ruled.accountCode) {
+    return { accountCode: ruled.accountCode, confidence: "RULE", balanceSheet: true };
+  }
+  const preferred = preferBalanceSheetAccount(text);
+  if (preferred) return preferred;
+  const fallback = leadingFallback(sourceAccountNo, text, true);
+  if (fallback) return fallback;
+  return { accountCode: null, confidence: "NONE", balanceSheet: true };
 }
 
 export function mapStatementLabel(
   label: string,
   client?: { accountCode: string } | null,
-): { accountCode: string | null; confidence: MapConfidence; balanceSheet: boolean } {
+  options?: { balanceSheet?: boolean },
+): MappedLabel {
   if (client?.accountCode && MASTER_COA_BY_CODE.has(client.accountCode)) {
     return { accountCode: client.accountCode, confidence: "CLIENT_MAP", balanceSheet: false };
   }
   const { sourceAccountNo, rest } = splitAccount(label);
   const text = rest || label;
-  if (MASTER_COA_BY_CODE.has(rest)) {
+  if (MASTER_COA_BY_CODE.has(rest) && !(options?.balanceSheet && isIncomeStatementCode(rest))) {
     return { accountCode: rest, confidence: "EXACT", balanceSheet: false };
   }
-  const fromNumber = fromLeadingAccount(sourceAccountNo, text);
-  if (fromNumber) return fromNumber;
+  if (options?.balanceSheet) return mapBalanceSheetLabel(sourceAccountNo, text);
+  const agreed = leadingAgreement(sourceAccountNo, text, false);
+  if (agreed) return agreed;
+  const fallback = leadingFallback(sourceAccountNo, text, false);
+  if (fallback) return fallback;
   const hit = mapNormalizedLabel(text);
   return { accountCode: hit.accountCode, confidence: hit.confidence, balanceSheet: hit.balanceSheet };
 }
@@ -362,7 +426,7 @@ export function rowsFromMatrix(
     }
     if (isStatementTotalLabel(labelCell)) return;
     const { sourceAccountNo, rest } = splitAccount(labelCell);
-    const mapped = mapStatementLabel(labelCell);
+    const mapped = mapStatementLabel(labelCell, null, { balanceSheet: mode === "balance" });
     let signed = amount ?? 0n;
     if (mode === "gl" && amount != null) {
       const account = mapped.accountCode ? MASTER_COA_BY_CODE.get(mapped.accountCode) : undefined;
