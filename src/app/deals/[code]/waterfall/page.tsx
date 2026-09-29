@@ -3,7 +3,7 @@ import { WaterfallForm } from "@/components/deals/waterfall-form";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { currentAccessRole } from "@/lib/access-server";
 import { europeanPromoteOpen, loadLiveSpeWaterfalls, loadSpeWaterfall } from "@/lib/waterfall";
-import { cfadsCents, cashBreakdown, periodPpeAdditionsCents } from "@rcp/analytics";
+import { cfadsCents, cashBreakdown, distributableOperatingCashCents, periodPpeAdditionsCents } from "@rcp/analytics";
 import { buildIncomeStatement, formatUsd, netByCode, principalPaydownFromLines, rollupBalances } from "@rcp/ledger";
 import { buildOperatingPackage } from "@/lib/operating";
 import { loadPortfolioDebt } from "@/lib/debt-view";
@@ -41,6 +41,7 @@ export default async function DealWaterfallPage({
         const startBalances = rollupBalances(pack.scope.throughStart);
         const startMap = new Map(startBalances.map((row) => [row.code, netByCode(startBalances, row.code)]));
         const cash = cashBreakdown(endMap);
+        const operatingCash = distributableOperatingCashCents(endMap);
         const is = buildIncomeStatement({
           throughEnd: pack.scope.throughEnd,
           throughStart: pack.scope.throughStart,
@@ -91,7 +92,8 @@ export default async function DealWaterfallPage({
                 </Link>
               </div>
               <p className="mt-2 text-sm text-ink-600">
-                Period CFADS {formatUsd(cfads)} · SPE cash {formatUsd(cash.total)} · principal this month{" "}
+                Period CFADS {formatUsd(cfads)} · Operating cash available {formatUsd(operatingCash)} (excludes
+                reserves, escrow and tenant deposits) · Total cash {formatUsd(cash.total)} · principal this month{" "}
                 {formatUsd(principalPaydownFromLines(pack.scope.throughStart, pack.scope.throughEnd))} (debt service is
                 not a waterfall input).
               </p>
@@ -102,7 +104,7 @@ export default async function DealWaterfallPage({
                 entityName={ctx.entity.name}
                 period={period}
                 distributableCents={cfads.toString()}
-                cashCents={cash.total.toString()}
+                cashCents={operatingCash.toString()}
                 europeanPromoteOpen={gate}
                 initial={{
                   ...record.config,
