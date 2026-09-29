@@ -37,10 +37,28 @@ import {
   type TieOut,
   type TieTolerance,
 } from "@rcp/properties";
-import { chooseIncomeUpload, isIncomeSource } from "./income-source";
+import {
+  balancePostingLabel,
+  balanceSourceSummary,
+  chooseBalanceUpload,
+  isBalanceSource,
+  MISSING_BALANCE_SOURCE_MESSAGE,
+  newerBalanceNotice,
+} from "./balance-source";
+import {
+  chooseIncomeUpload,
+  incomePostingLabel,
+  incomeSourceSummary,
+  isIncomeSource,
+  MISSING_INCOME_SOURCE_MESSAGE,
+  newerFileNotice,
+  newerSelectableUpload,
+} from "./income-source";
 import {
   applyRememberedMaps,
+  balanceSheetLacksUsableAmount,
   classifyCloseFile,
+  EMPTY_BALANCE_SHEET_MESSAGE,
   parseCloseFile,
   type CloseFileClass,
   type ParsedCloseLine,
@@ -317,6 +335,12 @@ function postingBlockAfterMaps(
   lines: ParsedCloseLine[],
   saved: { note: string; blocksPosting: boolean },
 ): { note: string; blocksPosting: boolean } {
+  if (classification === "balance_sheet" && balanceSheetLacksUsableAmount(lines)) {
+    return {
+      blocksPosting: true,
+      note: /posting is blocked/i.test(saved.note) ? saved.note : `${saved.note} ${EMPTY_BALANCE_SHEET_MESSAGE}`.trim(),
+    };
+  }
   if (saved.blocksPosting) return saved;
   if (classification !== "t12" && classification !== "income_statement") return saved;
   if (!lines.some((line) => !line.flag) || mappedIncomeLines(lines).length > 0) return saved;
@@ -324,6 +348,14 @@ function postingBlockAfterMaps(
     blocksPosting: true,
     note: "No income lines are mapped yet, so posting is blocked. Remember an RCP account for each line, then post. You do not need to upload the file again.",
   };
+}
+
+function uploadIsBlocked(
+  upload: { classification: string; parsedJson: string },
+  maps: { normalizedLabel: string; sourceAccountNo: string; accountCode: string }[],
+): boolean {
+  const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
+  return postingBlockAfterMaps(upload.classification, lines, uploadNote(upload.parsedJson)).blocksPosting;
 }
 
 function uploadControl(parsedJson: string): { blocksPosting: boolean; detail: string } | null {
@@ -396,8 +428,10 @@ export async function postCloseToBooks(opts: {
   entityId: string;
   year: number;
   month: number;
-  /** Income statement, T12, or other file to post. Blank uses the most recent income statement. */
+  /** Income statement, T12, or other file to post. Blank reuses a saved choice, or the most recent income statement. */
   incomeUploadId?: string | null;
+  /** Balance sheet to post. Blank reuses a saved choice, or the most recent balance sheet. */
+  balanceUploadId?: string | null;
   controllerOverride?: boolean | string;
   reason?: string;
 }) {
@@ -411,8 +445,20 @@ export async function postCloseToBooks(opts: {
     where: { entityId: opts.entityId, year: opts.year, month: opts.month },
     orderBy: { createdAt: "asc" },
   });
-  const chosen = chooseIncomeUpload(uploads, opts.incomeUploadId);
   const maps = await rememberedMaps(opts.entityId);
+  const blocked = (upload: (typeof uploads)[number]) => uploadIsBlocked(upload, maps);
+  const chosen = chooseIncomeUpload(uploads, opts.incomeUploadId, {
+    savedUploadId: period.incomeSourceUploadId,
+    isBlocked: blocked,
+    blockedSaved: "throw",
+    missingSaved: "throw",
+  });
+  const chosenBalance = chooseBalanceUpload(uploads, opts.balanceUploadId, {
+    savedUploadId: period.balanceSourceUploadId,
+    isBlocked: blocked,
+    blockedSaved: "throw",
+    missingSaved: "throw",
+  });
   const income: ImportAmount[] = [];
   const balanceDesired = new Map<string, bigint>();
   for (const upload of uploads) {
@@ -420,9 +466,13 @@ export async function postCloseToBooks(opts: {
     if (kind === "rent_roll" || (kind === "pdf" && linesFromUpload(upload.parsedJson).length === 0)) continue;
     const incomeFile = isIncomeSource(kind);
     if (incomeFile && upload.id !== chosen?.id) continue;
+    if (isBalanceSource(kind) && upload.id !== chosenBalance?.id) continue;
     const control = uploadControl(upload.parsedJson);
     if (control?.blocksPosting) throw new Error(control.detail || "Import control totals do not tie. Posting is blocked.");
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
+    if (isBalanceSource(kind) && balanceSheetLacksUsableAmount(lines)) {
+      throw new Error(`${upload.filename} has no usable balance-sheet amount, so posting is blocked.`);
+    }
     if (incomeFile && mappedIncomeLines(lines).length === 0) {
       throw new Error(
         `${upload.filename} has no mapped income lines for this close month, so posting is blocked. Remember an RCP account for each line, then post again.`,
@@ -550,9 +600,53 @@ export async function postCloseToBooks(opts: {
       year: opts.year,
       month: opts.month,
       action: "POST",
-      detail: `Posted ${income.length} income lines from ${chosen?.filename ?? "no income file"} and ${balanceDesired.size} balance-sheet lines`,
+      detail: `Posted ${income.length} income lines from ${chosen?.filename ?? "no income file"} and ${balanceDesired.size} balance-sheet lines from ${chosenBalance?.filename ?? "no balance sheet"}`,
     },
   });
+  const explicitIncome = opts.incomeUploadId?.trim();
+  const explicitBalance = opts.balanceUploadId?.trim();
+  const incomeToSave =
+    explicitIncome && chosen
+      ? chosen.id
+      : !period.incomeSourceUploadId && chosen && onlyPostableUploadId(uploads, isIncomeSource, blocked) === chosen.id
+        ? chosen.id
+        : null;
+  const balanceToSave =
+    explicitBalance && chosenBalance
+      ? chosenBalance.id
+      : !period.balanceSourceUploadId &&
+          chosenBalance &&
+          onlyPostableUploadId(uploads, isBalanceSource, blocked) === chosenBalance.id
+        ? chosenBalance.id
+        : null;
+  if (incomeToSave || balanceToSave) {
+    await prisma.period.update({
+      where: { id: period.id },
+      data: {
+        ...(incomeToSave ? { incomeSourceUploadId: incomeToSave } : {}),
+        ...(balanceToSave ? { balanceSourceUploadId: balanceToSave } : {}),
+      },
+    });
+  }
+}
+
+function onlyPostableUploadId<T extends { id: string; classification: string }>(
+  uploads: T[],
+  matches: (classification: string) => boolean,
+  isBlocked: (upload: T) => boolean,
+): string | null {
+  const postable = uploads.filter((upload) => matches(upload.classification) && !isBlocked(upload));
+  return postable.length === 1 ? postable[0]!.id : null;
+}
+
+function savedSourceMissing(
+  uploads: { id: string; classification: string }[],
+  savedId: string | null,
+  matches: (classification: string) => boolean,
+): boolean {
+  const id = savedId?.trim();
+  if (!id) return false;
+  return !uploads.some((upload) => upload.id === id && matches(upload.classification));
 }
 
 export async function loadCloseWorkspace(entityId: string, year: number, month: number) {
@@ -691,15 +785,63 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     chargeMismatchCount: rentMeta.chargeMismatchCount ?? 0,
     tolerances,
   });
-  const defaultIncome = chooseIncomeUpload(uploads);
+  const blocked = (upload: (typeof uploads)[number]) => uploadIsBlocked(upload, maps);
+  const savedIncomeUploadId = period?.incomeSourceUploadId ?? null;
+  const savedBalanceUploadId = period?.balanceSourceUploadId ?? null;
+  const incomeMissing = savedSourceMissing(uploads, savedIncomeUploadId, isIncomeSource);
+  const balanceMissing = savedSourceMissing(uploads, savedBalanceUploadId, isBalanceSource);
+  const automaticIncome = chooseIncomeUpload(uploads, null, { isBlocked: blocked });
+  const effectiveIncome = incomeMissing
+    ? null
+    : chooseIncomeUpload(uploads, null, {
+        savedUploadId: savedIncomeUploadId,
+        isBlocked: blocked,
+        blockedSaved: "ignore",
+        missingSaved: "ignore",
+      });
+  const automaticBalance = chooseBalanceUpload(uploads, null, { isBlocked: blocked });
+  const effectiveBalance = balanceMissing
+    ? null
+    : chooseBalanceUpload(uploads, null, {
+        savedUploadId: savedBalanceUploadId,
+        isBlocked: blocked,
+        blockedSaved: "ignore",
+        missingSaved: "ignore",
+      });
+  const incomeSaved = Boolean(savedIncomeUploadId && effectiveIncome?.id === savedIncomeUploadId);
+  const balanceSaved = Boolean(savedBalanceUploadId && effectiveBalance?.id === savedBalanceUploadId);
+  const newerIncome = incomeSaved
+    ? newerSelectableUpload(
+        uploads.filter((upload) => isIncomeSource(upload.classification)),
+        effectiveIncome,
+        blocked,
+      )
+    : null;
+  const newerBalance = balanceSaved
+    ? newerSelectableUpload(
+        uploads.filter((upload) => isBalanceSource(upload.classification)),
+        effectiveBalance,
+        blocked,
+      )
+    : null;
   const fileViews = uploads.map((upload) => {
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
     const meta = postingBlockAfterMaps(upload.classification, lines, uploadNote(upload.parsedJson));
     const incomePosting = !isIncomeSource(upload.classification)
       ? null
-      : upload.id === defaultIncome?.id
+      : upload.id === effectiveIncome?.id
         ? ("source" as const)
         : ("superseded" as const);
+    const balancePosting = !isBalanceSource(upload.classification)
+      ? null
+      : upload.id === effectiveBalance?.id
+        ? ("source" as const)
+        : ("superseded" as const);
+    const postingLabel = incomePosting
+      ? incomePostingLabel(upload, incomePosting, automaticIncome?.id ?? null)
+      : balancePosting
+        ? balancePostingLabel(balancePosting, upload.id === automaticBalance?.id && !balanceSaved)
+        : null;
     return {
       id: upload.id,
       filename: upload.filename,
@@ -714,11 +856,24 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
       note: meta.note,
       blocksPosting: meta.blocksPosting,
       incomePosting,
+      balancePosting,
+      postingLabel,
     };
   });
   return {
     periodStatus: (period?.status ?? "OPEN") as PeriodCloseStatus,
-    defaultIncomeUploadId: defaultIncome?.id ?? null,
+    defaultIncomeUploadId: effectiveIncome?.id ?? null,
+    automaticIncomeUploadId: automaticIncome?.id ?? null,
+    savedIncomeUploadId,
+    incomeSourceSummary: incomeSourceSummary(effectiveIncome, incomeSaved),
+    newerIncomeNotice: newerIncome ? newerFileNotice("income", newerIncome.filename) : null,
+    missingIncomeNotice: incomeMissing ? MISSING_INCOME_SOURCE_MESSAGE : null,
+    defaultBalanceUploadId: effectiveBalance?.id ?? null,
+    automaticBalanceUploadId: automaticBalance?.id ?? null,
+    savedBalanceUploadId,
+    balanceSourceSummary: balanceSourceSummary(effectiveBalance, balanceSaved),
+    newerBalanceNotice: newerBalance ? newerBalanceNotice(newerBalance.filename) : null,
+    missingBalanceNotice: balanceMissing ? MISSING_BALANCE_SOURCE_MESSAGE : null,
     uploads: fileViews,
     events: [
       ...events.map((event) => ({ at: event.createdAt.toISOString(), action: event.action, detail: event.detail })),

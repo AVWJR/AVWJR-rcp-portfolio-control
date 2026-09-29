@@ -20,7 +20,7 @@ import {
   type TieOutInput,
   type UnitSnapshot,
 } from "@rcp/properties";
-import { classifyCloseFile, parseCloseFile } from "@/lib/close/parse-file";
+import { classifyCloseFile, mapStatementLabel, parseCloseFile } from "@/lib/close/parse-file";
 import {
   loadCloseWorkspace,
   postCloseToBooks,
@@ -190,6 +190,163 @@ describe("close file parser", () => {
     expect(statement.vacancy).toBe(dollars(5_000));
     expect(statement.opex).toBe(dollars(3_000));
     expect(statement.noi).toBe(dollars(4_000));
+  });
+
+  it("maps a leading RCP account number only when the caption agrees", () => {
+    const parsed = parseCloseFile(
+      "balance-sheet.csv",
+      Buffer.from(["Account,Actual", "1010 Cash - Operating,5000"].join("\n"), "utf8"),
+      { year: 2026, month: 8 },
+    );
+    const cash = parsed.lines.find((line) => /cash/i.test(line.sourceLabel));
+    expect(cash?.accountCode).toBe("1010");
+    expect(cash?.sourceAccountNo).toBe("1010");
+    expect(cash?.confidence).toBe("EXACT");
+    expect(parsed.unmapped.some((label) => /cash/i.test(label))).toBe(false);
+    expect(mapStatementLabel("1010 Cash - Operating")).toMatchObject({
+      accountCode: "1010",
+      confidence: "EXACT",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("4010-000 Gross Potential Rent")).toMatchObject({
+      accountCode: "4010",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("6110 Salaries & Wages")).toMatchObject({ accountCode: "5110", confidence: "RULE" });
+    expect(mapStatementLabel("6310 Management Fees")).toMatchObject({ accountCode: "5910", confidence: "RULE" });
+    expect(mapStatementLabel("2020 Roof Replacement").accountCode).toBeNull();
+    expect(mapStatementLabel("2030 Capital Plan").accountCode).toBeNull();
+    expect(mapStatementLabel("1999 Misc").accountCode).toBeNull();
+    expect(mapStatementLabel("2026 Budget").accountCode).toBeNull();
+    for (const label of [
+      "1010 Operating Expense",
+      "1010 Operating Income",
+      "1010 Operating Reserve",
+      "1010 Total Operating",
+      "1010 Cash Flow Adjustment",
+      "2010 Accounts Suspense",
+      "2010 Payable to Lender",
+      "2020 Expenses Reimbursed",
+    ]) {
+      expect(mapStatementLabel(label).accountCode, label).toBeNull();
+    }
+    expect(mapStatementLabel("1110 Accounts Written Off").accountCode).not.toBe("1110");
+    expect(mapStatementLabel("1010 Cash")).toMatchObject({ accountCode: "1010", confidence: "EXACT" });
+    expect(mapStatementLabel("2010 Accounts Payable")).toMatchObject({ accountCode: "2010", confidence: "EXACT" });
+    expect(mapStatementLabel("2020 Accrued Expenses")).toMatchObject({ accountCode: "2020", confidence: "EXACT" });
+    expect(mapStatementLabel("1210 Prepaid Expenses")).toMatchObject({ accountCode: "1210", confidence: "EXACT" });
+    expect(mapStatementLabel("1110 Accounts Receivable")).toMatchObject({ accountCode: "1110", confidence: "EXACT" });
+    // "operating" and "account" are generic, and the caption omits "cash", so this stays unmapped.
+    expect(mapStatementLabel("1010 Operating Account").accountCode).toBeNull();
+    expect(mapStatementLabel("1020 Replacement Holding")).toMatchObject({ accountCode: "1020", confidence: "CONTEXT" });
+    const foreign = parseCloseFile(
+      "balance-sheet.csv",
+      Buffer.from(["Account,Actual", "9999 Mystery Vendor,100"].join("\n"), "utf8"),
+      { year: 2026, month: 8 },
+    );
+    expect(foreign.lines.find((line) => /mystery/i.test(line.sourceLabel))?.accountCode ?? null).toBeNull();
+  });
+
+  it("blocks a balance sheet that has no lines or only a zero amount", () => {
+    const empty = parseCloseFile(
+      "balance-sheet-empty.csv",
+      Buffer.from("Account,Actual\n", "utf8"),
+      { year: 2026, month: 8 },
+    );
+    expect(empty.classification).toBe("balance_sheet");
+    expect(empty.lines).toHaveLength(0);
+    expect(empty.control.blocksPosting).toBe(true);
+    expect(empty.control.detail).toMatch(/no usable amount/i);
+    const zero = parseCloseFile(
+      "balance-sheet-zero.csv",
+      Buffer.from(["Account,Actual", "2010 Accounts Payable,0"].join("\n"), "utf8"),
+      { year: 2026, month: 8 },
+    );
+    expect(zero.control.blocksPosting).toBe(true);
+    expect(zero.lines.some((line) => line.accountCode === "2010")).toBe(true);
+  });
+
+  it("keeps a generic caption off cash and balance-sheet lines off income-statement accounts", () => {
+    const bs = { balanceSheet: true as const };
+    for (const label of [
+      "1010 Operating Expense",
+      "1010 Operating Income",
+      "1010 Operating Reserve",
+      "1010 Total Operating",
+      "1010 Cash Flow Adjustment",
+      "2010 Accounts Suspense",
+      "2010 Payable to Lender",
+      "2020 Expenses Reimbursed",
+      "1110 Accounts Written Off",
+      "1010 Operating Account",
+    ]) {
+      const mapped = mapStatementLabel(label, null, bs);
+      expect(mapped.accountCode, label).not.toBe(label.slice(0, 4));
+      expect(mapped.confidence, label).not.toBe("EXACT");
+    }
+    expect(mapStatementLabel("1010 Cash - Operating", null, bs)).toMatchObject({
+      accountCode: "1010",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1010 Cash", null, bs)).toMatchObject({ accountCode: "1010", confidence: "EXACT" });
+    expect(mapStatementLabel("2010 Accounts Payable", null, bs)).toMatchObject({
+      accountCode: "2010",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("2020 Accrued Expenses", null, bs)).toMatchObject({
+      accountCode: "2020",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1210 Prepaid Expenses", null, bs)).toMatchObject({
+      accountCode: "1210",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1110 Accounts Receivable", null, bs)).toMatchObject({
+      accountCode: "1110",
+      confidence: "EXACT",
+    });
+    expect(mapStatementLabel("1210 Prepaid Insurance", null, bs)).toMatchObject({
+      accountCode: "1210",
+      confidence: "RULE",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("2030 Accrued Payroll", null, bs)).toMatchObject({
+      accountCode: "2020",
+      confidence: "RULE",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("2030 Accrued Interest", null, bs)).toMatchObject({
+      accountCode: "2030",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("2010 Security Deposits Payable", null, bs)).toMatchObject({
+      accountCode: "2050",
+      confidence: "RULE",
+      balanceSheet: true,
+    });
+    expect(mapStatementLabel("1210 Prepaid Insurance").accountCode).toBe("5710");
+    expect(mapStatementLabel("2030 Accrued Payroll").accountCode).toBe("5110");
+    expect(mapStatementLabel("2010 Security Deposits Payable").accountCode).toBe("5410");
+
+    const parsed = parseCloseFile(
+      "balance-sheet.csv",
+      Buffer.from(
+        ["Account,Actual", "1010 Cash - Operating,50000", "1010 Operating Expense,777", "1210 Prepaid Insurance,100", "2030 Accrued Payroll,200", "2010 Security Deposits Payable,300"].join("\n"),
+        "utf8",
+      ),
+      { year: 2026, month: 8 },
+    );
+    const cash = parsed.lines.find((line) => /cash - operating/i.test(line.sourceLabel));
+    expect(cash?.accountCode).toBe("1010");
+    expect(cash?.signedCents).toBe("5000000");
+    expect(parsed.lines.some((line) => line.accountCode === "1010" && /operating expense/i.test(line.sourceLabel))).toBe(false);
+    expect(parsed.unmapped.some((label) => /operating expense/i.test(label))).toBe(true);
+    expect(parsed.lines.find((line) => /prepaid insurance/i.test(line.sourceLabel))?.accountCode).toBe("1210");
+    expect(parsed.lines.find((line) => /accrued payroll/i.test(line.sourceLabel))?.accountCode).toBe("2020");
+    expect(parsed.lines.find((line) => /security deposits/i.test(line.sourceLabel))?.accountCode).toBe("2050");
+    expect(parsed.lines.some((line) => ["5710", "5110", "5410"].includes(line.accountCode ?? ""))).toBe(false);
+    const review = parsed.lines.find((line) => line.confidence === "CONTEXT");
+    expect(review).toBeUndefined();
   });
 
   it("keeps a labeled row with a blank Actual and blocks posting", () => {
@@ -824,6 +981,407 @@ describe("close upload, posting, and tie-outs", () => {
     expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(80_000));
   });
 
+  it("keeps a chosen T12 at $75,000 when a later post omits the choice", async () => {
+    const entity = await freshSpe("SPE-QSRC", "QC Saved Income Source LLC");
+    const profit = await uploadProfit(entity, "wbg-2026-08-profit.csv");
+    await stampUpload(profit.uploadId, "2026-08-01T12:00:00.000Z");
+    const t12 = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "chosen-t12.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: sheet([
+        ["Account", "Aug 2026", "T12"],
+        ["Gross Potential Rent", "75000", "900000"],
+      ]),
+    });
+    await stampUpload(t12.uploadId, "2026-08-02T12:00:00.000Z");
+    const before = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(before.defaultIncomeUploadId).toBe(profit.uploadId);
+    expect(before.incomeSourceSummary).toMatch(/wbg-2026-08-profit\.csv/);
+    expect(before.uploads.find((file) => file.id === t12.uploadId)?.incomePosting).toBe("superseded");
+
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8, incomeUploadId: t12.uploadId });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(75_000));
+    const saved = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(saved.savedIncomeUploadId).toBe(t12.uploadId);
+    expect(saved.defaultIncomeUploadId).toBe(t12.uploadId);
+    expect(saved.incomeSourceSummary).toBe("Income source: chosen-t12.xlsx — saved for this SPE and period.");
+    expect(saved.uploads.find((file) => file.id === t12.uploadId)?.incomePosting).toBe("source");
+    expect(saved.uploads.find((file) => file.id === t12.uploadId)?.postingLabel).toMatch(/close-month column/);
+    expect(saved.uploads.find((file) => file.id === profit.uploadId)?.postingLabel).toBe("Superseded — not posted");
+
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(75_000));
+
+    const newer = await uploadProfit(entity, "newer-profit.csv");
+    await stampUpload(newer.uploadId, "2026-08-20T12:00:00.000Z");
+    const noticed = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(noticed.defaultIncomeUploadId).toBe(t12.uploadId);
+    expect(noticed.incomeSourceSummary).toMatch(/chosen-t12\.xlsx/);
+    expect(noticed.incomeSourceSummary).not.toMatch(/profit/);
+    expect(noticed.newerIncomeNotice).toBe(
+      "A newer income file is in this package (newer-profit.csv). The saved source stays in place until you select the newer file.",
+    );
+    expect(noticed.uploads.find((file) => file.id === newer.uploadId)?.incomePosting).toBe("superseded");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(75_000));
+  });
+
+  it("does not add a generic operating caption onto cash", async () => {
+    const entity = await freshSpe("SPE-QCSH", "QC Cash Caption LLC");
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(
+        ["Account,Actual", "1010 Cash - Operating,50000", "1010 Operating Expense,777"].join("\n"),
+        "utf8",
+      ),
+    });
+    const view = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(view.uploads[0]?.unmapped.some((label) => /operating expense/i.test(label))).toBe(true);
+    expect(view.uploads[0]?.lines.find((line) => line.accountCode === "1010")?.signedCents).toBe("5000000");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "1010")).toBe(dollars(50_000));
+  });
+
+  it("posts one balance sheet when two identical files are uploaded", async () => {
+    const entity = await freshSpe("SPE-QBS1", "QC Identical Balance Sheet LLC");
+    const older = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,10000"].join("\n"), "utf8"),
+    });
+    const newer = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-v2.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,10000"].join("\n"), "utf8"),
+    });
+    await stampUpload(older.uploadId, "2026-08-01T12:00:00.000Z");
+    await stampUpload(newer.uploadId, "2026-08-02T12:00:00.000Z");
+    const view = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(view.defaultBalanceUploadId).toBe(newer.uploadId);
+    expect(view.uploads.find((file) => file.id === older.uploadId)?.balancePosting).toBe("superseded");
+    expect(view.uploads.find((file) => file.id === older.uploadId)?.postingLabel).toBe("Superseded — not posted");
+    expect(view.uploads.find((file) => file.id === newer.uploadId)?.balancePosting).toBe("source");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(10_000));
+  });
+
+  it("refuses an empty balance sheet and keeps a posted balance sheet on repost", async () => {
+    const entity = await freshSpe("SPE-QBSE", "QC Empty Balance Sheet LLC");
+    const good = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,10000"].join("\n"), "utf8"),
+    });
+    const empty = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-empty.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from("Account,Actual\n", "utf8"),
+    });
+    await stampUpload(good.uploadId, "2026-08-01T12:00:00.000Z");
+    await stampUpload(empty.uploadId, "2026-08-02T12:00:00.000Z");
+    const before = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(before.uploads.find((file) => file.id === empty.uploadId)?.blocksPosting).toBe(true);
+    expect(before.defaultBalanceUploadId).toBe(good.uploadId);
+    expect(before.uploads.find((file) => file.id === empty.uploadId)?.balancePosting).toBe("superseded");
+    await expect(
+      postCloseToBooks({ entityId: entity.id, year: 2026, month: 8, balanceUploadId: empty.uploadId }),
+    ).rejects.toThrow(/cannot be chosen/);
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(10_000));
+
+    const zero = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-zero.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,0"].join("\n"), "utf8"),
+    });
+    await stampUpload(zero.uploadId, "2026-08-03T12:00:00.000Z");
+    const stored = await prisma.monthEndUpload.findUniqueOrThrow({ where: { id: zero.uploadId } });
+    const parsed = JSON.parse(stored.parsedJson) as { control?: { blocksPosting?: boolean; detail?: string } };
+    parsed.control = { blocksPosting: false, detail: "Import control totals tie to the mapped lines." };
+    await prisma.monthEndUpload.update({ where: { id: zero.uploadId }, data: { parsedJson: JSON.stringify(parsed) } });
+    const live = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(live.uploads.find((file) => file.id === zero.uploadId)?.blocksPosting).toBe(true);
+    expect(live.defaultBalanceUploadId).toBe(good.uploadId);
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(10_000));
+
+    await prisma.monthEndUpload.delete({ where: { id: good.uploadId } });
+    await prisma.period.update({
+      where: { entityId_year_month: { entityId: entity.id, year: 2026, month: 8 } },
+      data: { balanceSourceUploadId: null },
+    });
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(
+      /no usable amount|posting is blocked/i,
+    );
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(10_000));
+  });
+
+  it("saves the only income or balance-sheet file so a later upload does not replace it", async () => {
+    const entity = await freshSpe("SPE-QONE", "QC Sole Source LLC");
+    const income = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "sole-profit.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(
+        ["Account,Actual", 'Gross Potential Rent,"70,500.00"', 'Net Operating Income,"70,500.00"'].join("\n"),
+        "utf8",
+      ),
+    });
+    const balance = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,10000"].join("\n"), "utf8"),
+    });
+    await stampUpload(income.uploadId, "2026-08-01T12:00:00.000Z");
+    await stampUpload(balance.uploadId, "2026-08-01T12:00:00.000Z");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    const saved = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(saved.savedIncomeUploadId).toBe(income.uploadId);
+    expect(saved.savedBalanceUploadId).toBe(balance.uploadId);
+
+    const laterIncome = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "later-profit.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(
+        ["Account,Actual", 'Gross Potential Rent,"10,000.00"', 'Net Operating Income,"10,000.00"'].join("\n"),
+        "utf8",
+      ),
+    });
+    const laterBalance = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-v2.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,15000"].join("\n"), "utf8"),
+    });
+    await stampUpload(laterIncome.uploadId, "2026-08-20T12:00:00.000Z");
+    await stampUpload(laterBalance.uploadId, "2026-08-20T12:00:00.000Z");
+    const noticed = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(noticed.defaultIncomeUploadId).toBe(income.uploadId);
+    expect(noticed.defaultBalanceUploadId).toBe(balance.uploadId);
+    expect(noticed.newerIncomeNotice).toMatch(/later-profit\.csv/);
+    expect(noticed.newerBalanceNotice).toMatch(/balance-sheet-v2\.csv/);
+    expect(noticed.uploads.find((file) => file.id === laterIncome.uploadId)?.incomePosting).toBe("superseded");
+    expect(noticed.uploads.find((file) => file.id === laterBalance.uploadId)?.balancePosting).toBe("superseded");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+  });
+
+  it("refuses a post when the saved source upload is gone", async () => {
+    const entity = await freshSpe("SPE-QMIS", "QC Missing Source LLC");
+    const income = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "sole-profit.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(
+        ["Account,Actual", 'Gross Potential Rent,"70,500.00"', 'Net Operating Income,"70,500.00"'].join("\n"),
+        "utf8",
+      ),
+    });
+    const balance = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,10000"].join("\n"), "utf8"),
+    });
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    const posted = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(posted.savedBalanceUploadId).toBe(balance.uploadId);
+    await prisma.period.update({
+      where: { entityId_year_month: { entityId: entity.id, year: 2026, month: 8 } },
+      data: { balanceSourceUploadId: "missing-balance-upload" },
+    });
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-v2.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,15000"].join("\n"), "utf8"),
+    });
+    const balanceView = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(balanceView.missingBalanceNotice).toMatch(/choose a balance sheet/i);
+    expect(balanceView.defaultBalanceUploadId).toBeNull();
+    expect(balanceView.defaultIncomeUploadId).toBe(income.uploadId);
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(
+      /no longer in this package|choose a balance sheet/i,
+    );
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+
+    await prisma.monthEndUpload.delete({ where: { id: income.uploadId } });
+    await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "replacement-profit.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(
+        ["Account,Actual", 'Gross Potential Rent,"10,000.00"', 'Net Operating Income,"10,000.00"'].join("\n"),
+        "utf8",
+      ),
+    });
+    const incomeView = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(incomeView.missingIncomeNotice).toMatch(/choose an income file/i);
+    expect(incomeView.defaultIncomeUploadId).toBeNull();
+    expect(incomeView.uploads.every((file) => file.incomePosting !== "source")).toBe(true);
+    await expect(postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 })).rejects.toThrow(
+      /no longer in this package|choose an income file/i,
+    );
+    expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+  });
+
+  it("posts one balance sheet when two files have different amounts and keeps that choice", async () => {
+    const entity = await freshSpe("SPE-QBS2", "QC Different Balance Sheet LLC");
+    const older = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,10000"].join("\n"), "utf8"),
+    });
+    const newer = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-v2.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,15000"].join("\n"), "utf8"),
+    });
+    await stampUpload(older.uploadId, "2026-08-01T12:00:00.000Z");
+    await stampUpload(newer.uploadId, "2026-08-02T12:00:00.000Z");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(15_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(15_000));
+
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8, balanceUploadId: older.uploadId });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(10_000));
+    const saved = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(saved.savedBalanceUploadId).toBe(older.uploadId);
+    expect(saved.defaultBalanceUploadId).toBe(older.uploadId);
+    expect(saved.balanceSourceSummary).toBe("Balance sheet source: balance-sheet.csv — saved for this SPE and period.");
+    expect(saved.uploads.find((file) => file.id === newer.uploadId)?.postingLabel).toBe("Superseded — not posted");
+    expect(saved.newerBalanceNotice).toMatch(/balance-sheet-v2\.csv/);
+
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+
+    const third = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-v3.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,7000"].join("\n"), "utf8"),
+    });
+    await stampUpload(third.uploadId, "2026-08-20T12:00:00.000Z");
+    const noticed = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(noticed.defaultBalanceUploadId).toBe(older.uploadId);
+    expect(noticed.newerBalanceNotice).toBe(
+      "A newer balance sheet file is in this package (balance-sheet-v3.csv). The saved source stays in place until you select the newer file.",
+    );
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(10_000));
+  });
+
+  it("refuses a blocked balance sheet and posts the newest file that can be chosen", async () => {
+    const entity = await freshSpe("SPE-QBSB", "QC Blocked Balance Sheet LLC");
+    const good = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,10000"].join("\n"), "utf8"),
+    });
+    const blocked = await storeCloseUpload({
+      entityId: entity.id,
+      entityCode: entity.code,
+      year: 2026,
+      month: 8,
+      filename: "balance-sheet-v2.csv",
+      mimeType: "text/csv",
+      bytes: Buffer.from(["Account,Actual", "2010 Accounts Payable,"].join("\n"), "utf8"),
+    });
+    await stampUpload(good.uploadId, "2026-08-01T12:00:00.000Z");
+    await stampUpload(blocked.uploadId, "2026-08-02T12:00:00.000Z");
+    await expect(
+      postCloseToBooks({ entityId: entity.id, year: 2026, month: 8, balanceUploadId: blocked.uploadId }),
+    ).rejects.toThrow(/cannot be chosen/);
+    const view = await loadCloseWorkspace(entity.id, 2026, 8);
+    expect(view.uploads.find((file) => file.id === blocked.uploadId)?.blocksPosting).toBe(true);
+    expect(view.defaultBalanceUploadId).toBe(good.uploadId);
+    expect(view.uploads.find((file) => file.id === blocked.uploadId)?.balancePosting).toBe("superseded");
+    await postCloseToBooks({ entityId: entity.id, year: 2026, month: 8 });
+    expect(await accountNet(entity.id, "2010")).toBe(-dollars(10_000));
+    expect(await accountNet(entity.id, "1999")).toBe(dollars(10_000));
+  });
+
   it("keeps wbg-2026-08-profit NOI when a v2 file is posted after soft close", async () => {
     const entity = await freshSpe("SPE-QV2", "QC V2 Repost LLC");
     const first = await uploadProfit(entity, "wbg-2026-08-profit.csv");
@@ -842,8 +1400,13 @@ describe("close upload, posting, and tie-outs", () => {
     });
     expect(await periodNoi(entity.id, 2026, 8)).toBe(dollars(70_500));
     const source = await loadCloseWorkspace(entity.id, 2026, 8);
-    expect(source.uploads.find((file) => file.id === v2.uploadId)?.incomePosting).toBe("source");
-    expect(source.uploads.find((file) => file.filename === "wbg-2026-08-profit.csv")?.incomePosting).toBe("superseded");
+    expect(source.savedIncomeUploadId).toBe(first.uploadId);
+    expect(source.defaultIncomeUploadId).toBe(first.uploadId);
+    expect(source.uploads.find((file) => file.id === v2.uploadId)?.incomePosting).toBe("superseded");
+    expect(source.uploads.find((file) => file.filename === "wbg-2026-08-profit.csv")?.incomePosting).toBe("source");
+    expect(source.newerIncomeNotice).toBe(
+      "A newer income file is in this package (wbg-2026-08-profit-v2.csv). The saved source stays in place until you select the newer file.",
+    );
   });
 
   it("refuses posting or reversing a soft-closed month without a controller override", async () => {
@@ -1618,6 +2181,10 @@ async function clearWbgAugustClose(entityId: string) {
     where: { entityId_year_month: { entityId, year: 2026, month: 8 } },
   });
   if (period) {
+    await prisma.period.update({
+      where: { id: period.id },
+      data: { incomeSourceUploadId: null, balanceSourceUploadId: null },
+    });
     const doomed = await prisma.journal.findMany({
       where: { entityId, periodId: period.id, source: { in: [...WBG_CLOSE_SOURCES] } },
       select: { id: true },
