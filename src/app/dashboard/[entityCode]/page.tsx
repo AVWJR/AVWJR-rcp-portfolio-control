@@ -93,6 +93,9 @@ function PropertyView({
           <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/waterfall?${q}`}>
             LP/GP waterfall
           </Link>
+          <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/close?${q}`}>
+            Month-end close
+          </Link>
           <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/proforma?${q}`}>
             Deal proforma
           </Link>

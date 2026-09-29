@@ -2,6 +2,7 @@ import { PeriodBanner } from "@/components/period-banner";
 import { Shell } from "@/components/shell";
 import { isArchivedSpe } from "@/lib/archive";
 import { listPeriodLabels } from "@/lib/deals/periods";
+import { prisma } from "@/lib/prisma";
 import { getEntityByCode, listEntities } from "@/lib/queries";
 import { buildAllStatements } from "@/lib/reports-server";
 import type { ReactNode } from "react";
@@ -31,7 +32,15 @@ export async function loadReportContext(searchParams: ReportSearch) {
   const entities = liveEntities.some((row) => row.code === entity.code)
     ? liveEntities
     : [entity, ...liveEntities];
-  const [yearStr, monthStr] = (searchParams.period ?? "2026-08").split("-");
+  let periodLabel = searchParams.period;
+  if (!periodLabel) {
+    const closed = await prisma.period.findFirst({
+      where: { entityId: entity.id, status: "CLOSED" },
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+    });
+    periodLabel = closed?.label ?? "2026-08";
+  }
+  const [yearStr, monthStr] = periodLabel.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
   const consolidated = searchParams.view === "consolidated" || searchParams.view === "combined";

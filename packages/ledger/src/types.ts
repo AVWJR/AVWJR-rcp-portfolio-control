@@ -48,16 +48,25 @@ export type StatementRow = {
 export type IncomeStatement = {
   rows: StatementRow[];
   gpr: bigint;
+  /** Signed loss-to-lease (4015 debit − credit). Positive = loss, negative = gain-to-lease. */
+  lossToLease: bigint;
   vacancy: bigint;
   concessions: bigint;
+  /** Market rent of model / employee / down units deducted on 4040. */
+  nonRevenueUnits: bigint;
+  badDebt: bigint;
   otherIncome: bigint;
+  /** Net rental income. Equals GPR − vacancy − concessions when 4015/4040/4050 are zero. */
   egr: bigint;
   egi: bigint;
   opex: bigint;
   noi: bigint;
   interest: bigint;
+  interestAmort: bigint;
   depreciation: bigint;
+  otherAmort: bigint;
   amFees: bigint;
+  entityCosts: bigint;
   amIncome: bigint;
   netIncome: bigint;
 };
@@ -67,6 +76,8 @@ export type BalanceSheet = {
   totalAssets: bigint;
   totalLiabilities: bigint;
   totalEquity: bigint;
+  priorYearEarnings: bigint;
+  currentYearEarnings: bigint;
   balanced: boolean;
 };
 

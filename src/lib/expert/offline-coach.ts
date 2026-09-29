@@ -1,5 +1,5 @@
 import { composeExpertChrome, pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
-import { isClearHowToQuery, isDeleteDealQuery, isVagueQuery, isWaterfallQuery } from "./feature-intents";
+import { isClearHowToQuery, isDeleteDealQuery, isMonthEndUploadQuery, isVagueQuery, isWaterfallQuery } from "./feature-intents";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
@@ -280,6 +280,25 @@ RCP mailbox address is **not decided yet**. Until \`RCP_INGEST_MAILBOX\` and a c
 When the SPE exists, ask me for month-end checklist or “What’s missing for this SPE?”`;
 }
 
+function monthEndUploadCopy(ctx: ExpertClientContext): string {
+  const code = /hampton|hmtos/i.test(`${ctx.entityCode} ${ctx.pathname}`) ? "SPE-HMTOS" : ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-HMTOS";
+  const period = /july|2026-07/i.test(ctx.periodLabel) ? ctx.periodLabel : "2026-08";
+  const close = link(`/deals/${code}/close`, { ...ctx, entityCode: code, periodLabel: period }, "Month-end close");
+  return `**How to upload a month-end close**
+
+1. Gold nav **Deals**. Open the SPE card for Hampton (**${code}**) — or the SPE you are closing.
+2. Click **Month-end close**. You can also open it from that SPE’s dashboard. The page is ${close}.
+3. In the period row, click **${period}** (August is 2026-08). The navy header period must match the month you are closing.
+4. Drop the manager’s package on **Drop the manager’s package**. You can drop several files at once: monthly P&L, balance sheet, T12, GL detail, and the rent roll (Yardi Lease Charges, RealPage, Entrata, AppFolio, redIQ, Excel, or CSV).
+5. Read the classification under each file. A Hampton rent roll still lands as **511 units**. Floorplans **1PW** and **2PW** are beds, not a second unit count.
+6. If a line says it is unmapped, type the RCP account (for example 4015 for loss-to-lease) and click **Remember mapping**. That choice is kept for this SPE and vendor. Unmapped lines post to suspense **1999** and **block hard lock**.
+7. Click **Post this period into the SPE books**. You should see the income statement with Actual, Budget, Var, Prior, and YTD, the balance sheet with prior-year earnings and current-year earnings on separate lines, and the rent-roll tie-out list (RR-1 through RR-13).
+8. Click **Soft close**, finish anything still flagged, then **Hard lock**. To undo a lock, enter a reason and a ticket and click **Reopen**. A hard-locked month will not take another upload until you reopen it.
+9. The original files stay in the vault. Dashboards, the waterfall, proformas, and LP packs follow the latest hard-locked period unless you pick another month in the header.
+
+Loss-to-lease is its own line (4015), not a concession. Model, employee, and down units stay inside GPR and come out on 4040. Cash flow before debt service is the same number the waterfall already calls CFADS.`;
+}
+
 function rentRollImportCopy(ctx: ExpertClientContext): string {
   const dest = ctx.entityCode.startsWith("SPE-")
     ? link(`/properties/${ctx.entityCode}`, ctx, "this SPE’s rent roll")
@@ -464,7 +483,9 @@ export function answerOffline(
   if (!q || q === "open" || q === "hello" || q === "hi") {
     return buildOpener(ctx, bundle);
   }
-  if (isWaterfallQuery(q) || /how do i set the deal waterfall/.test(q)) {
+  if (isMonthEndUploadQuery(q) || /upload august close|month-end close|month end close/.test(q)) {
+    content = monthEndUploadCopy(ctx);
+  } else if (isWaterfallQuery(q) || /how do i set the deal waterfall/.test(q)) {
     content = waterfallCopy(ctx);
   } else if (isDeleteDealQuery(q)) {
     content = deleteDealCopy(ctx);

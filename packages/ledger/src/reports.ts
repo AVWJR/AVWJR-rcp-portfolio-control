@@ -21,6 +21,11 @@ export type ReportInput = {
   inPeriod?: PostedLine[];
   /** Drop IC and AM fee pairs (OpCo consolidated presentation). */
   eliminate?: boolean;
+  /**
+   * P&L activity from fiscal-year start through the period.
+   * When omitted, current-year earnings equals the selected period.
+   */
+  ytdActivity?: PostedLine[];
 };
 
 function applyEliminations(lines: PostedLine[], eliminate?: boolean): PostedLine[] {
@@ -82,11 +87,14 @@ export function buildIncomeStatement(input: ReportInput): IncomeStatement {
   const balances = rollupBalances(activity, input.accounts ?? cloneMasterCoa());
 
   const gpr = creditNet(balances, "gpr");
+  const lossToLease = debitNet(balances, "ltl");
   const vacancy = debitNet(balances, "vacancy");
   const concessions = debitNet(balances, "concessions");
+  const nonRevenueUnits = debitNet(balances, "nru");
+  const badDebt = debitNet(balances, "bad_debt");
   const otherIncome = creditNet(balances, "other_income");
   const amIncome = creditNet(balances, "am_income");
-  const egr = gpr - vacancy - concessions;
+  const egr = gpr - lossToLease - vacancy - concessions - nonRevenueUnits - badDebt;
   const egi = egr + otherIncome;
 
   const opexGroups = OPEX_GROUPS;
@@ -100,16 +108,22 @@ export function buildIncomeStatement(input: ReportInput): IncomeStatement {
   const noi = egi - opex;
 
   const interest = debitNet(balances, "interest");
+  const interestAmort = debitNet(balances, "interest_amort");
   const depreciation = debitNet(balances, "depreciation");
+  const otherAmort = debitNet(balances, "amort_other");
   const amFees = debitNet(balances, "am_fee");
-  const netIncome = noi - interest - depreciation - amFees + amIncome;
+  const entityCosts = debitNet(balances, "entity_costs");
+  const netIncome = noi - amFees - entityCosts - interest - interestAmort - depreciation - otherAmort + amIncome;
 
   const rows: StatementRow[] = [
     { key: "rev", label: "Revenue", amount: null, indent: 0, emphasis: "section" },
     { key: "gpr", label: "Gross Potential Rent", amount: gpr, indent: 1, code: "4010" },
+    { key: "ltl", label: "Loss/Gain to Lease", amount: -lossToLease, indent: 1, code: "4015" },
     { key: "vac", label: "Vacancy Loss", amount: -vacancy, indent: 1, code: "4020" },
     { key: "conc", label: "Concessions / Free Rent", amount: -concessions, indent: 1, code: "4030" },
-    { key: "egr", label: "Effective Gross Rent", amount: egr, indent: 0, emphasis: "subtotal" },
+    { key: "nru", label: "Non-Revenue Units", amount: -nonRevenueUnits, indent: 1, code: "4040" },
+    { key: "bd", label: "Bad Debt, net of Recoveries", amount: -badDebt, indent: 1, code: "4050" },
+    { key: "egr", label: "Net Rental Income", amount: egr, indent: 0, emphasis: "subtotal" },
     { key: "oi", label: "Other Income", amount: otherIncome, indent: 1, code: "4100" },
     { key: "egi", label: "Effective Gross Income", amount: egi, indent: 0, emphasis: "subtotal" },
     { key: "ox", label: "Operating Expenses", amount: null, indent: 0, emphasis: "section" },
@@ -122,9 +136,12 @@ export function buildIncomeStatement(input: ReportInput): IncomeStatement {
     { key: "ox_tot", label: "Total Operating Expenses", amount: opex, indent: 0, emphasis: "subtotal" },
     { key: "noi", label: "Net Operating Income", amount: noi, indent: 0, emphasis: "total" },
     { key: "below", label: "Below NOI", amount: null, indent: 0, emphasis: "section" },
-    { key: "int", label: "Interest Expense", amount: interest, indent: 1, code: "6110" },
-    { key: "dep", label: "Depreciation Expense", amount: depreciation, indent: 1, code: "6210" },
     { key: "am", label: "Asset Management Fees", amount: amFees, indent: 1, code: "6310" },
+    { key: "ent", label: "Partnership / Entity-Level Costs", amount: entityCosts, indent: 1, code: "6410" },
+    { key: "int", label: "Interest Expense", amount: interest, indent: 1, code: "6110" },
+    { key: "iam", label: "Amortization of Debt Issuance Costs", amount: interestAmort, indent: 1, code: "6120" },
+    { key: "dep", label: "Depreciation Expense", amount: depreciation, indent: 1, code: "6210" },
+    { key: "oam", label: "Amortization — Other", amount: otherAmort, indent: 1, code: "6220" },
   ];
 
   if (amIncome !== 0n) {
@@ -142,16 +159,22 @@ export function buildIncomeStatement(input: ReportInput): IncomeStatement {
   return {
     rows,
     gpr,
+    lossToLease,
     vacancy,
     concessions,
+    nonRevenueUnits,
+    badDebt,
     otherIncome,
     egr,
     egi,
     opex,
     noi,
     interest,
+    interestAmort,
     depreciation,
+    otherAmort,
     amFees,
+    entityCosts,
     amIncome,
     netIncome,
   };
@@ -167,6 +190,7 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
   const ar = debitNet(balances, "ar");
   const prepaid = debitNet(balances, "prepaid");
   const icFrom = debitNet(balances, "ic_from");
+  const suspense = debitNet(balances, "suspense");
   const investment = debitNet(balances, "investment");
   const land = netByCode(balances, "1410");
   const building = netByCode(balances, "1420");
@@ -176,7 +200,7 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
   const cip = netByCode(balances, "1460");
   const accumDep = netByCode(balances, "1490");
   const netPpe = land + building + bldgImp + site + ffe + cip + accumDep;
-  const currentAssets = cash + ar + prepaid + icFrom;
+  const currentAssets = cash + ar + prepaid + icFrom + suspense;
   const totalAssets = currentAssets + investment + netPpe;
 
   const ap = creditNet(balances, "ap");
@@ -186,8 +210,9 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
   const debtCurrent = creditNet(balances, "debt_current");
   const icTo = creditNet(balances, "ic_to");
   const debtLt = creditNet(balances, "debt_lt");
+  const debtIssuance = debitNet(balances, "debt_issuance");
   const currentLiab = ap + accrual + prepaidRent + deposits + debtCurrent + icTo;
-  const totalLiabilities = currentLiab + debtLt;
+  const totalLiabilities = currentLiab + debtLt - debtIssuance;
 
   const contrib = creditNet(balances, "contrib");
   const distrib = debitNet(balances, "distrib");
@@ -200,8 +225,17 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
     inPeriod: priorLines,
   });
   const currentNi = periodIs.netIncome;
-  const retained = closedEarnings + priorIs.netIncome;
-  const totalEquity = contrib - distrib + retained + currentNi;
+  const ytdLines = applyEliminations(input.ytdActivity ?? periodLines, input.eliminate);
+  const ytdIs = buildIncomeStatement({
+    accounts: input.accounts,
+    throughEnd: ytdLines,
+    inPeriod: ytdLines,
+    eliminate: input.eliminate,
+  });
+  const totalEarnings = closedEarnings + priorIs.netIncome + currentNi;
+  const currentYearEarnings = ytdIs.netIncome;
+  const priorYearEarnings = totalEarnings - currentYearEarnings;
+  const totalEquity = contrib - distrib + priorYearEarnings + currentYearEarnings;
   const balanced = totalAssets === totalLiabilities + totalEquity;
 
   const rows: StatementRow[] = [
@@ -211,6 +245,7 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
     { key: "ar", label: "Accounts Receivable, net", amount: ar, indent: 1 },
     { key: "pre", label: "Prepaid Expenses", amount: prepaid, indent: 1 },
     { key: "icf", label: "Due from Related Parties", amount: icFrom, indent: 1 },
+    { key: "sus", label: "Suspense — Unmapped Import", amount: suspense, indent: 1, code: "1999" },
     { key: "tca", label: "Total Current Assets", amount: currentAssets, indent: 0, emphasis: "subtotal" },
     { key: "inv", label: "Investment in Subsidiaries", amount: investment, indent: 1 },
     { key: "ppe", label: "Property and Equipment", amount: null, indent: 0, emphasis: "section" },
@@ -233,12 +268,13 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
     { key: "ict", label: "Due to Related Parties", amount: icTo, indent: 1, code: "2310" },
     { key: "tcl", label: "Total Current Liabilities", amount: currentLiab, indent: 0, emphasis: "subtotal" },
     { key: "mlt", label: "Mortgage Payable — Long Term", amount: debtLt, indent: 1, code: "2210" },
+    { key: "dic", label: "Unamortized Debt Issuance Costs", amount: -debtIssuance, indent: 1, code: "2215" },
     { key: "tl", label: "Total Liabilities", amount: totalLiabilities, indent: 0, emphasis: "total" },
     { key: "e", label: "Members' Equity", amount: null, indent: 0, emphasis: "section" },
     { key: "con", label: "Contributions", amount: contrib, indent: 1, code: "3010" },
     { key: "dis", label: "Distributions", amount: -distrib, indent: 1, code: "3020" },
-    { key: "re", label: "Retained Earnings", amount: retained, indent: 1, code: "3100" },
-    { key: "cni", label: "Current Period Net Income", amount: currentNi, indent: 1 },
+    { key: "re", label: "Retained earnings (prior years)", amount: priorYearEarnings, indent: 1, code: "3100" },
+    { key: "cni", label: "Current-year earnings", amount: currentYearEarnings, indent: 1, code: "3900" },
     { key: "te", label: "Total Equity", amount: totalEquity, indent: 0, emphasis: "subtotal" },
     {
       key: "lqe",
@@ -249,7 +285,7 @@ export function buildBalanceSheet(input: ReportInput): BalanceSheet {
     },
   ];
 
-  return { rows, totalAssets, totalLiabilities, totalEquity, balanced };
+  return { rows, totalAssets, totalLiabilities, totalEquity, priorYearEarnings, currentYearEarnings, balanced };
 }
 
 function groupDelta(

@@ -30,7 +30,15 @@ Close status is per entity + period. Seed demo: `SPE-WBG` `2026-07` hard locked;
 15. OpCo↔SPE intercompany `1310`/`2310` and AM `6310`/`7010` matched.
 16. Soft close → checklist complete → hard lock.
 
-UI: `/close`. Locked periods show a banner on every statement and reject `postJournal`.
+UI: `/close` for the portfolio checklist. Each SPE also has **Month-end close** at `/deals/{code}/close` (linked from the SPE card and the SPE dashboard).
+
+Drop the manager’s package on that page. The file is kept (vault + month-end upload). Rent rolls reuse the existing dialect ingest. P&L, T12, GL, and balance-sheet lines map through the crosswalk in `docs/RCP_MONTHLY_FS_STANDARD.md`. Unmapped lines are suspense `1999` and block hard lock until someone maps them; the map is remembered per SPE. Soft close → hard lock → reopen still requires a reason and a ticket. A hard-locked month rejects a replacement upload.
+
+Dashboards, waterfall, proformas, LP packs, and narratives open on the latest hard-locked period when the header has no `period`. Pick another month in the period row to read an open month.
+
+Naming only: NOI − capex − reserves is **cash flow before debt service (CFBDS)**. It is the same number as CFADS. Cash flow after debt service subtracts debt service. The AM fee stays below that line and is not inside the CFADS math.
+
+Loss-to-lease is signed account `4015` (positive = loss). It is not a concession. Model, employee, and down units stay in GPR and are deducted on `4040`. Utilities, taxes, and insurance are non-controllable. The property management fee is controllable. The balance sheet shows prior-year retained earnings and current-year earnings on separate lines.
 
 ## Out of scope
 

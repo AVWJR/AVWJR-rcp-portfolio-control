@@ -10,13 +10,16 @@ import type { CapexReserveCompare, CashBreakdown, ConcentrationRow, TrailingNoi 
 
 export const BPS_DENOMINATOR = 10_000n;
 
-/** Controllable in-NOI OpEx. Insurance and RE taxes are non-controllable. */
-export const CONTROLLABLE_OPEX_CODES = ["5110", "5210", "5310", "5410", "5510", "5610", "5990"] as const;
+/**
+ * Controllable in-NOI OpEx. Utilities, insurance, and RE taxes are non-controllable.
+ * Property management fee (5910) is controllable. Asset management (6310) stays below NOI.
+ */
+export const CONTROLLABLE_OPEX_CODES = ["5110", "5120", "5210", "5220", "5410", "5510", "5610", "5910", "5990"] as const;
 
-/** Insurance + real estate taxes — owner-level, not site-controllable. */
-export const NON_CONTROLLABLE_OPEX_CODES = ["5710", "5810"] as const;
+/** Utilities, insurance, and real estate taxes — not site-controllable. */
+export const NON_CONTROLLABLE_OPEX_CODES = ["5310", "5320", "5330", "5340", "5350", "5710", "5810"] as const;
 
-/** Property management fees — contractual, disclosed separately (not tagged controllable). */
+/** @deprecated PM fee is controllable. Kept so older imports still resolve. */
 export const CONTRACTUAL_OPEX_CODES = ["5910"] as const;
 
 /** OpCo G&A for the G&A% ratio: payroll + administrative + other. */
@@ -84,6 +87,23 @@ export function cfadsCents(opts: {
   reserveRequirementCents: bigint;
 }): bigint {
   return opts.periodNoiCents - opts.periodCapexCents - opts.reserveRequirementCents;
+}
+
+/**
+ * Cash flow before debt service. Same dollars as `cfadsCents`
+ * (NOI − capex − reserves). The AM fee is not deducted here.
+ */
+export function cfbdsCents(opts: {
+  periodNoiCents: bigint;
+  periodCapexCents: bigint;
+  reserveRequirementCents: bigint;
+}): bigint {
+  return cfadsCents(opts);
+}
+
+/** CFBDS minus cash debt service. Does not deduct the AM fee. */
+export function cashFlowAfterDebtServiceCents(opts: { cfbdsOrCfadsCents: bigint; debtServiceCents: bigint }): bigint {
+  return opts.cfbdsOrCfadsCents - opts.debtServiceCents;
 }
 
 export function cfadsDscrBps(cfads: bigint, debtServiceCents: bigint): number | null {

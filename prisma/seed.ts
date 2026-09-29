@@ -9,7 +9,7 @@ import {
   buildDemoRentRoll,
   demoAsOfDate,
 } from "@rcp/properties";
-import { cloneCoaToEntity, createEntityWithCoa, seedMasterCoaTemplate } from "../src/lib/entities";
+import { cloneCoaToEntity, createEntityWithCoa, ensureMasterCoaCurrent, seedMasterCoaTemplate } from "../src/lib/entities";
 import { postJournal } from "../src/lib/journals";
 import { prisma } from "../src/lib/prisma";
 import { replaceBudget } from "../src/lib/budgets";
@@ -398,6 +398,7 @@ export async function runSeed(options: { wipe?: boolean } = {}): Promise<SeedSum
   await wipeDemoData();
 
   await seedMasterCoaTemplate();
+  await ensureMasterCoaCurrent();
 
   const hold = await createEntityWithCoa({
     code: "RCP-HOLD",

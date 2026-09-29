@@ -548,6 +548,73 @@ export const MASTER_COA: AccountDef[] = [
   },
 ];
 
+/**
+ * Accounts added by the monthly FS standard. Each new code has its own
+ * report group when folding it into an existing group would change NOI,
+ * DSCR, principal paydown, or cash. Unused codes contribute zero.
+ */
+export const MONTHLY_FS_COA: AccountDef[] = [
+  acct("1050", "Cash — Other Lender Reserves", "ASSET", "DEBIT", false, false, true, "cash", "NONE"),
+  acct("1120", "Other Receivables", "ASSET", "DEBIT", false, false, false, "ar", "OPERATING"),
+  acct("1130", "Deferred Rent Receivable", "ASSET", "DEBIT", false, false, false, "ar", "OPERATING"),
+  acct("1320", "Due from Affiliates", "ASSET", "DEBIT", false, false, false, "ar", "OPERATING"),
+  acct("1999", "Suspense — Unmapped Import", "ASSET", "DEBIT", false, false, false, "suspense", "NONE"),
+  acct("2030", "Accrued Interest Payable", "LIABILITY", "CREDIT", false, false, false, "accrual", "OPERATING"),
+  acct("2035", "Accrued Real Estate Taxes", "LIABILITY", "CREDIT", false, false, false, "accrual", "OPERATING"),
+  acct("2215", "Unamortized Debt Issuance Costs", "LIABILITY", "DEBIT", true, false, false, "debt_issuance", "FINANCING"),
+  acct("2320", "Due to Affiliates", "LIABILITY", "CREDIT", false, false, false, "ap", "OPERATING"),
+  acct("4015", "Loss/Gain to Lease", "REVENUE", "DEBIT", true, false, false, "ltl", "OPERATING"),
+  acct("4040", "Non-Revenue Units", "REVENUE", "DEBIT", true, false, false, "nru", "OPERATING"),
+  acct("4050", "Bad Debt, net of Recoveries", "REVENUE", "DEBIT", true, false, false, "bad_debt", "OPERATING"),
+  acct("4110", "Utility Reimbursement / RUBS", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4120", "Late / NSF Fees", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4130", "Application / Admin / Lease Fees", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4140", "Parking / Garage", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4150", "Storage", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4160", "Pet Rent / Pet Fees", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4170", "Laundry / Vending", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4180", "Damages / Cleaning / Forfeited Deposits", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("4190", "Miscellaneous Other Income", "REVENUE", "CREDIT", false, false, false, "other_income", "OPERATING"),
+  acct("5120", "Payroll Taxes & Benefits", "EXPENSE", "DEBIT", false, false, false, "opex_payroll", "OPERATING"),
+  acct("5220", "Turnover / Make-Ready", "EXPENSE", "DEBIT", false, false, false, "opex_rm", "OPERATING"),
+  acct("5320", "Utilities — Water & Sewer", "EXPENSE", "DEBIT", false, false, false, "opex_util", "OPERATING"),
+  acct("5330", "Utilities — Electric", "EXPENSE", "DEBIT", false, false, false, "opex_util", "OPERATING"),
+  acct("5340", "Utilities — Gas / Fuel", "EXPENSE", "DEBIT", false, false, false, "opex_util", "OPERATING"),
+  acct("5350", "Utilities — Trash", "EXPENSE", "DEBIT", false, false, false, "opex_util", "OPERATING"),
+  acct("6120", "Interest — Amortization of Debt Issuance Costs", "EXPENSE", "DEBIT", false, true, false, "interest_amort", "OPERATING"),
+  acct("6220", "Amortization — Other Intangibles", "EXPENSE", "DEBIT", false, true, false, "amort_other", "OPERATING"),
+  acct("6410", "Partnership / Entity-Level Costs", "EXPENSE", "DEBIT", false, true, false, "entity_costs", "OPERATING"),
+];
+
+function acct(
+  code: string,
+  name: string,
+  type: AccountDef["type"],
+  normalBalance: AccountDef["normalBalance"],
+  isContra: boolean,
+  isBelowNoi: boolean,
+  isCash: boolean,
+  reportGroup: string,
+  cashFlowClass: AccountDef["cashFlowClass"],
+): AccountDef {
+  return {
+    code,
+    name,
+    type,
+    normalBalance,
+    isContra,
+    isBelowNoi,
+    isCash,
+    reportGroup,
+    sortOrder: Number(code),
+    cashFlowClass,
+  };
+}
+
+for (const row of MONTHLY_FS_COA) {
+  MASTER_COA.push(row);
+}
+
 export const MASTER_COA_BY_CODE = new Map(MASTER_COA.map((a) => [a.code, a]));
 
 export function cloneMasterCoa(): AccountDef[] {

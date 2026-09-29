@@ -37,6 +37,10 @@ export type RentRollKpis = {
   economicOccupancyBps: number | null;
   economicOccupancyBasis: "rent_roll_in_place_less_concessions_over_gpr";
   lossToLease: bigint;
+  /** Signed market − lease on occupied units. Positive = loss. */
+  signedLossToLease: bigint;
+  /** Market rent of DOWN units, deducted on 4040 and still included in GPR. */
+  nonRevenueDeduction: bigint;
   vacancyLoss: bigint;
   concessions: bigint;
   gpr: bigint;

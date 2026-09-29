@@ -28,7 +28,7 @@ OpCo’s multi-SPE presentation is a **combined roll-up** (IC `1310`/`2310` and 
 | `egi` | Effective Gross Income | GPR − vacancy − concessions + other income | usd_cents | period | ready | GL |
 | `gpr` | Gross Potential Rent | GL `4010` period credit-net | usd_cents | period | ready | GL |
 | `opex_ratio` | OpEx ratio | In-NOI OpEx ÷ EGI | bps | period | ready | GL |
-| `controllable_opex` | Controllable OpEx | `5110+5210+5310+5410+5510+5610+5990` | usd_cents | period | ready | GL (tagged) |
+| `controllable_opex` | Controllable OpEx | `5110+5120+5210+5220+5410+5510+5610+5910+5990` | usd_cents | period | ready | GL (tagged) |
 | `controllable_opex_ratio` | Controllable OpEx ratio | Controllable OpEx ÷ EGI | bps | period | ready | GL |
 | `cash` | Cash | `1010+1020+1030+1040` | usd_cents | — | ready | GL |
 | `capex_vs_reserves` | CapEx vs reserves | Period PPE additions (`1420–1460`) vs GL `1020` vs loan reserve requirement | usd_cents | period | ready | GL + loan |
@@ -63,9 +63,8 @@ See [RCP_OPERATING_KPIS.md](./RCP_OPERATING_KPIS.md) for Phase B occupancy / bre
 
 | Tag | Codes | Notes |
 | --- | --- | --- |
-| Controllable | `5110` `5210` `5310` `5410` `5510` `5610` `5990` | Payroll, R&M, utilities, contracts, marketing, admin, other |
-| Non-controllable | `5710` `5810` | Insurance and real estate taxes |
-| Contractual (excluded from controllable) | `5910` | Property management fees — disclosed separately |
+| Controllable | `5110` `5120` `5210` `5220` `5410` `5510` `5610` `5910` `5990` | Payroll, R&M, contracts, marketing, admin, property management fee, other |
+| Non-controllable | `5310`–`5350` `5710` `5810` | Utilities, insurance, and real estate taxes |
 
 ## Gated — do not invent
 

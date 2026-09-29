@@ -27,9 +27,17 @@ export function vacantUnits(units: UnitSnapshot[]): UnitSnapshot[] {
   return units.filter((u) => u.status === "VACANT");
 }
 
-/** Σ market rent of rentable units (excludes DOWN). */
+/**
+ * Σ market rent of every unit, including model, employee, and down.
+ * Those units are deducted on their own line (`rentRollNonRevenue`), not dropped from GPR.
+ */
 export function rentRollGpr(units: UnitSnapshot[]): bigint {
-  return rentableUnits(units).reduce((acc, u) => acc + u.marketRent, 0n);
+  return units.reduce((acc, u) => acc + u.marketRent, 0n);
+}
+
+/** Market rent of DOWN units (model / employee / offline). Deducted on 4040. */
+export function rentRollNonRevenue(units: UnitSnapshot[]): bigint {
+  return units.filter((u) => u.status === "DOWN").reduce((acc, u) => acc + u.marketRent, 0n);
 }
 
 export function rentRollInPlace(units: UnitSnapshot[]): bigint {
@@ -55,6 +63,14 @@ export function lossToLease(units: UnitSnapshot[]): bigint {
     const gap = u.marketRent - u.inPlaceRent;
     return acc + (gap > 0n ? gap : 0n);
   }, 0n);
+}
+
+/**
+ * Signed loss-to-lease on occupied units. Positive = loss, negative = gain-to-lease.
+ * The floored KPI remains `lossToLease`.
+ */
+export function signedLossToLease(units: UnitSnapshot[]): bigint {
+  return occupiedUnits(units).reduce((acc, u) => acc + (u.marketRent - u.inPlaceRent), 0n);
 }
 
 /**
@@ -145,6 +161,8 @@ export function summarizeRentRoll(units: UnitSnapshot[]): RentRollKpis {
     economicOccupancyBps: rentRollEconomicOccupancyBps(units),
     economicOccupancyBasis: "rent_roll_in_place_less_concessions_over_gpr",
     lossToLease: lossToLease(units),
+    signedLossToLease: signedLossToLease(units),
+    nonRevenueDeduction: rentRollNonRevenue(units),
     vacancyLoss: rentRollVacancyLoss(units),
     concessions: rentRollConcessions(units),
     gpr: rentRollGpr(units),

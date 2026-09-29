@@ -44,6 +44,8 @@ export async function resolveReportScope(opts: {
     through: new Date(start.getTime() - 1),
   });
   const inPeriod = await loadPostedLines({ entityIds, from: start, to: end });
+  const fiscalStart = new Date(Date.UTC(opts.year, 0, 1, 0, 0, 0));
+  const ytdActivity = await loadPostedLines({ entityIds, from: fiscalStart, to: end });
 
   return {
     entity,
@@ -54,6 +56,7 @@ export async function resolveReportScope(opts: {
     throughEnd,
     throughStart,
     inPeriod,
+    ytdActivity,
   };
 }
 
@@ -68,6 +71,7 @@ export async function buildAllStatements(opts: {
     throughEnd: scope.throughEnd,
     throughStart: scope.throughStart,
     inPeriod: scope.inPeriod,
+    ytdActivity: scope.ytdActivity,
     eliminate: scope.consolidated,
   };
   const operating = await buildOperatingPackage(opts);

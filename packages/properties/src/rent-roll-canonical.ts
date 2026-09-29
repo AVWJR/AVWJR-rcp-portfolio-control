@@ -135,7 +135,8 @@ export function mergeExtras(target: Record<string, string>, extra: Record<string
 export function classifyChargeCode(raw: string): ChargeClass {
   const compact = raw.toLowerCase().replace(/[^a-z0-9]+/g, "");
   if (!compact) return "other";
-  if (/(conc|freerent|losstolease|credit|discount)/.test(compact)) return "concession";
+  if (/losstolease|gaintolease|leasedifferential/.test(compact)) return "other";
+  if (/(conc|freerent|credit|discount)/.test(compact)) return "concession";
   if (/^(r)?rent$|^baserent$|^apartmentrent$|^leaserent$|^unitrent$|^rrent$/.test(compact)) return "rent";
   if (/^rents$/.test(compact)) return "rent";
   return "other";

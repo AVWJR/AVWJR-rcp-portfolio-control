@@ -61,7 +61,7 @@ export function audienceCfads(snap: PeriodSnapshot, audience: AudienceId): Audie
       return {
         cents: pool,
         label: "SPE CFADS (book pool)",
-        hint: "Property CFADS before LP/GP split — collateral / coverage stack, not an LP distribution.",
+        hint: "Cash flow before debt service (CFBDS). Same dollars as property CFADS: NOI − capex − reserves, before LP/GP split. The AM fee is below cash flow after debt service.",
       };
   }
 }

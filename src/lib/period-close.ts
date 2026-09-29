@@ -7,6 +7,7 @@ import {
   assertReopenReason,
   assertSoftClose,
 } from "@rcp/ledger";
+import { assertNoOpenSuspense } from "./close/guards";
 import { prisma } from "./prisma";
 
 export async function ensureChecklist(periodId: string) {
@@ -91,6 +92,7 @@ export async function hardLockPeriod(periodId: string) {
   await ensureChecklist(periodId);
   const items = await prisma.closeChecklistItem.findMany({ where: { periodId } });
   assertChecklistComplete(items);
+  await assertNoOpenSuspense(period.entityId, period.endDate);
   const updated = await prisma.period.update({
     where: { id: periodId },
     data: { status: "CLOSED", lockedAt: new Date() },

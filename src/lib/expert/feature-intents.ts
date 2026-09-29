@@ -17,6 +17,11 @@ export function isVagueQuery(q: string): boolean {
   return t.length < 4;
 }
 
+export function isMonthEndUploadQuery(q: string): boolean {
+  if (/month-end close|month end close|upload .{0,40}close|close for /.test(q)) return true;
+  return /upload|drop|package/.test(q) && /close|month-end|month end|p&l|income statement|balance sheet/.test(q);
+}
+
 export function isClearHowToQuery(q: string): boolean {
   if (isVagueQuery(q)) return false;
   if (isDeleteDealQuery(q)) return true;
