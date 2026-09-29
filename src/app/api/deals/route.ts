@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   const url = new URL(request.url);
@@ -16,8 +18,6 @@ export async function GET(request: Request) {
     const code = await suggestCodeForName(suggest);
     return NextResponse.json({ code });
   }
-  const denied = await enforce("read");
-  if (denied) return denied;
   const actor = await resolveActor();
   const spes = (await listSpeDeals()).filter((spe) => canSeeEntity(actor, spe.id));
   return NextResponse.json(

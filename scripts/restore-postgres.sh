@@ -26,6 +26,7 @@ if [[ "${CONFIRM_RESTORE:-}" != "I_UNDERSTAND_THIS_OVERWRITES" ]]; then
   fi
 fi
 
-openssl enc -d -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_ENCRYPTION_KEY -in "$FILE" \
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+node "$ROOT/scripts/backup-crypto.mjs" decrypt "$FILE" \
   | psql "$TARGET" -v ON_ERROR_STOP=1
 echo "Restore finished."

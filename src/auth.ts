@@ -1,6 +1,13 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authSecretConfigured } from "@/lib/auth/policy";
+import {
+  assertLoginAllowed,
+  clearLoginFailures,
+  clientIpFrom,
+  LoginLockedError,
+  recordLoginFailure,
+} from "@/lib/auth/lockout";
 import { authenticateCredentials } from "@/lib/auth/users";
 
 const configuredSecret = process.env.AUTH_SECRET?.trim() || process.env.NEXTAUTH_SECRET?.trim() || "";
@@ -19,12 +26,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async (credentials) => {
+      authorize: async (credentials, request) => {
         if (!authSecretConfigured()) return null;
         const email = String(credentials?.email ?? "");
         const password = String(credentials?.password ?? "");
+        const ip = clientIpFrom(request);
+        try {
+          await assertLoginAllowed(email, ip);
+        } catch (error) {
+          if (error instanceof LoginLockedError) return null;
+          throw error;
+        }
         const user = await authenticateCredentials(email, password);
-        if (!user) return null;
+        if (!user) {
+          await recordLoginFailure(email, ip);
+          return null;
+        }
+        await clearLoginFailures(email, ip);
         return { id: user.id, email: user.email, name: user.name ?? user.email, role: user.role };
       },
     }),

@@ -9,6 +9,8 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function GET(request: Request, ctx: { params: Promise<{ packId: string }> }) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const { packId: raw } = await ctx.params;
   const packId = parsePackId(raw);
   if (!packId) return NextResponse.json({ error: "Unknown pack" }, { status: 404 });
@@ -19,8 +21,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ packId: str
   const [year, month] = period.split("-").map(Number);
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
-  const denied = await enforce("read", entity.id);
-  if (denied) return denied;
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   if (entity.type === "HOLDCO") {
     return NextResponse.json({ error: "HoldCo has no operating pack" }, { status: 400 });
   }

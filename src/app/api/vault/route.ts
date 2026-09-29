@@ -63,6 +63,8 @@ async function registerBlobReference(request: Request) {
 }
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity");
   let entityId: string | undefined;
@@ -70,11 +72,8 @@ export async function GET(request: Request) {
     const entity = await prisma.entity.findUnique({ where: { code } });
     if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
     entityId = entity.id;
-    const denied = await enforce("read", entity.id);
-    if (denied) return denied;
-  } else {
-    const denied = await enforce("read");
-    if (denied) return denied;
+    const scoped = await enforce("read", entity.id);
+    if (scoped) return scoped;
   }
   const actor = await resolveActor();
   let docs = await listVaultDocuments(entityId);

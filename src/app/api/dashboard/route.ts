@@ -6,6 +6,8 @@ import { serialize } from "@/lib/serialize";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "RCP-OPCO";
   const period = await resolveReportingPeriod(code, url.searchParams.get("period"));
@@ -15,8 +17,8 @@ export async function GET(request: Request) {
   if (entity.type === "HOLDCO") {
     return NextResponse.json({ error: "HoldCo has no operating dashboard" }, { status: 400 });
   }
-  const denied = await enforce("read", entity.id);
-  if (denied) return denied;
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   const dash = await buildDashboardForEntity({
     entityId: entity.id,
     entityType: entity.type,

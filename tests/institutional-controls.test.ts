@@ -4,6 +4,9 @@ import { POST as inviteUserRoute } from "@/app/api/admin/users/route";
 import { POST as restorePost } from "@/app/api/archive/[code]/restore/route";
 import { POST as budgetsPost } from "@/app/api/budgets/route";
 import { GET as dashboardGet } from "@/app/api/dashboard/route";
+import { GET as debtGet } from "@/app/api/debt/route";
+import { GET as entitiesGet } from "@/app/api/entities/route";
+import { GET as expertContextGet } from "@/app/api/expert/context/route";
 import { POST as archiveDelete } from "@/app/api/deals/[code]/delete/route";
 import { POST as closePost } from "@/app/api/deals/[code]/close/route";
 import { GET as waterfallGet, PUT as waterfallPut } from "@/app/api/deals/[code]/waterfall/route";
@@ -30,6 +33,7 @@ import { bootstrapOwner } from "@/lib/auth/users";
 import { openPeriod } from "@/lib/deals/periods";
 import { createEntityWithCoa } from "@/lib/entities";
 import { closeAuditCsv } from "@/lib/close/audit-export";
+import { postCloseToBooks } from "@/lib/close/workspace";
 import { completeChecklist, hardLockPeriod, softClosePeriod } from "@/lib/period-close";
 import { prisma } from "@/lib/prisma";
 import { dollars } from "@rcp/ledger";
@@ -481,6 +485,19 @@ describe("role enforcement, stamps, scope, and segregation", () => {
     const outside = await dashboardGet(new Request(`http://localhost/api/dashboard?entity=${other.code}&period=2026-03`));
     expect(inside.status).not.toBe(403);
     expect(outside.status).toBe(403);
+    const entityList = await entitiesGet();
+    expect(entityList.status).toBe(200);
+    const listed = (await entityList.json()) as { code: string }[];
+    expect(listed.some((row) => row.code === entity.code)).toBe(true);
+    expect(listed.some((row) => row.code === other.code)).toBe(false);
+    const debt = await debtGet();
+    expect(debt.status).toBe(200);
+    const debtBody = (await debt.json()) as { loans: { entityCode: string }[] };
+    expect(debtBody.loans.every((loan) => loan.entityCode !== other.code)).toBe(true);
+    const hiddenContext = await expertContextGet(
+      new Request(`http://localhost/api/expert/context?entity=${other.code}&pathname=/`),
+    );
+    expect(hiddenContext.status).toBe(403);
   });
 
   it("requires a different reviewer before hard lock, and logs an owner self-approval", async () => {
@@ -515,6 +532,36 @@ describe("role enforcement, stamps, scope, and segregation", () => {
       params: Promise.resolve({ code: entity.code }),
     });
     expect(reviewed.status).toBe(200);
+    setTestActor(preparer.id);
+    const preparedAgain = await closePost(
+      closeRequest(entity.code, { action: "sign-prepare-all", year: 2026, month: 4 }),
+      { params: Promise.resolve({ code: entity.code }) },
+    );
+    expect(preparedAgain.status).toBe(200);
+    const cleared = await prisma.period.findUnique({ where: { id: period.id } });
+    expect(cleared?.reviewedByUserId).toBeNull();
+    expect(cleared?.ownerSelfApproveReason).toBeNull();
+    setTestActor(reviewer.id);
+    const reviewedAgain = await closePost(
+      closeRequest(entity.code, { action: "sign-review-all", year: 2026, month: 4 }),
+      { params: Promise.resolve({ code: entity.code }) },
+    );
+    expect(reviewedAgain.status).toBe(200);
+    await postCloseToBooks({
+      entityId: entity.id,
+      year: 2026,
+      month: 4,
+      controllerOverride: true,
+      reason: "Posted after review",
+    });
+    const posted = await prisma.period.findUnique({ where: { id: period.id } });
+    expect(posted?.reviewedByUserId).toBeNull();
+    setTestActor(reviewer.id);
+    const reviewedAfterPost = await closePost(
+      closeRequest(entity.code, { action: "sign-review-all", year: 2026, month: 4 }),
+      { params: Promise.resolve({ code: entity.code }) },
+    );
+    expect(reviewedAfterPost.status).toBe(200);
     setTestActor(controller.id);
     const locked = await hardLockPeriod(period.id);
     expect(locked.status).toBe("CLOSED");

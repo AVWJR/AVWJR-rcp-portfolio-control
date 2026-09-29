@@ -17,8 +17,11 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
-      - name: Install Postgres client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install the pg_dump that matches Neon
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bash scripts/install-matching-pg-client.sh
       - name: Dump and encrypt
         env:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
@@ -38,6 +41,7 @@ jobs:
       - name: Copy into Vercel Blob when a token is set
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          BLOB_ACCESS: ${{ vars.BLOB_ACCESS }}
         run: |
           node --input-type=module <<'JS'
           import { put } from "@vercel/blob";
@@ -50,11 +54,24 @@ jobs:
           const file = process.env.BACKUP_FILE;
           const bytes = readFileSync(file);
           const pathname = file.replace(/^backups\//, "backups/");
-          const blob = await put(pathname, bytes, {
-            access: "private",
-            token,
-            contentType: "application/octet-stream",
-            addRandomSuffix: false,
-          });
-          console.log(blob.url);
+          const preferred = (process.env.BLOB_ACCESS || "private").trim() === "public" ? "public" : "private";
+          const attempts = preferred === "public" ? ["public", "private"] : ["private", "public"];
+          let lastError;
+          for (const access of attempts) {
+            try {
+              const blob = await put(pathname, bytes, {
+                access,
+                token,
+                contentType: "application/octet-stream",
+                addRandomSuffix: false,
+              });
+              console.log(`${access} ${blob.url}`);
+              lastError = undefined;
+              break;
+            } catch (error) {
+              lastError = error;
+              console.log(`Blob access "${access}" was refused. Trying the other store type.`);
+            }
+          }
+          if (lastError) throw lastError;
           JS

@@ -19,6 +19,7 @@ if [[ "$URL" == *"-pooler"* ]]; then
 fi
 
 mkdir -p "$(dirname "$OUT")"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 pg_dump --no-owner --no-acl --format=plain "$URL" \
-  | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_ENCRYPTION_KEY -out "$OUT"
+  | node "$ROOT/scripts/backup-crypto.mjs" encrypt > "$OUT"
 echo "Wrote encrypted backup to $OUT"

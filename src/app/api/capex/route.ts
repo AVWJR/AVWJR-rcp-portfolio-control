@@ -1,9 +1,13 @@
+import { enforce, resolveActor } from "@/lib/auth/actor";
 import { loadCapexProjects } from "@/lib/capex";
 import { serialize } from "@/lib/serialize";
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const projects = await loadCapexProjects();
+  const denied = await enforce("read");
+  if (denied) return denied;
+  const actor = await resolveActor();
+  const projects = await loadCapexProjects(actor.entityIds ?? undefined);
   return NextResponse.json(
     serialize({
       count: projects.length,

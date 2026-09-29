@@ -14,12 +14,14 @@ function parsePeriod(raw: string | null): { year: number; month: number } {
 }
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "";
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
-  const denied = await enforce("read", entity.id);
-  if (denied) return denied;
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   const period = await resolveReportingPeriod(entity.code, url.searchParams.get("period"));
   const { year, month } = parsePeriod(period);
 

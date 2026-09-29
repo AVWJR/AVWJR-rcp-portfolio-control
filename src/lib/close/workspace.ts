@@ -6,6 +6,7 @@ import { openPeriod } from "@/lib/deals/periods";
 import { parseRentRollSource } from "@/lib/deals/workbook";
 import { hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
 import { assertTieOutsAllowLock } from "@/lib/close/guards";
+import { clearReviewerSignOff } from "@/lib/close/sign-off";
 import { putStoredFile } from "@/lib/file-store";
 import { postJournal } from "@/lib/post-journal";
 import { importRentRollSource } from "@/lib/rent-roll";
@@ -611,6 +612,7 @@ export async function postCloseToBooks(opts: {
     action: "POST",
     detail: `Posted ${income.length} income lines from ${chosen?.filename ?? "no income file"} and ${balanceDesired.size} balance-sheet lines from ${chosenBalance?.filename ?? "no balance sheet"}`,
   });
+  await clearReviewerSignOff(period.id);
   const explicitIncome = opts.incomeUploadId?.trim();
   const explicitBalance = opts.balanceUploadId?.trim();
   const incomeToSave =
@@ -1169,6 +1171,7 @@ export async function reverseOperatingJournals(opts: {
     action: "REVERSE_OPERATING",
     detail: `${reason} · ${actionable.length} above-NOI journal(s)`,
   });
+  await clearReviewerSignOff(period.id);
   return {
     reversed: actionable.length,
     journals: actionable.map(({ lines: _lines, ...preview }) => preview),

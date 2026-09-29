@@ -28,6 +28,8 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
+  const denied = await enforce("read");
+  if (denied) return denied;
   return NextResponse.json({
     configured: rcpMailboxProvider.isConfigured(),
     mailbox: rcpMailboxAddress() || null,

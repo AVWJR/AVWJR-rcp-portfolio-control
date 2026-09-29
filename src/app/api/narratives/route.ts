@@ -7,6 +7,8 @@ import { buildAllNarratives, buildNarrative, isAudienceId } from "@rcp/reporting
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "SPE-WBG";
   const period = await resolveReportingPeriod(code, url.searchParams.get("period"));
@@ -17,8 +19,8 @@ export async function GET(request: Request) {
   if (entity.type === "HOLDCO") {
     return NextResponse.json({ error: "HoldCo has no operating narrative" }, { status: 400 });
   }
-  const denied = await enforce("read", entity.id);
-  if (denied) return denied;
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   const snap = await loadPeriodSnapshot({
     entityId: entity.id,
     entityType: entity.type,

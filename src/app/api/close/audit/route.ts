@@ -7,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = (url.searchParams.get("entity") ?? "").trim().toUpperCase();
   const period = url.searchParams.get("period") ?? "";
@@ -16,8 +18,8 @@ export async function GET(request: Request) {
   }
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
-  const denied = await enforce("read", entity.id);
-  if (denied) return denied;
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   const csv = await closeAuditCsv(code, year, month);
   if (!csv) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
   return new NextResponse(csv, {

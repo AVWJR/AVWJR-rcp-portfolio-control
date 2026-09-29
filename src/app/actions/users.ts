@@ -1,6 +1,6 @@
 "use server";
 
-import { assertCan } from "@/lib/auth/actor";
+import { assertSignedInOwner } from "@/lib/auth/actor";
 import { isAppRole } from "@/lib/auth/roles";
 import { inviteUser, updateUser } from "@/lib/auth/users";
 import { prisma } from "@/lib/prisma";
@@ -18,8 +18,7 @@ async function entityIds(formData: FormData): Promise<string[]> {
 }
 
 export async function inviteUserAction(formData: FormData) {
-  const actor = await assertCan("users.admin");
-  if (!actor.userId) throw new Error("Sign in as the owner.");
+  const actor = await assertSignedInOwner();
   const role = String(formData.get("role") ?? "");
   if (!isAppRole(role)) throw new Error("Choose a role.");
   await inviteUser({
@@ -33,14 +32,15 @@ export async function inviteUserAction(formData: FormData) {
 }
 
 export async function updateUserAction(formData: FormData) {
-  const actor = await assertCan("users.admin");
-  if (!actor.userId) throw new Error("Sign in as the owner.");
+  const actor = await assertSignedInOwner();
+  const actorId = actor.userId;
+  if (!actorId) throw new Error("Only a signed-in owner can manage users.");
   const roleRaw = String(formData.get("role") ?? "");
   const active = String(formData.get("active") ?? "yes") === "yes";
   const password = String(formData.get("password") ?? "");
   await updateUser({
     id: String(formData.get("id") ?? ""),
-    actorId: actor.userId,
+    actorId,
     role: isAppRole(roleRaw) ? roleRaw : undefined,
     active,
     password: password.trim() ? password : undefined,

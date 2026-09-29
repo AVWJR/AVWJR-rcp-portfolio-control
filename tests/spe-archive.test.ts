@@ -15,6 +15,7 @@ import { listSpeDeals } from "@/lib/deals/create-spe";
 import { createEntityWithCoa } from "@/lib/entities";
 import { prisma } from "@/lib/prisma";
 import { consolidationEntityIds, listEntities } from "@/lib/queries";
+import { randomBytes } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 
 const idsToDelete: string[] = [];
@@ -79,8 +80,8 @@ describe("SPE Delete persistence", () => {
     const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
     if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
 
-    const suffix = Date.now().toString(36).toUpperCase().slice(-4);
-    const code = `SPE-A${suffix}`.slice(0, 12);
+    const suffix = randomBytes(4).toString("hex").toUpperCase();
+    const code = `SPE-A${suffix}`;
     const entity = await createEntityWithCoa({
       code,
       name: `Archive Test ${suffix} LLC`,

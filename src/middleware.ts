@@ -11,16 +11,10 @@ import {
   viewerForbiddenApi,
 } from "@/lib/access";
 import { legacyFlagMode } from "@/lib/auth/policy";
+import { readValidSessionUserId } from "@/lib/auth/session-cookie";
 import { NextResponse, type NextRequest } from "next/server";
 
 export const runtime = "nodejs";
-
-function hasUserSession(request: NextRequest): boolean {
-  return Boolean(
-    request.cookies.get("authjs.session-token")?.value ||
-      request.cookies.get("__Secure-authjs.session-token")?.value,
-  );
-}
 
 function nextWithPath(request: NextRequest, role?: string) {
   const requestHeaders = new Headers(request.headers);
@@ -41,11 +35,12 @@ function withRoleCookie(response: NextResponse, role: "principal" | "viewer") {
   return response;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
+  const sessionUserId = await readValidSessionUserId(request);
   if (
     legacyFlagMode() === "off" ||
-    hasUserSession(request) ||
+    sessionUserId ||
     !accessControlEnabled() ||
     pathname === "/login" ||
     pathname.startsWith("/api/auth")

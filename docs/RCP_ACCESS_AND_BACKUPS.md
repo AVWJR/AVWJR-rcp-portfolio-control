@@ -34,7 +34,15 @@ A hard lock is refused until a preparer and a different reviewer have both signe
 11. Open **Users** in the gold navigation (or go to `/admin/users`). Invite the controller, preparer, and reviewer. For an LP or lender, choose that role and check only their deals. Tell each person their email and the password you typed. They sign in at `/login`.
 12. To turn someone off, open their card, set **Active** to **Deactivated**, and click **Save**. Their past entries stay on the books.
 
+Five wrong passwords for the same email, or from the same network address, pause sign-in for 15 minutes. The message says to wait and try again.
+
 `SPE-WBG`, `SPE-CVC`, and `SPE-HCR` still cannot be archived.
+
+## Preview deployments do not change the production database
+
+Preview and production use the same Neon database. A preview build used to run `prisma db push` and could drop columns the live site still needs.
+
+Production builds still run `prisma db push`. That is how a merged change adds columns. Preview builds skip it. Leave `PREVIEW_DATABASE_URL` unset. Set it, and `PREVIEW_DIRECT_URL` if the unpooled host is different, only when that preview has its own database.
 
 ## Require tests before a merge (GitHub)
 
@@ -54,7 +62,7 @@ After that, GitHub will not let a pull request merge into `main` until **test** 
 
 ## Nightly database backup (GitHub)
 
-The backup workflow runs every day around 3:00 or 4:00 a.m. Eastern. It runs `pg_dump` against Neon using `DIRECT_URL` when that secret exists, otherwise `DATABASE_URL`. The dump is encrypted with `BACKUP_ENCRYPTION_KEY` and kept as a GitHub Actions artifact for 90 days. If `BLOB_READ_WRITE_TOKEN` is also set, a second copy is stored as a private Vercel Blob.
+The backup workflow runs every day around 3:00 or 4:00 a.m. Eastern. It asks Neon which Postgres version is running and installs that `pg_dump` (for example `postgresql-client-17`). It dumps with `DIRECT_URL` when that secret exists, otherwise `DATABASE_URL`. The file is encrypted with AES-256-GCM and `BACKUP_ENCRYPTION_KEY` (the file starts with `RCPG`) and kept as a GitHub Actions artifact for 90 days. An older backup made with openssl CBC will not restore. If `BLOB_READ_WRITE_TOKEN` is also set, a second copy goes to Vercel Blob. The job tries a private store first, then a public one. Set the repository variable `BLOB_ACCESS` to `public` if the store is public and you want that tried first.
 
 ### Add the secrets
 

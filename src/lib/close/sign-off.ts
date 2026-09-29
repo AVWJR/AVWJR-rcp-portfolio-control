@@ -28,11 +28,23 @@ export async function signPeriodPackage(opts: {
   if (opts.kind === "prepare") {
     await prisma.period.update({
       where: { id: period.id },
-      data: { preparedByUserId: opts.userId, preparedAt: now },
+      data: {
+        preparedByUserId: opts.userId,
+        preparedAt: now,
+        reviewedByUserId: null,
+        reviewedAt: null,
+        ownerSelfApproveReason: null,
+      },
     });
     await prisma.closeChecklistItem.updateMany({
       where: { periodId: period.id },
-      data: { preparedByUserId: opts.userId, preparedAt: now },
+      data: {
+        preparedByUserId: opts.userId,
+        preparedAt: now,
+        reviewedByUserId: null,
+        reviewedAt: null,
+        ownerSelfApproveReason: null,
+      },
     });
     return;
   }
@@ -68,6 +80,18 @@ export async function signPeriodPackage(opts: {
       reviewedAt: now,
       ownerSelfApproveReason: self ? reason : null,
     },
+  });
+}
+
+/** A new preparer signature, post, or reversal makes the previous review stale. */
+export async function clearReviewerSignOff(periodId: string) {
+  await prisma.period.update({
+    where: { id: periodId },
+    data: { reviewedByUserId: null, reviewedAt: null, ownerSelfApproveReason: null },
+  });
+  await prisma.closeChecklistItem.updateMany({
+    where: { periodId },
+    data: { reviewedByUserId: null, reviewedAt: null, ownerSelfApproveReason: null },
   });
 }
 

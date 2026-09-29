@@ -78,6 +78,8 @@ function patchFromBody(body: Record<string, unknown>): DealIntakePatch {
 }
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   const id = new URL(request.url).searchParams.get("id");

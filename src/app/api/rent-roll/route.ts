@@ -24,13 +24,15 @@ async function resolveSpe(code: string) {
 }
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "";
   const resolved = await resolveSpe(code);
   if ("error" in resolved && resolved.error) return resolved.error;
   const entity = resolved.entity!;
-  const denied = await enforce("read", entity.id);
-  if (denied) return denied;
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   const format = url.searchParams.get("format") ?? "json";
 
   if (format === "csv") {

@@ -782,3 +782,12 @@ model UserEntityScope {
   @@unique([userId, entityId])
   @@index([entityId])
 }
+
+/// Failed sign-ins. A burst from one email or one IP locks that bucket.
+model AuthLoginFailure {
+  id        String   @id @default(cuid())
+  bucket    String
+  createdAt DateTime @default(now())
+
+  @@index([bucket, createdAt])
+}

@@ -1,4 +1,4 @@
-import { assertCan, AuthzError } from "@/lib/auth/actor";
+import { assertSignedInOwner, AuthzError } from "@/lib/auth/actor";
 import { isAppRole } from "@/lib/auth/roles";
 import { inviteUser, listUsers, updateUser } from "@/lib/auth/users";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +25,7 @@ async function entityIdsFromCodes(codes: unknown): Promise<string[]> {
 
 export async function GET() {
   try {
-    await assertCan("users.admin");
+    await assertSignedInOwner();
     const users = await listUsers();
     return NextResponse.json({
       users: users.map((user) => ({
@@ -44,7 +44,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await assertCan("users.admin");
+    await assertSignedInOwner();
     const body = (await request.json()) as {
       email?: string;
       name?: string;
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const actor = await assertCan("users.admin");
+    const actor = await assertSignedInOwner();
     const body = (await request.json()) as {
       id?: string;
       role?: string;

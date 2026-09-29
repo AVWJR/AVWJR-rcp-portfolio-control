@@ -85,7 +85,12 @@ export function denialFor(actor: Actor, capability: Capability, entityId: string
   if (actor.kind === "deactivated") {
     return { status: 403, message: "This account is deactivated. Ask the owner to turn it back on." };
   }
-  if (actor.kind === "legacy-principal") return null;
+  if (actor.kind === "legacy-principal") {
+    if (capability === "users.admin") {
+      return { status: 403, message: "Only a signed-in owner can manage users." };
+    }
+    return null;
+  }
   if (actor.kind === "legacy-viewer") {
     if (capability === "read") return null;
     return { status: 403, message: "Partner view is read-only." };
@@ -156,6 +161,26 @@ export async function resolveActor(): Promise<Actor> {
 export async function actingUserId(): Promise<string | null> {
   const actor = await resolveActor();
   return actor.kind === "user" ? actor.userId : null;
+}
+
+/** Owner actions require a real account. The shared partner principal cannot invite anyone. */
+export async function assertSignedInOwner(): Promise<Actor> {
+  const actor = await resolveActor();
+  if (actor.kind !== "user" || actor.role !== "OWNER" || !actor.userId) {
+    const status = actor.kind === "anonymous" ? 401 : 403;
+    throw new AuthzError("Only a signed-in owner can manage users.", status);
+  }
+  return actor;
+}
+
+export async function visibleEntityCodes(actor: Actor): Promise<Set<string> | null> {
+  if (!actor.entityIds) return null;
+  if (actor.entityIds.length === 0) return new Set();
+  const rows = await prisma.entity.findMany({
+    where: { id: { in: actor.entityIds } },
+    select: { code: true },
+  });
+  return new Set(rows.map((row) => row.code));
 }
 
 export async function assertCan(capability: Capability, entityId?: string | null): Promise<Actor> {

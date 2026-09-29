@@ -1,3 +1,4 @@
+import { assertSignedInOwner } from "@/lib/auth/actor";
 import { prisma } from "@/lib/prisma";
 import type { AppRole } from "@/lib/auth/roles";
 import { isAppRole, SCOPED_ROLES } from "@/lib/auth/roles";
@@ -54,6 +55,7 @@ export async function inviteUser(input: {
   password: string;
   entityIds?: string[];
 }) {
+  await assertSignedInOwner();
   if (!isAppRole(input.role)) throw new Error("Choose a role.");
   const email = normalizeEmail(input.email);
   if (!email.includes("@")) throw new Error("Enter a real email address.");
@@ -94,6 +96,7 @@ export async function updateUser(input: {
   name?: string;
   entityIds?: string[];
 }) {
+  await assertSignedInOwner();
   const user = await prisma.appUser.findUnique({ where: { id: input.id } });
   if (!user) throw new Error("That user was not found.");
   if (input.active === false && input.id === input.actorId) {

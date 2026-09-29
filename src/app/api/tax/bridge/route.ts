@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { resolveReportingPeriod } from "@/lib/period-default";
 import { workbookResponse } from "@/lib/workbook-response";
 import { prisma } from "@/lib/prisma";
@@ -9,11 +10,14 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "SPE-WBG";
+  const entityFirst = await prisma.entity.findUnique({ where: { code } });
+  const denied = await enforce("read", entityFirst?.id);
+  if (denied) return denied;
   const period = await resolveReportingPeriod(code, url.searchParams.get("period"));
   const format = url.searchParams.get("format") ?? "json";
   const view = url.searchParams.get("view");
   const [year, month] = period.split("-").map(Number);
-  const entity = await prisma.entity.findUnique({ where: { code } });
+  const entity = entityFirst;
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
   const ws = await loadBooksToTaxWorksheet({
     entityId: entity.id,
