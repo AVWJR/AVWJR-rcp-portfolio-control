@@ -7,8 +7,17 @@ import {
   assertReopenReason,
   assertSoftClose,
 } from "@rcp/ledger";
+import { actingUserId, assertCan, resolveActor } from "@/lib/auth/actor";
+import type { Capability } from "@/lib/auth/roles";
+import { assertHardLockSegregation } from "./close/sign-off";
 import { assertNoOpenSuspense } from "./close/guards";
 import { prisma } from "./prisma";
+
+async function guardClose(capability: Capability) {
+  const actor = await resolveActor();
+  if (actor.kind === "legacy-principal") return actor;
+  return assertCan(capability);
+}
 
 export async function ensureChecklist(periodId: string) {
   const existing = await prisma.closeChecklistItem.findMany({ where: { periodId } });
@@ -34,6 +43,7 @@ export async function setChecklistItem(opts: {
   status: ChecklistItemStatus;
   notes?: string;
 }) {
+  await guardClose("close.sign_prepare");
   await ensureChecklist(opts.periodId);
   return prisma.closeChecklistItem.update({
     where: { periodId_code: { periodId: opts.periodId, code: opts.code } },
@@ -65,11 +75,13 @@ async function recordEvent(opts: {
       action: opts.action,
       reason: opts.reason,
       ticket: opts.ticket,
+      actorUserId: await actingUserId(),
     },
   });
 }
 
 export async function softClosePeriod(periodId: string) {
+  await guardClose("close.soft");
   const period = await prisma.period.findUnique({ where: { id: periodId } });
   if (!period) throw new Error("Period not found");
   assertSoftClose(period.status);
@@ -83,6 +95,7 @@ export async function softClosePeriod(periodId: string) {
 }
 
 export async function hardLockPeriod(periodId: string) {
+  const actor = await guardClose("close.hard");
   const period = await prisma.period.findUnique({
     where: { id: periodId },
     include: { checklist: true },
@@ -92,6 +105,7 @@ export async function hardLockPeriod(periodId: string) {
   await ensureChecklist(periodId);
   const items = await prisma.closeChecklistItem.findMany({ where: { periodId } });
   assertChecklistComplete(items);
+  if (actor.userId) await assertHardLockSegregation(periodId);
   await assertNoOpenSuspense(period.entityId, period.endDate);
   const updated = await prisma.period.update({
     where: { id: periodId },
@@ -102,6 +116,7 @@ export async function hardLockPeriod(periodId: string) {
 }
 
 export async function reopenPeriod(opts: { periodId: string; reason: string; ticket: string }) {
+  await guardClose("close.reopen");
   assertReopenReason(opts.reason, opts.ticket);
   const period = await prisma.period.findUnique({ where: { id: opts.periodId } });
   if (!period) throw new Error("Period not found");

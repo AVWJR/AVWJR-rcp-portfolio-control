@@ -1,8 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
+import type { AppEnv } from "@/lib/env";
 
 export const SEED_SECRET_MIN_LENGTH = 16;
 
-export function configuredSeedSecret(env: NodeJS.ProcessEnv = process.env): string | null {
+export function configuredSeedSecret(env: AppEnv = process.env): string | null {
   const secret = env.SEED_SECRET?.trim() ?? "";
   if (secret.length < SEED_SECRET_MIN_LENGTH) return null;
   return secret;
@@ -36,7 +37,7 @@ export type SeedAuthResult =
  */
 export function authorizeSeedRequest(
   request: Request,
-  env: NodeJS.ProcessEnv = process.env,
+  env: AppEnv = process.env,
 ): SeedAuthResult {
   const expected = configuredSeedSecret(env);
   if (!expected) {

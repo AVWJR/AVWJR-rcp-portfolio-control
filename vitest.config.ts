@@ -7,6 +7,8 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     env: {
       DATABASE_URL: process.env.DATABASE_URL ?? "file:./dev.db",
+      // Existing suites keep the pre-login principal path even if a test inserts users.
+      LEGACY_PARTNER_TOKEN: "1",
     },
   },
   resolve: {

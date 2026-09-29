@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { restoreImpactCopy, restoreSpe } from "@/lib/archive";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { serialize } from "@/lib/serialize";
@@ -12,6 +13,8 @@ export async function POST(
 ) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
+  const denied = await enforce("archive.write");
+  if (denied) return denied;
   try {
     const { code } = await context.params;
     const body = (await request.json().catch(() => ({}))) as { confirmCode?: string };

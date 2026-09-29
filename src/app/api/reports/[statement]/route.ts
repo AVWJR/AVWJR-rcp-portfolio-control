@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { resolveReportingPeriod } from "@/lib/period-default";
 import { buildAllStatements } from "@/lib/reports-server";
 import { prisma } from "@/lib/prisma";
@@ -18,6 +19,8 @@ export async function GET(
 
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
+  const denied = await enforce("read", entity.id);
+  if (denied) return denied;
 
   const all = await buildAllStatements({
     entityId: entity.id,

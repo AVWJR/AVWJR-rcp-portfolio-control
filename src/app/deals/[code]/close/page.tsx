@@ -422,6 +422,54 @@ export default async function MonthEndClosePage({
             </section>
 
             <section className="space-y-3 text-sm">
+              <h2 className="font-display text-2xl text-navy-900">Sign-off</h2>
+              <p>
+                Prepared by {workspace.signOff.preparedBy ?? "—"}
+                {workspace.signOff.preparedAt ? ` · ${workspace.signOff.preparedAt.slice(0, 16).replace("T", " ")}` : ""}
+                . Reviewed by {workspace.signOff.reviewedBy ?? "—"}
+                {workspace.signOff.reviewedAt ? ` · ${workspace.signOff.reviewedAt.slice(0, 16).replace("T", " ")}` : ""}
+                .
+              </p>
+              {workspace.signOff.ownerSelfApproveReason ? (
+                <p>Owner self-approval: {workspace.signOff.ownerSelfApproveReason}</p>
+              ) : (
+                <p className="text-ink-600">Hard lock needs a reviewer who is not the preparer. The owner may self-approve only with a reason.</p>
+              )}
+              <div className="flex flex-wrap gap-3">
+                <form action={`/api/deals/${code}/close`} method="post">
+                  <input type="hidden" name="action" value="sign-prepare-all" />
+                  <input type="hidden" name="year" value={ctx.year} />
+                  <input type="hidden" name="month" value={ctx.month} />
+                  <button className="rounded border border-navy-900 px-3 py-2" type="submit">
+                    Sign as preparer
+                  </button>
+                </form>
+                <form className="flex flex-wrap items-end gap-2" action={`/api/deals/${code}/close`} method="post">
+                  <input type="hidden" name="action" value="sign-review-all" />
+                  <input type="hidden" name="year" value={ctx.year} />
+                  <input type="hidden" name="month" value={ctx.month} />
+                  <label className="text-xs">
+                    Owner self-approval reason
+                    <input name="reason" className="mt-1 block rounded border px-2 py-1" placeholder="Only if you also prepared it" />
+                  </label>
+                  <button className="rounded border border-navy-900 px-3 py-2" type="submit">
+                    Sign as reviewer
+                  </button>
+                </form>
+              </div>
+              <a className="inline-block text-navy-800 underline" href={`/api/close/audit?entity=${code}&period=${period}`}>
+                Download audit trail
+              </a>
+              <ul>
+                {workspace.signOff.items.map((item) => (
+                  <li key={item.code}>
+                    {item.label}: prepared {item.preparedBy ?? "—"}, reviewed {item.reviewedBy ?? "—"}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="space-y-3 text-sm">
               <h2 className="font-display text-2xl text-navy-900">Lock</h2>
               <div className="flex flex-wrap gap-3">
                 <form action={`/api/deals/${code}/close`} method="post">
@@ -461,6 +509,7 @@ export default async function MonthEndClosePage({
                 {workspace.events.map((event, index) => (
                   <li key={`${event.at}-${index}`}>
                     {event.at.slice(0, 16).replace("T", " ")} · {event.action} · {event.detail || "—"}
+                    {event.actor ? ` · ${event.actor}` : ""}
                   </li>
                 ))}
               </ul>

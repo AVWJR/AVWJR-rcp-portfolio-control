@@ -1,3 +1,4 @@
+import { enforce, resolveActor, canSeeEntity } from "@/lib/auth/actor";
 import { listArchivedSpes } from "@/lib/archive";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { serialize } from "@/lib/serialize";
@@ -9,8 +10,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
+  const denied = await enforce("read");
+  if (denied) return denied;
   try {
-    const deals = await listArchivedSpes();
+    const actor = await resolveActor();
+    const deals = (await listArchivedSpes()).filter((spe) => canSeeEntity(actor, spe.id));
     return NextResponse.json(
       serialize({
         deals: deals.map((spe) => ({

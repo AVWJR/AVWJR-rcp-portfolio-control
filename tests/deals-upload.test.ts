@@ -62,10 +62,10 @@ afterAll(async () => {
 
 describe("durable file store", () => {
   it("defaults to local FS off Vercel and db on Vercel", () => {
-    expect(resolveFileStoreBackend({} as NodeJS.ProcessEnv)).toBe("fs");
-    expect(resolveFileStoreBackend({ VERCEL: "1" } as NodeJS.ProcessEnv)).toBe("db");
-    expect(resolveFileStoreBackend({ BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_x" } as NodeJS.ProcessEnv)).toBe("blob");
-    expect(resolveFileStoreBackend({ RCP_FILE_STORE: "db", VERCEL: "1" } as NodeJS.ProcessEnv)).toBe("db");
+    expect(resolveFileStoreBackend({})).toBe("fs");
+    expect(resolveFileStoreBackend({ VERCEL: "1" })).toBe("db");
+    expect(resolveFileStoreBackend({ BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_x" })).toBe("blob");
+    expect(resolveFileStoreBackend({ RCP_FILE_STORE: "db", VERCEL: "1" })).toBe("db");
     expect(describeFileStore({})).toMatch(/Local filesystem/);
     expect(describeFileStore({ VERCEL: "1" })).toMatch(/StoredBlob/);
   });

@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { rcpMailboxAddress, rcpMailboxProvider } from "@/lib/deals/providers";
 import { NextResponse } from "next/server";
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   try {
     const configured = rcpMailboxProvider.isConfigured();
     return NextResponse.json({

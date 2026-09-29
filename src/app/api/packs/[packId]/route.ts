@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { isArchivedSpe } from "@/lib/archive";
 import { resolveReportingPeriod } from "@/lib/period-default";
 import { buildEntityPack, exportPackBuffer, parsePackId } from "@/lib/pack-export";
@@ -18,6 +19,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ packId: str
   const [year, month] = period.split("-").map(Number);
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
+  const denied = await enforce("read", entity.id);
+  if (denied) return denied;
   if (entity.type === "HOLDCO") {
     return NextResponse.json({ error: "HoldCo has no operating pack" }, { status: 400 });
   }

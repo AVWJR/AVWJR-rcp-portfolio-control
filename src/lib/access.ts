@@ -1,3 +1,5 @@
+import type { AppEnv } from "@/lib/env";
+
 function safeEqual(left: string, right: string): boolean {
   if (left.length !== right.length) return false;
   let mismatch = 0;
@@ -21,29 +23,29 @@ function hexHmac(secret: string, value: string): string {
 export const ACCESS_COOKIE = "rcp_access";
 export type AccessRole = "principal" | "viewer";
 
-export function partnerViewToken(env: NodeJS.ProcessEnv = process.env): string | null {
+export function partnerViewToken(env: AppEnv = process.env): string | null {
   const token = env.PARTNER_VIEW_TOKEN?.trim() || env.VIEWER_PASSWORD?.trim() || "";
   return token.length >= 8 ? token : null;
 }
 
-export function principalPassword(env: NodeJS.ProcessEnv = process.env): string | null {
+export function principalPassword(env: AppEnv = process.env): string | null {
   const password = env.PRINCIPAL_PASSWORD?.trim() || "";
   return password.length >= 8 ? password : null;
 }
 
-export function accessControlEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+export function accessControlEnabled(env: AppEnv = process.env): boolean {
   return Boolean(partnerViewToken(env) || principalPassword(env));
 }
 
-function signingSecret(env: NodeJS.ProcessEnv = process.env): string {
+function signingSecret(env: AppEnv = process.env): string {
   return principalPassword(env) || partnerViewToken(env) || "rcp-access-disabled";
 }
 
-export function signAccessRole(role: AccessRole, env: NodeJS.ProcessEnv = process.env): string {
+export function signAccessRole(role: AccessRole, env: AppEnv = process.env): string {
   return `${role}.${hexHmac(signingSecret(env), role)}`;
 }
 
-export function readAccessRole(cookieValue: string | undefined | null, env: NodeJS.ProcessEnv = process.env): AccessRole | null {
+export function readAccessRole(cookieValue: string | undefined | null, env: AppEnv = process.env): AccessRole | null {
   if (!cookieValue) return null;
   const [role] = cookieValue.split(".");
   if (role !== "principal" && role !== "viewer") return null;

@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { prisma } from "@/lib/prisma";
 import {
   exportRentRollCsv,
@@ -28,6 +29,8 @@ export async function GET(request: Request) {
   const resolved = await resolveSpe(code);
   if ("error" in resolved && resolved.error) return resolved.error;
   const entity = resolved.entity!;
+  const denied = await enforce("read", entity.id);
+  if (denied) return denied;
   const format = url.searchParams.get("format") ?? "json";
 
   if (format === "csv") {
@@ -91,6 +94,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const contentType = request.headers.get("content-type") ?? "";
   let code = "";
   let confirmReplace = false;

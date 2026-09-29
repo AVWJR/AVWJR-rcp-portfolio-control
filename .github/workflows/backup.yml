@@ -1,0 +1,60 @@
+name: Nightly database backup
+
+on:
+  schedule:
+    # 08:00 UTC is about 3:00 or 4:00 a.m. in America/New_York.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install Postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Dump and encrypt
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          mkdir -p backups
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          bash scripts/backup-postgres.sh "backups/rcp-${stamp}.sql.enc"
+          echo "BACKUP_FILE=backups/rcp-${stamp}.sql.enc" >> "$GITHUB_ENV"
+      - name: Keep a copy on this workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcp-postgres-backup
+          path: backups/*.sql.enc
+          retention-days: 90
+      - name: Copy into Vercel Blob when a token is set
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: |
+          node --input-type=module <<'JS'
+          import { put } from "@vercel/blob";
+          import { readFileSync } from "node:fs";
+          const token = (process.env.BLOB_READ_WRITE_TOKEN || "").trim();
+          if (!token) {
+            console.log("BLOB_READ_WRITE_TOKEN is not set. The GitHub Actions artifact is the only copy.");
+            process.exit(0);
+          }
+          const file = process.env.BACKUP_FILE;
+          const bytes = readFileSync(file);
+          const pathname = file.replace(/^backups\//, "backups/");
+          const blob = await put(pathname, bytes, {
+            access: "private",
+            token,
+            contentType: "application/octet-stream",
+            addRandomSuffix: false,
+          });
+          console.log(blob.url);
+          JS

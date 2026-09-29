@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { classifyIntakeFile, guessClassification, removeIntakeFile, storeIntakeFile, storeIntakeFileFromBlob } from "@/lib/deals/files";
 import { createIntake, getIntake, publicIntake } from "@/lib/deals/intake";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
@@ -60,6 +61,8 @@ async function registerBlobReference(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   const contentType = request.headers.get("content-type") ?? "";
@@ -163,6 +166,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {
@@ -183,6 +188,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   const id = new URL(request.url).searchParams.get("id");

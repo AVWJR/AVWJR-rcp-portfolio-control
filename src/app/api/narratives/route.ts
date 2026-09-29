@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { resolveReportingPeriod } from "@/lib/period-default";
 import { loadPeriodSnapshot } from "@/lib/period-snapshot";
 import { prisma } from "@/lib/prisma";
@@ -16,6 +17,8 @@ export async function GET(request: Request) {
   if (entity.type === "HOLDCO") {
     return NextResponse.json({ error: "HoldCo has no operating narrative" }, { status: 400 });
   }
+  const denied = await enforce("read", entity.id);
+  if (denied) return denied;
   const snap = await loadPeriodSnapshot({
     entityId: entity.id,
     entityType: entity.type,

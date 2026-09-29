@@ -1,3 +1,4 @@
+import { canSeeEntity, enforce, resolveActor } from "@/lib/auth/actor";
 import { createSpeDeal, listSpeDeals, suggestCodeForName } from "@/lib/deals/create-spe";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { serialize } from "@/lib/serialize";
@@ -15,7 +16,10 @@ export async function GET(request: Request) {
     const code = await suggestCodeForName(suggest);
     return NextResponse.json({ code });
   }
-  const spes = await listSpeDeals();
+  const denied = await enforce("read");
+  if (denied) return denied;
+  const actor = await resolveActor();
+  const spes = (await listSpeDeals()).filter((spe) => canSeeEntity(actor, spe.id));
   return NextResponse.json(
     serialize({
       deals: spes.map((spe) => ({
@@ -37,6 +41,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   try {
     const body = (await request.json()) as {
       name?: string;

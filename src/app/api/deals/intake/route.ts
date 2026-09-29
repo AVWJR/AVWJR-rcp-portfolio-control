@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { createIntake, getIntake, publicIntake, updateIntake } from "@/lib/deals/intake";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { dollarsToCents, multipleToDscrBps, percentToRateBps, percentToYieldBps } from "@/lib/deals/money";
@@ -87,6 +88,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {
