@@ -6,6 +6,7 @@ import {
   isPostgresUrl,
   isPrismaDataLossAbort,
   isSqliteUrl,
+  previewSchemaPushPlan,
   resolveDatabaseUrl,
   resolveDirectUrl,
   resolvePrismaProvider,
@@ -79,6 +80,74 @@ describe("prisma provider selection", () => {
     expect(provider).toBe("postgresql");
     expect(isPostgresUrl(env.DATABASE_URL)).toBe(true);
     expect(isPostgresUrl(env.DIRECT_URL)).toBe(true);
+  });
+
+  it("pushes the schema on production and on a local run", () => {
+    expect(previewSchemaPushPlan({ VERCEL: "1", VERCEL_ENV: "production" })).toEqual({
+      push: true,
+      reason: "production",
+    });
+    expect(previewSchemaPushPlan({})).toEqual({ push: true, reason: "local" });
+    expect(previewSchemaPushPlan({ DATABASE_URL: "file:./dev.db" })).toEqual({
+      push: true,
+      reason: "local",
+    });
+  });
+
+  it("skips prisma db push on a preview that shares the production database", () => {
+    const plan = previewSchemaPushPlan({
+      VERCEL: "1",
+      VERCEL_ENV: "preview",
+      DATABASE_URL: "postgresql://prod.example/neondb",
+    });
+    expect(plan.push).toBe(false);
+    expect(plan.databaseUrl).toBeUndefined();
+    expect(plan.reason).toContain("Skipping prisma db push");
+  });
+
+  it("pushes a preview only to PREVIEW_DATABASE_URL", () => {
+    expect(
+      previewSchemaPushPlan({
+        VERCEL: "1",
+        VERCEL_ENV: "preview",
+        DATABASE_URL: "postgresql://prod.example/neondb",
+        DIRECT_URL: "postgresql://prod-direct.example/neondb",
+        PREVIEW_DATABASE_URL: "postgresql://preview/db",
+        PREVIEW_DIRECT_URL: "postgresql://preview-direct/db",
+      }),
+    ).toEqual({
+      push: true,
+      reason: "separate preview database",
+      databaseUrl: "postgresql://preview/db",
+      directUrl: "postgresql://preview-direct/db",
+    });
+    expect(
+      previewSchemaPushPlan({
+        VERCEL: "1",
+        VERCEL_ENV: "preview",
+        DATABASE_URL: "postgresql://prod.example/neondb",
+        PREVIEW_DATABASE_URL: "  postgresql://preview-only/db  ",
+      }),
+    ).toEqual({
+      push: true,
+      reason: "separate preview database",
+      databaseUrl: "postgresql://preview-only/db",
+      directUrl: "postgresql://preview-only/db",
+    });
+  });
+
+  it("skips prisma db push when VERCEL=1 and VERCEL_ENV is missing or unexpected", () => {
+    for (const env of [
+      { VERCEL: "1" },
+      { VERCEL: "1", VERCEL_ENV: "" },
+      { VERCEL: "1", VERCEL_ENV: "development" },
+    ]) {
+      const plan = previewSchemaPushPlan(env);
+      expect(plan.push).toBe(false);
+      expect(plan.databaseUrl).toBeUndefined();
+      expect(plan.reason).toContain("Skipping prisma db push");
+      expect(plan.reason).toContain("VERCEL_ENV");
+    }
   });
 
   it("recognizes prisma db push CI aborts that would drop sibling-preview columns", () => {
