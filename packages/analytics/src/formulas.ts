@@ -125,6 +125,16 @@ export function cashBreakdown(amounts: Map<string, bigint>): CashBreakdown {
   };
 }
 
+/**
+ * Cash that can be distributed today: operating account 1010 only.
+ * Replacement reserves (1020), escrow / impounds (1030), and tenant security
+ * deposits (1040) stay in those accounts. Negative operating cash is not a distribution.
+ */
+export function distributableOperatingCashCents(amounts: Map<string, bigint>): bigint {
+  const operating = amounts.get(CASH_CODES.operating) ?? 0n;
+  return operating > 0n ? operating : 0n;
+}
+
 export function compareCapexToReserves(opts: {
   periodCapexCents: bigint;
   reserveCashCents: bigint;

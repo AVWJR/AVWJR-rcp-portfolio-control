@@ -10,6 +10,8 @@
 import {
   applyWaterfallTemplate,
   hasCoGp,
+  resolveUnpaidPrefCents,
+  resolveUnreturnedCapitalCents,
   runWaterfall,
   type WaterfallConfig,
   type WaterfallRunResult,
@@ -35,8 +37,10 @@ export type DealProformaScenario = {
 export type DealProformaInput = DealProformaScenario & {
   config: WaterfallConfig;
   lpContributedCents: bigint;
-  unreturnedCapitalCents: bigint;
-  unpaidPrefCents: bigint;
+  /** null = blank = use LP contributed. 0 = nothing left unreturned. */
+  unreturnedCapitalCents: bigint | null;
+  /** null = blank = no pref carried in. 0 = zero unpaid pref. */
+  unpaidPrefCents: bigint | null;
   prefPaidToDateCents: bigint;
   europeanPromoteOpen?: boolean;
   entityCode?: string;
@@ -167,8 +171,8 @@ export function runDealProforma(input: DealProformaInput): DealProformaResult {
   ];
   if (input.config.notes) notes.push(input.config.notes);
 
-  let unreturned = input.unreturnedCapitalCents > 0n ? input.unreturnedCapitalCents : input.lpContributedCents;
-  let unpaidPref = input.unpaidPrefCents > 0n ? input.unpaidPrefCents : 0n;
+  let unreturned = resolveUnreturnedCapitalCents(input.unreturnedCapitalCents, input.lpContributedCents);
+  let unpaidPref = resolveUnpaidPrefCents(input.unpaidPrefCents);
   let prefPaid = input.prefPaidToDateCents > 0n ? input.prefPaidToDateCents : 0n;
 
   const years: ProformaYearRow[] = [];

@@ -1,5 +1,6 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import type { AppEnv } from "@/lib/env";
 import { prisma } from "./prisma";
 
 export const FILE_STORE_ROOT = resolve(process.cwd(), "data", "vault");
@@ -17,11 +18,11 @@ const FS_PREFIX = "fs:";
 const DB_PREFIX = "db:";
 export const BLOB_PREFIX = "blob:";
 
-export function isOnVercel(env: NodeJS.ProcessEnv = process.env): boolean {
+export function isOnVercel(env: AppEnv = process.env): boolean {
   return env.VERCEL === "1" || env.VERCEL === "true";
 }
 
-export function isBlobTokenConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+export function isBlobTokenConfigured(env: AppEnv = process.env): boolean {
   return Boolean(env.BLOB_READ_WRITE_TOKEN?.trim());
 }
 
@@ -41,7 +42,7 @@ export function isTrustedBlobUrl(url: string): boolean {
   }
 }
 
-export function resolveFileStoreBackend(env: NodeJS.ProcessEnv = process.env): FileStoreBackend {
+export function resolveFileStoreBackend(env: AppEnv = process.env): FileStoreBackend {
   const forced = env.RCP_FILE_STORE?.trim().toLowerCase();
   if (forced === "blob" || forced === "db" || forced === "fs") return forced;
   if (isBlobTokenConfigured(env)) return "blob";
@@ -49,7 +50,7 @@ export function resolveFileStoreBackend(env: NodeJS.ProcessEnv = process.env): F
   return "fs";
 }
 
-export function describeFileStore(env: NodeJS.ProcessEnv = process.env): string {
+export function describeFileStore(env: AppEnv = process.env): string {
   const backend = resolveFileStoreBackend(env);
   if (backend === "blob") {
     return "Vercel Blob (private objects; BLOB_READ_WRITE_TOKEN)";

@@ -33,8 +33,12 @@ function seedToInput(
   return {
     config: seed.config,
     lpContributedCents: BigInt(seed.lpContributedCents),
-    unreturnedCapitalCents: BigInt(seed.unreturnedCapitalCents),
-    unpaidPrefCents: BigInt(seed.unpaidPrefCents),
+    unreturnedCapitalCents:
+      seed.unreturnedCapitalCents == null || seed.unreturnedCapitalCents.trim() === ""
+        ? null
+        : BigInt(seed.unreturnedCapitalCents),
+    unpaidPrefCents:
+      seed.unpaidPrefCents == null || seed.unpaidPrefCents.trim() === "" ? null : BigInt(seed.unpaidPrefCents),
     prefPaidToDateCents: BigInt(seed.prefPaidToDateCents),
     europeanPromoteOpen: seed.europeanPromoteOpen,
     entityCode: seed.entityCode,

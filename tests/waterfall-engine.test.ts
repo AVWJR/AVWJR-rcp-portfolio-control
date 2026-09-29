@@ -1,10 +1,13 @@
 import {
   applyWaterfallTemplate,
+  catchUpGrossCents,
   dollars,
+  formatUsd,
   gpCoInvestCapital,
   gpShareBps,
   lookThroughConfig,
   prefAccrualCents,
+  resolveUnreturnedCapitalCents,
   runWaterfall,
   simplePrefCents,
   type WaterfallConfig,
@@ -181,6 +184,83 @@ describe("waterfall engine — fixed $12M on $10M capital / 8% pref / 12 months"
     expect(r.coGpCents).toBe(dollars(120_000));
     expect(r.rcpCents + r.coGpCents).toBe(r.gpCents);
     expect(r.notes.join(" ")).toMatch(/Co-GP JV Partner/);
+  });
+
+  it("a typed unreturned 0 is zero: $18,900 CFADS at 8% simple monthly is 80/20", () => {
+    const config = applyWaterfallTemplate("simple_pref_promote");
+    const lp = dollars(1_000_000);
+    const r = runWaterfall({
+      config,
+      lpContributedCents: lp,
+      unreturnedCapitalCents: resolveUnreturnedCapitalCents(0n, lp),
+      unpaidPrefCents: 0n,
+      prefPaidToDateCents: 0n,
+      periodMonths: 1,
+      distributableCents: dollars(18_900),
+    });
+    expect(r.lpCents).toBe(dollars(15_120));
+    expect(r.rcpCents).toBe(dollars(3_780));
+    expect(r.gpCents).toBe(dollars(3_780));
+    expect(r.unpaidPrefAfterCents).toBe(0n);
+    expect(formatUsd(r.unpaidPrefAfterCents)).toBe("$0.00");
+  });
+
+  it("blank unreturned uses contributed capital and accrues unpaid pref", () => {
+    const config = applyWaterfallTemplate("simple_pref_promote");
+    const lp = dollars(1_000_000);
+    const r = runWaterfall({
+      config,
+      lpContributedCents: lp,
+      unreturnedCapitalCents: resolveUnreturnedCapitalCents(null, lp),
+      unpaidPrefCents: 0n,
+      prefPaidToDateCents: 0n,
+      periodMonths: 1,
+      distributableCents: dollars(18_900),
+    });
+    expect(r.lpCents).toBe(dollars(18_900));
+    expect(r.rcpCents).toBe(0n);
+    expect(r.unpaidPrefAfterCents).toBe(666_666n);
+    expect(formatUsd(r.unpaidPrefAfterCents)).toBe("$6,666.66");
+  });
+
+  it("50% catch-up still reaches a 20% GP share of profits above ROC", () => {
+    const r = run("institutional_catchup", {}, (c) => ({ ...c, catchUpBps: 5_000 }));
+    expect(r.gpCents).toBe(dollars(400_000));
+    expect(r.lpCents).toBe(dollars(11_600_000));
+    const catchUp = r.steps.find((s) => s.kind === "CATCH_UP");
+    expect(catchUp?.gpCents).toBeGreaterThan(0n);
+    expect(catchUp?.lpCents).toBeGreaterThan(0n);
+    expect(catchUp?.note).toMatch(/50% to GP until 20% target/);
+  });
+
+  it("a 70/30 residual moves the catch-up target to 30%", () => {
+    const r = run("institutional_catchup", {}, (c) => ({
+      ...c,
+      tiers: c.tiers.map((tier) =>
+        tier.kind === "PROMOTE" ? { ...tier, lpSplitBps: 7_000, gpSplitBps: 3_000 } : tier,
+      ),
+    }));
+    expect(r.gpCents).toBe(dollars(600_000));
+    expect(r.lpCents).toBe(dollars(11_400_000));
+    expect(r.steps.find((s) => s.kind === "CATCH_UP")?.note).toMatch(/until 30% target/);
+  });
+
+  it("a 0/0 catch-up row does not reset to 80/20", () => {
+    expect(
+      catchUpGrossCents({
+        lpPrefPaidCents: dollars(800_000),
+        gpPromoteSoFarCents: 0n,
+        lpSplitBps: 0,
+        gpSplitBps: 0,
+        catchUpBps: 10_000,
+      }),
+    ).toBe(0n);
+    const r = run("institutional_catchup", {}, (c) => ({
+      ...c,
+      tiers: c.tiers.map((tier) => (tier.kind === "CATCH_UP" ? { ...tier, lpSplitBps: 0, gpSplitBps: 0 } : tier)),
+    }));
+    expect(r.gpCents).toBe(dollars(400_000));
+    expect(r.steps.find((s) => s.kind === "CATCH_UP")?.note).toMatch(/until 20% target/);
   });
 
   it("annual compounding pref on 1 year equals 8% of capital", () => {

@@ -12,7 +12,7 @@ Entity tree: **HoldCo → OpCo → Property SPE/LLC**. Seed SPEs are 100% owned 
 
 Prisma cannot put `sqlite` and `postgresql` in one schema file. This repo keeps **SQLite as the committed default** so a non-technical Principal can run the demo on a laptop. A generate step (`scripts/prisma-prepare.mjs`) copies `prisma/schema.prisma` → `prisma/schema.active.prisma` for local, or writes a PostgreSQL `prisma/schema.prod.prisma` (pooled `DATABASE_URL` + unpooled `DIRECT_URL`) when the URL is `postgres://` / `postgresql://` or when Vercel builds.
 
-`npm run build` only runs `prisma generate` (no live database). Vercel’s build command is `npm run vercel-build`, which also runs `prisma db push` against Neon so the first deploy creates tables.
+`npm run build` only runs `prisma generate` (no live database). Vercel’s build command is `npm run vercel-build`. That command runs `prisma db push` only when `VERCEL_ENV` is `production`. A **preview** deployment skips `prisma db push`, because preview and production share one Neon database and a preview must not change the live schema. Set `PREVIEW_DATABASE_URL` (and optional `PREVIEW_DIRECT_URL`) only when that preview has its own database; the preview then pushes that URL instead of production. A Vercel build with `VERCEL_ENV` missing or set to anything else also skips the push. A laptop build (no `VERCEL`) still pushes, as before.
 
 ### Local SQLite demo
 
@@ -128,7 +128,9 @@ Seed data is **demo books and sample tax-bridge rows only**. This system does no
 | Name | Required | Value |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Neon **pooled** URL (`-pooler` in the hostname), e.g. `postgresql://USER:PASSWORD@ep-xxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require` |
-| `DIRECT_URL` | Yes | Neon **unpooled** URL (no `-pooler`) for `prisma db push` |
+| `DIRECT_URL` | Yes | Neon **unpooled** URL (no `-pooler`) for production `prisma db push` |
+| `PREVIEW_DATABASE_URL` | No | Separate database for a preview. Leave unset so preview builds do not change production |
+| `PREVIEW_DIRECT_URL` | No | Unpooled URL for that preview database. Defaults to `PREVIEW_DATABASE_URL` |
 | `SEED_SECRET` | Yes (to seed) | Random string, **at least 16 characters**. Protects `POST /api/admin/seed` |
 | `TZ` | Yes | `America/New_York` |
 | `NEXT_PUBLIC_RCP_CURRENCY` | Yes | `USD` |

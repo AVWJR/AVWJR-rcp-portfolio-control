@@ -3,6 +3,10 @@
  * Prisma cannot use two providers in one schema file, so we pick at generate time.
  */
 
+/**
+ * @typedef {Record<string, string | undefined>} AppEnv
+ */
+
 export const SQLITE_DATABASE_URL = "file:./dev.db";
 export const DUMMY_POSTGRES_URL = "postgresql://user:pass@localhost:5432/rcp_portfolio?schema=public";
 
@@ -14,6 +18,9 @@ export function isSqliteUrl(url = "") {
   return /^file:/i.test(String(url).trim());
 }
 
+/**
+ * @param {AppEnv} [env]
+ */
 export function resolveDatabaseUrl(env = process.env) {
   const candidates = [env.DATABASE_URL, env.POSTGRES_PRISMA_URL, env.POSTGRES_URL];
   for (const value of candidates) {
@@ -27,6 +34,10 @@ export function deriveNeonUnpooledUrl(url = "") {
   return url.replace(/-pooler\./i, ".");
 }
 
+/**
+ * @param {AppEnv} [env]
+ * @param {string} [databaseUrl]
+ */
 export function resolveDirectUrl(env = process.env, databaseUrl = resolveDatabaseUrl(env)) {
   const candidates = [env.DIRECT_URL, env.DATABASE_URL_UNPOOLED, env.POSTGRES_URL_NON_POOLING];
   for (const value of candidates) {
@@ -37,7 +48,7 @@ export function resolveDirectUrl(env = process.env, databaseUrl = resolveDatabas
 }
 
 /**
- * @param {NodeJS.ProcessEnv} [env]
+ * @param {AppEnv} [env]
  * @returns {"sqlite" | "postgresql"}
  */
 export function resolvePrismaProvider(env = process.env) {
@@ -78,7 +89,7 @@ export function buildPostgresqlSchema(sqliteSchema) {
 /**
  * Ensure Prisma CLI sees DATABASE_URL / DIRECT_URL for the selected provider.
  * `prisma generate` does not need a live database.
- * @param {NodeJS.ProcessEnv} env
+ * @param {AppEnv} env
  */
 export function applyPrismaEnv(env = process.env) {
   const provider = resolvePrismaProvider(env);
@@ -91,6 +102,57 @@ export function applyPrismaEnv(env = process.env) {
     next.DATABASE_URL = SQLITE_DATABASE_URL;
   }
   return { provider, env: next };
+}
+
+/**
+ * Preview deployments share the production Neon database.
+ * A preview `prisma db push` can drop columns the live app still reads.
+ *
+ * Push only when:
+ * - this is not a Vercel build (local and CI keep today's `db push`), or
+ * - `VERCEL_ENV` is `production`, or
+ * - `VERCEL_ENV` is `preview` and `PREVIEW_DATABASE_URL` is set — then only that database.
+ *
+ * When `VERCEL=1` and `VERCEL_ENV` is missing or any other value, skip.
+ *
+ * @param {AppEnv} [env]
+ * @returns {{ push: boolean, reason: string, databaseUrl?: string, directUrl?: string }}
+ */
+export function previewSchemaPushPlan(env = process.env) {
+  const onVercel = String(env.VERCEL ?? "").trim() === "1";
+  const vercelEnv = String(env.VERCEL_ENV ?? "").trim();
+
+  if (!onVercel) {
+    return { push: true, reason: "local" };
+  }
+
+  if (vercelEnv === "production") {
+    return { push: true, reason: "production" };
+  }
+
+  if (vercelEnv === "preview") {
+    const previewUrl = String(env.PREVIEW_DATABASE_URL ?? "").trim();
+    if (!previewUrl) {
+      return {
+        push: false,
+        reason:
+          "Skipping prisma db push. Preview and production share one database, so a preview build must not change the schema. Set PREVIEW_DATABASE_URL only if this preview has its own database.",
+      };
+    }
+    const direct = String(env.PREVIEW_DIRECT_URL ?? "").trim() || previewUrl;
+    return {
+      push: true,
+      reason: "separate preview database",
+      databaseUrl: previewUrl,
+      directUrl: direct,
+    };
+  }
+
+  const envLabel = vercelEnv ? `"${vercelEnv}"` : "missing";
+  return {
+    push: false,
+    reason: `Skipping prisma db push. VERCEL=1 but VERCEL_ENV is ${envLabel}. A Vercel build pushes the schema only for production, or for a preview that has its own PREVIEW_DATABASE_URL.`,
+  };
 }
 
 /**
