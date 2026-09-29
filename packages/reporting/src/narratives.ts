@@ -175,7 +175,13 @@ function citationCatalog(snap: PeriodSnapshot, audience: AudienceId): Record<Aud
       "period",
     ),
     cash: cite("cash", cashView.label, formatUsd(cashView.cents), "USD", cashView.hint),
-    btcf: cite("btcf", "BTCF", formatUsd(snap.btcfCents), "USD", "Period NOI − interest − principal"),
+    btcf: cite(
+      "btcf",
+      "Cash flow after debt service",
+      formatUsd(snap.btcfCents),
+      "USD",
+      "NOI − interest − principal. Cash flow before debt service (CFADS / CFBDS) is NOI − capex − reserves. Section 2.5 cash flow after debt service subtracts debt service from that figure. The AM fee is in neither.",
+    ),
     cfads: cite("cfads", cfadsView.label, formatUsd(cfadsView.cents), "USD", cfadsView.hint),
     cfads_dscr: cite(
       "cfads_dscr",
@@ -443,7 +449,7 @@ function lpNarrative(snap: PeriodSnapshot): AudienceNarrative {
       },
       {
         heading: "Ask / next capital event",
-        body: `${lpDistributionParagraph(snap)} Before-tax cash flow after debt service is BTCF of ${formatUsd(snap.btcfCents)} (property operations — AM stays below NOI). Next capital event: none scheduled on this seed — do not invent a call or refinance. This is a stewardship update, not a K-1 or tax bridge.`,
+        body: `${lpDistributionParagraph(snap)} Cash flow after debt service is ${formatUsd(snap.btcfCents)} (NOI − interest − principal). Cash flow before debt service is the CFADS pool (NOI − capex − reserves). Section 2.5 cash flow after debt service subtracts debt service from that before-debt-service figure. AM stays below NOI. Next capital event: none scheduled on this seed — do not invent a call or refinance. This is a stewardship update, not a K-1 or tax bridge.`,
       },
     ],
   });

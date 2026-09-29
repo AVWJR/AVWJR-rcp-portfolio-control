@@ -141,6 +141,7 @@ model Entity {
   monthEndUploads  MonthEndUpload[]
   leaseSnapshots   LeasePeriodSnapshot[]
   monthEndEvents   MonthEndEvent[]
+  tieOutTolerances TieOutTolerance[]
 }
 
 /// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
@@ -682,6 +683,22 @@ model LeasePeriodSnapshot {
 
   @@unique([entityId, year, month, unitCode])
   @@index([entityId, year, month])
+}
+
+/// Per-SPE tie-out tolerance. No row means no threshold. Do not seed defaults.
+model TieOutTolerance {
+  id        String   @id @default(cuid())
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  key       String
+  cents     BigInt?
+  bps       Int?
+  days      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entityId, key])
+  @@index([entityId])
 }
 
 model MonthEndEvent {

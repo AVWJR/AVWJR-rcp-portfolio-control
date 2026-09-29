@@ -360,8 +360,8 @@ export async function buildPropertyDashboard(opts: {
       id: "cfads",
       display: formatUsd(cfads),
       hint: wfApplied
-        ? `SPE CFADS pool (book). LP share ${formatUsd(wfPools!.cfadsLpCents)} · RCP ${formatUsd(wfPools!.cfadsRcpCents)}${wfPools!.cfadsCoGpCents > 0n ? ` · Co-GP ${formatUsd(wfPools!.cfadsCoGpCents)}` : ""} after waterfall.`
-        : "Period NOI − PPE additions − reserve requirement",
+        ? `Cash flow before debt service. SPE CFADS pool (book). LP share ${formatUsd(wfPools!.cfadsLpCents)} · RCP ${formatUsd(wfPools!.cfadsRcpCents)}${wfPools!.cfadsCoGpCents > 0n ? ` · Co-GP ${formatUsd(wfPools!.cfadsCoGpCents)}` : ""} after waterfall.`
+        : "Cash flow before debt service. Period NOI − PPE additions − reserve requirement. Cash flow after debt service subtracts interest and principal. The AM fee is in neither.",
       contributors: [
         contributor({ kind: "account", code: "NOI", label: "Period NOI", statement: "os" }, entity.code, period, actual.noi),
         contributor({ kind: "capex", field: "periodPpeAdditions", label: "Period PPE additions", statement: "cf" }, entity.code, period, periodCapex),

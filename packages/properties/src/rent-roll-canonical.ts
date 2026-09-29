@@ -192,6 +192,7 @@ export function canonicalUnitToSnapshot(unit: CanonicalUnit): UnitSnapshot {
     bathsTenths: unit.bathsTenths || bathsToTenths(0),
     sqft: unit.sqft,
     status: unit.status,
+    substatus: unit.extras.unit_substatus || undefined,
     marketRent: unit.marketRentCents,
     inPlaceRent: unit.status === "OCCUPIED" ? unit.inPlaceRentCents : 0n,
     leaseStart: unit.moveIn,

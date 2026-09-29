@@ -136,6 +136,87 @@ function absCents(value: bigint): bigint {
   return value < 0n ? -value : value;
 }
 
+const MONTH_NUMBER: Record<string, number> = {
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
+};
+
+/** Month (and optional year) from a T12 column header. */
+export function monthFromHeader(raw: string): { month: number; year: number | null } | null {
+  const value = raw.trim().split(/\n/)[0]?.trim() ?? "";
+  if (!value) return null;
+  const iso = value.match(/^(\d{4})-(\d{2})/);
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]) };
+  const named = value.match(
+    /^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)/i,
+  );
+  if (named) {
+    const month = MONTH_NUMBER[named[1]!.slice(0, 3).toLowerCase()];
+    const year4 = value.match(/(20\d{2}|19\d{2})/);
+    return { month: month ?? 0, year: year4 ? Number(year4[1]) : null };
+  }
+  const slash = value.match(/^(\d{1,2})[./-](\d{4})$/);
+  if (slash) return { month: Number(slash[1]), year: Number(slash[2]) };
+  return null;
+}
+
+export type T12MonthLine = {
+  label: string;
+  accountCode: string | null;
+  /** Null when the close-month cell is blank or not a number. */
+  cents: bigint | null;
+};
+
+/** Amounts from the close-month column. Does not divide the T12 total. */
+export function t12CloseMonthLines(
+  rows: string[][],
+  year: number,
+  month: number,
+): { header: string | null; lines: T12MonthLine[] } {
+  const header = findT12Header(rows);
+  if (!header) return { header: null, lines: [] };
+  const headers = rows[header.index] ?? [];
+  let col: number | null = null;
+  let headerText: string | null = null;
+  for (const idx of header.months) {
+    const parsed = monthFromHeader(headers[idx] ?? "");
+    if (!parsed || parsed.month !== month) continue;
+    if (parsed.year != null && parsed.year !== year) continue;
+    col = idx;
+    headerText = (headers[idx] ?? "").trim();
+    break;
+  }
+  if (col == null) return { header: null, lines: [] };
+  const lines: T12MonthLine[] = [];
+  for (let i = header.index + 1; i < rows.length; i += 1) {
+    const cols = rows[i] ?? [];
+    const label = normalizeLabel(cols[header.labelCol] ?? cols[0] ?? "");
+    if (!label || SKIP_LABEL.test(label) || isStatementTotalLabel(label)) continue;
+    const raw = (cols[col] ?? "").trim();
+    const accountCode = mapT12LabelToAccount(label);
+    if (!raw) {
+      lines.push({ label, accountCode, cents: null });
+      continue;
+    }
+    try {
+      lines.push({ label, accountCode, cents: parseUsdToCents(raw, i + 1, "month") });
+    } catch {
+      lines.push({ label, accountCode, cents: null });
+    }
+  }
+  return { header: headerText, lines };
+}
+
 export function parseT12WorkbookRows(rows: string[][], sheet: string): T12WorkbookParse {
   const header = findT12Header(rows);
   const detected = (header ? rows[header.index] : rows[0] ?? []).filter((c) => c.trim());

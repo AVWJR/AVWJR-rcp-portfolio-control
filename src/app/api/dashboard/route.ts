@@ -1,4 +1,5 @@
 import { buildDashboardForEntity } from "@/lib/dashboards";
+import { resolveReportingPeriod } from "@/lib/period-default";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
 import { NextResponse } from "next/server";
@@ -6,7 +7,7 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "RCP-OPCO";
-  const period = url.searchParams.get("period") ?? "2026-08";
+  const period = await resolveReportingPeriod(code, url.searchParams.get("period"));
   const [year, month] = period.split("-").map(Number);
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });

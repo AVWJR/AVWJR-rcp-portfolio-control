@@ -26,7 +26,7 @@ export const CHART_IDS = [
 export type ChartId = (typeof CHART_IDS)[number];
 
 export const CHART_TITLES: Record<ChartId, string> = {
-  waterfall_gpr_noi_btcf: "GPR → NOI → BTCF waterfall",
+  waterfall_gpr_noi_btcf: "GPR → NOI → cash flow after debt service",
   trends_noi_occupancy_opex_dscr: "DSCR vs threshold sparkline",
   opex_composition: "OpEx composition",
   capex_vs_reserves: "CapEx vs reserve coverage",
@@ -196,12 +196,12 @@ export function buildGprNoiBtcfWaterfall(snap: PeriodSnapshot): ChartSuite["wate
     { key: "noi", label: "NOI", cents: snap.noiCents, kind: "total" },
     { key: "int", label: "Interest", cents: snap.interestCents, kind: "outflow" },
     { key: "prin", label: "Principal", cents: snap.principalCents, kind: "outflow" },
-    { key: "btcf", label: "BTCF", cents: snap.btcfCents, kind: "total" },
+    { key: "btcf", label: "Cash flow after debt service", cents: snap.btcfCents, kind: "total" },
   ]);
   return {
     title: CHART_TITLES.waterfall_gpr_noi_btcf,
     bars,
-    footnote: `BTCF = period NOI − interest − principal. AM fees ${formatUsd(snap.amFeesCents)} sit below NOI and are not in BTCF. Depreciation ${formatUsd(snap.depreciationCents)} is non-cash.`,
+    footnote: `This bar is cash flow after debt service on the property stack: period NOI − interest − principal (${formatUsd(snap.btcfCents)}). Cash flow before debt service (CFBDS, same dollars as CFADS) is NOI − capex − reserves. Section 2.5 cash flow after debt service is that figure minus debt service. The two after-debt-service figures match when capex and reserves are zero. AM fees ${formatUsd(snap.amFeesCents)} sit below NOI and are in neither. Depreciation ${formatUsd(snap.depreciationCents)} is non-cash.`,
   };
 }
 

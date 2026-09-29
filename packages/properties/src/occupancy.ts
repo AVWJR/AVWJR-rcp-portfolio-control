@@ -27,17 +27,25 @@ export function vacantUnits(units: UnitSnapshot[]): UnitSnapshot[] {
   return units.filter((u) => u.status === "VACANT");
 }
 
-/**
- * Σ market rent of every unit, including model, employee, and down.
- * Those units are deducted on their own line (`rentRollNonRevenue`), not dropped from GPR.
- */
-export function rentRollGpr(units: UnitSnapshot[]): bigint {
-  return units.reduce((acc, u) => acc + u.marketRent, 0n);
+const NON_REVENUE_SUBSTATUS = new Set(["MODEL", "EMPLOYEE", "ADMIN"]);
+
+export function unitSubstatus(unit: UnitSnapshot): string {
+  return (unit.substatus ?? "").trim().toUpperCase();
 }
 
-/** Market rent of DOWN units (model / employee / offline). Deducted on 4040. */
+/**
+ * Σ market rent of rentable units plus model, employee, and admin units.
+ * Truly offline DOWN units stay out of GPR (standard §8.2 / C-4 / RR-1).
+ */
+export function rentRollGpr(units: UnitSnapshot[]): bigint {
+  return units.filter((u) => u.status !== "DOWN").reduce((acc, u) => acc + u.marketRent, 0n);
+}
+
+/** Market rent of model, employee, and admin units. Deducted on 4040. Offline DOWN is excluded. */
 export function rentRollNonRevenue(units: UnitSnapshot[]): bigint {
-  return units.filter((u) => u.status === "DOWN").reduce((acc, u) => acc + u.marketRent, 0n);
+  return units
+    .filter((u) => NON_REVENUE_SUBSTATUS.has(unitSubstatus(u)))
+    .reduce((acc, u) => acc + u.marketRent, 0n);
 }
 
 export function rentRollInPlace(units: UnitSnapshot[]): bigint {

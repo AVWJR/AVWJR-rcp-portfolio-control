@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { isArchivedSpe } from "@/lib/archive";
 import { ensureMasterCoaCurrent } from "@/lib/entities";
 import { openPeriod } from "@/lib/deals/periods";
+import { parseRentRollSource } from "@/lib/deals/workbook";
 import { hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
 import { assertTieOutsAllowLock } from "@/lib/close/guards";
 import { putStoredFile } from "@/lib/file-store";
@@ -27,8 +29,11 @@ import {
   signedLossToLease,
   runRentRollTieOuts,
   leaseExpirationSummary,
+  leaseMasterRecord,
+  type CanonicalUnit,
   type LeaseUnit,
   type TieOut,
+  type TieTolerance,
 } from "@rcp/properties";
 import {
   applyRememberedMaps,
@@ -37,6 +42,17 @@ import {
   type CloseFileClass,
   type ParsedCloseLine,
 } from "./parse-file";
+
+export function isLiveRentRollMonth(year: number, month: number, now = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(now);
+  const liveYear = Number(parts.find((part) => part.type === "year")?.value);
+  const liveMonth = Number(parts.find((part) => part.type === "month")?.value);
+  return liveYear === year && liveMonth === month;
+}
 
 function periodEndIso(year: number, month: number): string {
   const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -99,12 +115,21 @@ export async function storeCloseUpload(opts: {
   mimeType: string;
   bytes: Buffer;
 }) {
+  const entity = await prisma.entity.findUnique({ where: { id: opts.entityId } });
+  if (!entity) throw new Error("Unknown SPE.");
+  if (isArchivedSpe(entity)) {
+    throw new Error("This SPE is soft-archived. Restore it from Deal Archive before uploading a month-end package.");
+  }
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (period.status === "CLOSED") {
     throw new PeriodLockedError("This month is hard-locked. Reopen it with a reason and a ticket before uploading a replacement.");
   }
   const classification = classifyCloseFile(opts.filename, opts.bytes);
-  const parsed = parseCloseFile(opts.filename, opts.bytes, classification);
+  const parsed = parseCloseFile(opts.filename, opts.bytes, {
+    classification,
+    year: opts.year,
+    month: opts.month,
+  });
   const maps = await rememberedMaps(opts.entityId);
   const lines = applyRememberedMaps(parsed.lines, maps);
   const sha = createHash("sha256").update(opts.bytes).digest("hex");
@@ -141,20 +166,44 @@ export async function storeCloseUpload(opts: {
   });
   let rentRollUnits = 0;
   if (classification === "rent_roll") {
-    const imported = await importRentRollSource({
-      entityId: opts.entityId,
+    const source = parseRentRollSource({
       filename: opts.filename,
       mimeType: opts.mimeType,
       bytes: opts.bytes,
-      confirmReplace: true,
-      asOfDate: new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`),
     });
-    rentRollUnits = imported.units.length;
-    await writeLeaseSnapshots(opts.entityId, opts.year, opts.month, imported.normalized.units);
-    await prisma.entity.update({
-      where: { id: opts.entityId },
-      data: { unitCount: imported.units.length },
+    rentRollUnits = source.normalized.units.length;
+    const chargeMismatchCount = source.normalized.warnings.filter((warning) => /charge lines sum/.test(warning)).length;
+    const balanceColumnPresent = source.normalized.meta.extras.has_balance_column === "yes";
+    await writeLeaseSnapshots(opts.entityCode, opts.entityId, opts.year, opts.month, source.normalized.units, {
+      asOfDate: source.normalized.meta.asOfDate,
+      dialect: source.normalized.meta.dialect,
     });
+    await prisma.monthEndUpload.update({
+      where: { id: upload.id },
+      data: {
+        parsedJson: JSON.stringify({
+          lines,
+          unmapped: unmappedLabels(lines),
+          asOfDate: source.normalized.meta.asOfDate,
+          chargeMismatchCount,
+          balanceColumnPresent,
+          unitCount: rentRollUnits,
+          note: parsed.note,
+        }),
+      },
+    });
+    if (isLiveRentRollMonth(opts.year, opts.month)) {
+      await importRentRollSource({
+        entityId: opts.entityId,
+        filename: opts.filename,
+        mimeType: opts.mimeType,
+        bytes: opts.bytes,
+        confirmReplace: true,
+        asOfDate: source.normalized.meta.asOfDate
+          ? new Date(`${source.normalized.meta.asOfDate.slice(0, 10)}T16:00:00.000Z`)
+          : new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`),
+      });
+    }
   }
   await prisma.monthEndEvent.create({
     data: {
@@ -168,35 +217,18 @@ export async function storeCloseUpload(opts: {
   return { uploadId: upload.id, classification, unmapped: unmappedLabels(lines), rentRollUnits, note: parsed.note };
 }
 
-type CanonicalLike = {
-  unitCode: string;
-  status: "OCCUPIED" | "VACANT" | "DOWN";
-  unitType: string;
-  beds: number;
-  bathsTenths: number;
-  sqft: number;
-  section: string | null;
-  residentId: string;
-  residentName: string;
-  marketRentCents: bigint;
-  inPlaceRentCents: bigint;
-  concessionCents: bigint;
-  residentDepositCents: bigint;
-  otherDepositCents: bigint;
-  balanceCents: bigint;
-  moveIn: Date | null;
-  leaseExpiration: Date | null;
-  moveOut: Date | null;
-  charges: { chargeCode: string; chargeClass: string; amountCents: bigint }[];
-  extras: Record<string, string>;
-  sourceRows: number[];
-};
-
 function iso(date: Date | null): string | null {
   return date ? date.toISOString().slice(0, 10) : null;
 }
 
-async function writeLeaseSnapshots(entityId: string, year: number, month: number, units: CanonicalLike[]) {
+async function writeLeaseSnapshots(
+  propertyCode: string,
+  entityId: string,
+  year: number,
+  month: number,
+  units: CanonicalUnit[],
+  meta: { asOfDate: string | null; dialect: string | null },
+) {
   await prisma.leasePeriodSnapshot.deleteMany({ where: { entityId, year, month } });
   if (!units.length) return;
   await prisma.leasePeriodSnapshot.createMany({
@@ -205,37 +237,71 @@ async function writeLeaseSnapshots(entityId: string, year: number, month: number
       year,
       month,
       unitCode: unit.unitCode,
-      payloadJson: JSON.stringify({
-        property_code: entityId,
-        unit_code: unit.unitCode,
-        building: unit.section,
-        unit_type: unit.unitType,
-        beds: unit.beds,
-        baths_tenths: unit.bathsTenths,
-        sqft: unit.sqft,
-        unit_status: unit.status,
-        unit_substatus: unit.extras.substatus ?? unit.section ?? unit.status,
-        resident_id: unit.residentId,
-        resident_name: unit.residentName,
-        lease_start: iso(unit.moveIn),
-        lease_end: iso(unit.leaseExpiration),
-        move_in_date: iso(unit.moveIn),
-        move_out_date: iso(unit.moveOut),
-        market_rent: unit.marketRentCents.toString(),
-        lease_rent: unit.inPlaceRentCents.toString(),
-        concession_amount: unit.concessionCents.toString(),
-        security_deposit_held: (unit.residentDepositCents + unit.otherDepositCents).toString(),
-        balance_total: unit.balanceCents.toString(),
-        recurring_charges: unit.charges.map((charge) => ({
-          charge_code_raw: charge.chargeCode,
-          charge_class: charge.chargeClass,
-          amount_cents: charge.amountCents.toString(),
-        })),
-        source_rows: unit.sourceRows,
-        extras: unit.extras,
-      }),
+      payloadJson: JSON.stringify(
+        leaseMasterRecord({
+          propertyCode,
+          asOfDate: meta.asOfDate,
+          dialect: meta.dialect,
+          unitCode: unit.unitCode,
+          building: unit.section,
+          unitType: unit.unitType,
+          beds: unit.beds,
+          bathsTenths: unit.bathsTenths,
+          sqft: unit.sqft,
+          status: unit.status,
+          substatus: unit.extras.unit_substatus || "",
+          residentId: unit.residentId,
+          residentName: unit.residentName,
+          leaseStart: extraLeaseStart(unit),
+          leaseEnd: iso(unit.leaseExpiration),
+          moveIn: iso(unit.moveIn),
+          moveOut: iso(unit.moveOut),
+          marketRentCents: unit.marketRentCents,
+          leaseRentCents: unit.inPlaceRentCents,
+          concessionCents: unit.concessionCents,
+          depositCents: unit.residentDepositCents + unit.otherDepositCents,
+          balanceCents: unit.balanceCents,
+          charges: unit.charges,
+          extras: unit.extras,
+          sourceRows: unit.sourceRows,
+        }),
+      ),
     })),
   });
+}
+
+function extraLeaseStart(unit: CanonicalUnit): string | null {
+  for (const [key, value] of Object.entries(unit.extras)) {
+    const norm = key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    if (norm === "leasestart" || norm === "leasestartdate") return value.slice(0, 10);
+  }
+  return null;
+}
+
+function uploadControl(parsedJson: string): { blocksPosting: boolean; detail: string } | null {
+  try {
+    const parsed = JSON.parse(parsedJson) as { control?: { blocksPosting?: boolean; detail?: string } };
+    if (!parsed.control) return null;
+    return { blocksPosting: Boolean(parsed.control.blocksPosting), detail: parsed.control.detail ?? "" };
+  } catch {
+    return null;
+  }
+}
+
+function uploadMeta(parsedJson: string): {
+  asOfDate?: string | null;
+  chargeMismatchCount?: number;
+  balanceColumnPresent?: boolean;
+} {
+  try {
+    return JSON.parse(parsedJson) as {
+      asOfDate?: string | null;
+      chargeMismatchCount?: number;
+      balanceColumnPresent?: boolean;
+    };
+  } catch {
+    return {};
+  }
 }
 
 function linesFromUpload(parsedJson: string): ParsedCloseLine[] {
@@ -263,8 +329,11 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
   for (const upload of uploads) {
     const kind = upload.classification as CloseFileClass;
     if (kind === "rent_roll" || (kind === "pdf" && linesFromUpload(upload.parsedJson).length === 0)) continue;
+    const control = uploadControl(upload.parsedJson);
+    if (control?.blocksPosting) throw new Error(control.detail || "Import control totals do not tie. Posting is blocked.");
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
     for (const line of lines) {
+      if (line.flag) continue;
       const code = line.accountCode ?? "1999";
       const signed = BigInt(line.signedCents);
       if (kind === "balance_sheet" || line.balanceSheet) {
@@ -285,9 +354,42 @@ export async function postCloseToBooks(opts: { entityId: string; year: number; m
       }
     }
   }
-  await prisma.journal.deleteMany({
-    where: { entityId: opts.entityId, periodId: period.id, source: { in: ["month_end_is", "month_end_bs"] } },
+  const existing = await prisma.journal.findMany({
+    where: { entityId: opts.entityId, periodId: period.id, status: "POSTED" },
+    include: { lines: { include: { account: true } } },
   });
+  const foreignPnl = existing.filter(
+    (journal) =>
+      !journal.source.startsWith("month_end_") &&
+      journal.lines.some((line) => line.account.type === "REVENUE" || line.account.type === "EXPENSE"),
+  );
+  if (foreignPnl.length > 0) {
+    throw new Error(
+      `This month already has ${foreignPnl.length} operating journal(s). Posting the package would count NOI twice. Reverse those journals before posting the close.`,
+    );
+  }
+  if (period.status === "SOFT_CLOSED") {
+    for (const journal of existing.filter((row) => row.source === "month_end_is" || row.source === "month_end_bs")) {
+      await postJournal({
+        entityId: opts.entityId,
+        periodId: period.id,
+        date: new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`),
+        memo: `Reversal of ${journal.memo}`,
+        source: `${journal.source}_reversal`,
+        allowControllerAdjustment: true,
+        lines: journal.lines.map((line) => ({
+          accountCode: line.account.code,
+          debit: line.credit,
+          credit: line.debit,
+          memo: `Reversal: ${line.memo ?? journal.memo}`,
+        })),
+      });
+    }
+  } else {
+    await prisma.journal.deleteMany({
+      where: { entityId: opts.entityId, periodId: period.id, source: { in: ["month_end_is", "month_end_bs"] } },
+    });
+  }
   const date = new Date(`${periodEndIso(opts.year, opts.month)}T16:00:00.000Z`);
   const controller = period.status === "SOFT_CLOSED";
   if (income.length) {
@@ -377,26 +479,56 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
         mtm: false,
         balanceCents: 0n,
         depositCents: 0n,
+        concessionCents: unit.concessionCents,
       }));
-  const asOf = periodEndIso(year, month);
-  const summary = leaseExpirationSummary(leaseUnits, asOf);
-  const gpr = snapshots.length
-    ? leaseUnits.reduce((acc, unit) => acc + unit.marketRentCents, 0n)
-    : rentRollGpr(
-        liveUnits.map((unit) => ({
-          unitCode: unit.unitCode,
-          floorplan: unit.floorplan,
-          beds: unit.beds,
-          bathsTenths: unit.bathsTenths,
-          sqft: unit.sqft,
-          status: unit.status,
-          marketRent: unit.marketRent,
-          inPlaceRent: unit.inPlaceRent,
-          leaseStart: unit.leaseStart,
-          leaseEnd: unit.leaseEnd,
-          concessionCents: unit.concessionCents,
-        })),
-      );
+  const rentRollUpload = uploads.find((upload) => upload.classification === "rent_roll");
+  const rentMeta = rentRollUpload ? uploadMeta(rentRollUpload.parsedJson) : {};
+  const fileAsOf = rentMeta.asOfDate ?? null;
+  const periodEnd = periodEndIso(year, month);
+  const summary = leaseExpirationSummary(leaseUnits, fileAsOf ?? periodEnd);
+  const live = liveUnits.map((unit) => ({
+    unitCode: unit.unitCode,
+    floorplan: unit.floorplan,
+    beds: unit.beds,
+    bathsTenths: unit.bathsTenths,
+    sqft: unit.sqft,
+    status: unit.status,
+    marketRent: unit.marketRent,
+    inPlaceRent: unit.inPlaceRent,
+    leaseStart: unit.leaseStart,
+    leaseEnd: unit.leaseEnd,
+    concessionCents: unit.concessionCents,
+  }));
+  const fromSnapshot = snapshots.length > 0;
+  const nonRevenue = (units: LeaseUnit[]) =>
+    units
+      .filter((unit) => ["MODEL", "EMPLOYEE", "ADMIN"].includes((unit.substatus ?? "").toUpperCase()))
+      .reduce((acc, unit) => acc + unit.marketRentCents, 0n);
+  const gpr = fromSnapshot
+    ? leaseUnits.filter((unit) => unit.status !== "DOWN").reduce((acc, unit) => acc + unit.marketRentCents, 0n)
+    : rentRollGpr(live);
+  const vacancyCents = fromSnapshot
+    ? leaseUnits.filter((unit) => unit.status === "VACANT").reduce((acc, unit) => acc + unit.marketRentCents, 0n)
+    : rentRollVacancyLoss(live);
+  const concessionCents = fromSnapshot
+    ? leaseUnits
+        .filter((unit) => unit.status === "OCCUPIED")
+        .reduce((acc, unit) => acc + (unit.concessionCents ?? 0n), 0n)
+    : liveUnits.reduce((acc, unit) => acc + unit.concessionCents, 0n);
+  const nonRevenueCents = fromSnapshot ? nonRevenue(leaseUnits) : rentRollNonRevenue(live);
+  const signedLtlCents = fromSnapshot
+    ? leaseUnits
+        .filter((unit) => unit.status === "OCCUPIED")
+        .reduce((acc, unit) => acc + (unit.marketRentCents - unit.leaseRentCents), 0n)
+    : signedLossToLease(live);
+  const toleranceRows = await prisma.tieOutTolerance.findMany({ where: { entityId } });
+  const tolerances: Partial<Record<string, TieTolerance>> = {};
+  for (const row of toleranceRows) {
+    tolerances[row.key] = {
+      ...(row.cents != null ? { cents: row.cents } : {}),
+      ...(row.bps != null ? { bps: row.bps } : {}),
+    };
+  }
   const tieOuts: TieOut[] = runRentRollTieOuts({
     rentRollPresent: leaseUnits.length > 0,
     entityUnitCount: entity?.unitCount ?? null,
@@ -409,61 +541,15 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
     scheduledRentCents: leaseUnits
       .filter((unit) => unit.status === "OCCUPIED")
       .reduce((acc, unit) => acc + unit.leaseRentCents, 0n),
-    signedLtlCents: snapshots.length
-      ? leaseUnits
-          .filter((unit) => unit.status === "OCCUPIED")
-          .reduce((acc, unit) => acc + (unit.marketRentCents - unit.leaseRentCents), 0n)
-      : signedLossToLease(
-          liveUnits.map((unit) => ({
-            unitCode: unit.unitCode,
-            floorplan: unit.floorplan,
-            beds: unit.beds,
-            bathsTenths: unit.bathsTenths,
-            sqft: unit.sqft,
-            status: unit.status,
-            marketRent: unit.marketRent,
-            inPlaceRent: unit.inPlaceRent,
-            leaseStart: unit.leaseStart,
-            leaseEnd: unit.leaseEnd,
-            concessionCents: unit.concessionCents,
-          })),
-        ),
-    vacancyCents: rentRollVacancyLoss(
-      liveUnits.map((unit) => ({
-        unitCode: unit.unitCode,
-        floorplan: unit.floorplan,
-        beds: unit.beds,
-        bathsTenths: unit.bathsTenths,
-        sqft: unit.sqft,
-        status: unit.status,
-        marketRent: unit.marketRent,
-        inPlaceRent: unit.inPlaceRent,
-        leaseStart: unit.leaseStart,
-        leaseEnd: unit.leaseEnd,
-        concessionCents: unit.concessionCents,
-      })),
-    ),
-    concessionCents: liveUnits.reduce((acc, unit) => acc + unit.concessionCents, 0n),
-    nonRevenueCents: rentRollNonRevenue(
-      liveUnits.map((unit) => ({
-        unitCode: unit.unitCode,
-        floorplan: unit.floorplan,
-        beds: unit.beds,
-        bathsTenths: unit.bathsTenths,
-        sqft: unit.sqft,
-        status: unit.status,
-        marketRent: unit.marketRent,
-        inPlaceRent: unit.inPlaceRent,
-        leaseStart: unit.leaseStart,
-        leaseEnd: unit.leaseEnd,
-        concessionCents: unit.concessionCents,
-      })),
-    ),
-    delinquencyCents: snapshots.some((row) => /balance_total/.test(row.payloadJson)) ? summary.delinquencyCents : null,
+    signedLtlCents,
+    vacancyCents,
+    concessionCents,
+    nonRevenueCents,
+    delinquencyCents: rentMeta.balanceColumnPresent ? summary.delinquencyCents : null,
     depositCents: summary.depositsCents,
     prepaidCents: summary.creditCents,
-    asOfDate: asOf,
-    periodEnd: asOf,
+    asOfDate: fileAsOf,
+    periodEnd,
     gl: {
       gpr: gl("4010"),
       ltl: gl("4015"),
@@ -475,7 +561,8 @@ export async function loadCloseWorkspace(entityId: string, year: number, month: 
       depositCash: netByCode(ending, "1040"),
       prepaid: -netByCode(ending, "2040"),
     },
-    chargeMismatchCount: 0,
+    chargeMismatchCount: rentMeta.chargeMismatchCount ?? 0,
+    tolerances,
   });
   const fileViews = uploads.map((upload) => {
     const lines = applyRememberedMaps(linesFromUpload(upload.parsedJson), maps);
@@ -548,6 +635,7 @@ function snapshotToLease(payloadJson: string, unitCode: string): LeaseUnit {
     mtm: payload.mtm_flag === "true",
     balanceCents: BigInt(payload.balance_total || "0"),
     depositCents: BigInt(payload.security_deposit_held || "0"),
+    concessionCents: BigInt(payload.concession_amount || "0"),
     substatus: payload.unit_substatus,
   };
 }

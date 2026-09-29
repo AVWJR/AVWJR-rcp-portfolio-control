@@ -1,4 +1,5 @@
 import { isArchivedSpe } from "@/lib/archive";
+import { resolveReportingPeriod } from "@/lib/period-default";
 import { buildEntityPack, exportPackBuffer, parsePackId } from "@/lib/pack-export";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -12,7 +13,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ packId: str
   if (!packId) return NextResponse.json({ error: "Unknown pack" }, { status: 404 });
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "SPE-WBG";
-  const period = url.searchParams.get("period") ?? "2026-08";
+  const period = await resolveReportingPeriod(code, url.searchParams.get("period"));
   const format = url.searchParams.get("format") ?? "json";
   const [year, month] = period.split("-").map(Number);
   const entity = await prisma.entity.findUnique({ where: { code } });

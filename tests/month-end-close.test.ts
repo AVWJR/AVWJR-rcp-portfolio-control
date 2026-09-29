@@ -161,14 +161,15 @@ describe("rent roll tie-outs and lease summary", () => {
     ...partial,
   });
 
-  it("keeps down-unit market rent inside GPR and deducts it on 4040", () => {
+  it("keeps offline down units out of GPR and deducts model units on 4040", () => {
     const units = [
       unit({ unitCode: "101", status: "OCCUPIED", inPlaceRent: dollars(900) }),
-      unit({ unitCode: "102", status: "DOWN", marketRent: dollars(800) }),
+      unit({ unitCode: "102", status: "DOWN", marketRent: dollars(800), substatus: "DOWN" }),
+      unit({ unitCode: "103", status: "OCCUPIED", marketRent: dollars(700), inPlaceRent: 0n, substatus: "MODEL" }),
     ];
-    expect(rentRollGpr(units)).toBe(dollars(1_800));
-    expect(rentRollNonRevenue(units)).toBe(dollars(800));
-    expect(signedLossToLease(units)).toBe(dollars(100));
+    expect(rentRollGpr(units)).toBe(dollars(1_700));
+    expect(rentRollNonRevenue(units)).toBe(dollars(700));
+    expect(signedLossToLease(units)).toBe(dollars(800));
   });
 
   it("hard-fails a unit-count break and a missing rent roll, and warns when no tolerance is set", () => {
@@ -298,6 +299,8 @@ describe("month-end expert playbook", () => {
     expect(reply.content).toMatch(/Hard lock/);
     expect(reply.content).toMatch(/reason/);
     expect(reply.content).toMatch(/suspense/i);
+    expect(reply.content).toMatch(/Offline down units stay out of GPR/);
+    expect(reply.content).toMatch(/Model, employee, and admin units stay inside GPR/);
   });
 });
 

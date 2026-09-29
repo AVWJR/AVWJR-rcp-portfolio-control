@@ -32,7 +32,7 @@ OpCo’s multi-SPE presentation is a **combined roll-up** (IC `1310`/`2310` and 
 | `controllable_opex_ratio` | Controllable OpEx ratio | Controllable OpEx ÷ EGI | bps | period | ready | GL |
 | `cash` | Cash | `1010+1020+1030+1040` | usd_cents | — | ready | GL |
 | `capex_vs_reserves` | CapEx vs reserves | Period PPE additions (`1420–1460`) vs GL `1020` vs loan reserve requirement | usd_cents | period | ready | GL + loan |
-| `cfads` | CFADS | Period NOI − period PPE additions − monthly reserve requirement | usd_cents | period | ready | mixed |
+| `cfads` | Cash flow before debt service | Period NOI − period PPE additions − monthly reserve requirement. Alias CFADS / CFBDS. Cash flow after debt service = this figure − (interest + principal). The AM fee is not deducted. | usd_cents | period | ready | mixed |
 | `cfads_dscr` | CFADS / DSCR | CFADS ÷ (interest + principal) | multiple_bps | period | ready | mixed |
 | `budget_variance_noi` | NOI budget variance | Actual period NOI − Budget NOI | usd_cents | period | ready | budget |
 | `physical_occupancy` | Physical occupancy | Occupied ÷ rentable (`DOWN` excluded) | bps | — | ready when rent roll exists | rent roll |

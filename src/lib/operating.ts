@@ -8,8 +8,8 @@ import {
   type UnitSnapshot,
 } from "@rcp/properties";
 import { ratioAvailability } from "@rcp/analytics";
+import { buildIncomeStatement, principalPaydownFromLines, type IncomeStatement } from "@rcp/ledger";
 import { operatingStatementFromReports, type OperatingStatement } from "@rcp/reporting";
-import { principalPaydownFromLines } from "@rcp/ledger";
 import { loadBudgetMap } from "./budgets";
 import { loadUnits } from "./rent-roll";
 import { resolveReportScope } from "./reports-server";
@@ -22,6 +22,24 @@ export type PropertyKpis = {
   occupancyGate: ReturnType<typeof ratioAvailability>;
 };
 
+export function priorYearSameMonth(year: number, month: number): { year: number; month: number } {
+  return { year: year - 1, month };
+}
+
+export function previousCalendarMonth(year: number, month: number): { year: number; month: number } {
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+}
+
+async function scopeInput(opts: { entityId: string; year: number; month: number; consolidated: boolean }) {
+  const scope = await resolveReportScope(opts);
+  return {
+    throughEnd: scope.throughEnd,
+    throughStart: scope.throughStart,
+    inPeriod: scope.inPeriod,
+    eliminate: scope.consolidated,
+  };
+}
+
 export async function buildOperatingPackage(opts: {
   entityId: string;
   year: number;
@@ -30,28 +48,35 @@ export async function buildOperatingPackage(opts: {
 }): Promise<{
   scope: Awaited<ReturnType<typeof resolveReportScope>>;
   operating: OperatingStatement;
+  mom: IncomeStatement | null;
   units: UnitSnapshot[];
   kpis: PropertyKpis;
 }> {
   const scope = await resolveReportScope(opts);
-  const priorMonth = opts.month === 1 ? 12 : opts.month - 1;
-  const priorYear = opts.month === 1 ? opts.year - 1 : opts.year;
+  const sameMonthLastYear = priorYearSameMonth(opts.year, opts.month);
+  const momMonth = previousCalendarMonth(opts.year, opts.month);
   let priorInput = null;
+  let mom: IncomeStatement | null = null;
   try {
-    const prior = await resolveReportScope({
+    priorInput = await scopeInput({
       entityId: opts.entityId,
-      year: priorYear,
-      month: priorMonth,
+      year: sameMonthLastYear.year,
+      month: sameMonthLastYear.month,
       consolidated: opts.consolidated,
     });
-    priorInput = {
-      throughEnd: prior.throughEnd,
-      throughStart: prior.throughStart,
-      inPeriod: prior.inPeriod,
-      eliminate: prior.consolidated,
-    };
   } catch {
     priorInput = null;
+  }
+  try {
+    const momInput = await scopeInput({
+      entityId: opts.entityId,
+      year: momMonth.year,
+      month: momMonth.month,
+      consolidated: opts.consolidated,
+    });
+    mom = buildIncomeStatement(momInput);
+  } catch {
+    mom = null;
   }
 
   const budget = await loadBudgetMap({
@@ -97,6 +122,7 @@ export async function buildOperatingPackage(opts: {
   return {
     scope,
     operating,
+    mom,
     units: allUnits,
     kpis: {
       rentRoll,

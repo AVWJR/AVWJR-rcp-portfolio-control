@@ -159,7 +159,7 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                 <th className="py-2 text-right">Units</th>
                 <th className="py-2 text-left">Strategy</th>
                 <th className="py-2 text-right">Period NOI</th>
-                <th className="py-2 text-right">RCP CFADS after waterfall</th>
+                <th className="py-2 text-right">Cash flow before debt service</th>
                 <th className="py-2 text-right">Share</th>
               </tr>
             </thead>

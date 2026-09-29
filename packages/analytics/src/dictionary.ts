@@ -196,8 +196,9 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
   },
   {
     id: "cfads",
-    label: "CFADS",
-    formula: "Period NOI − period PPE additions − monthly reserve requirement",
+    label: "Cash flow before debt service",
+    formula:
+      "Period NOI − period PPE additions − monthly reserve requirement. Alias CFADS / CFBDS. Cash flow after debt service = this figure − (interest + principal). The AM fee is not deducted.",
     unit: "usd_cents",
     noiDefinition: "period",
     source: "mixed",

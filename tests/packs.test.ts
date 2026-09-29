@@ -41,7 +41,9 @@ describe("pack build smoke", () => {
       expect(present).toContain(id);
     }
     expect(suite.waterfall.footnote).toMatch(/AM fees/);
-    expect(suite.waterfall.bars.at(-1)?.label).toBe("BTCF");
+    expect(suite.waterfall.bars.at(-1)?.label).toBe("Cash flow after debt service");
+    expect(suite.waterfall.footnote).toMatch(/NOI − interest − principal/);
+    expect(suite.waterfall.footnote).toMatch(/Cash flow before debt service/);
   });
 
   it("renders a PDF and a PPTX buffer", async () => {

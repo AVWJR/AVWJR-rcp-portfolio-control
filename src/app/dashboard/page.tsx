@@ -1,3 +1,4 @@
+import { resolveReportingPeriod } from "@/lib/period-default";
 import { listEntities } from "@/lib/queries";
 import { redirect } from "next/navigation";
 
@@ -8,8 +9,8 @@ export default async function DashboardIndexPage({
 }) {
   const params = await searchParams;
   const entities = await listEntities();
-  const period = params.period ?? "2026-08";
   const requested = params.entity ?? "RCP-OPCO";
+  const period = await resolveReportingPeriod(requested, params.period);
   const entity =
     entities.find((e) => e.code === requested) ??
     entities.find((e) => e.type === "OPCO") ??

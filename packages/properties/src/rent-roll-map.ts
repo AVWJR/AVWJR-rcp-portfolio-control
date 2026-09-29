@@ -395,7 +395,17 @@ export function parseRentRollStatus(raw: string): UnitStatus | null {
   if (isUnitStatus(raw.trim().toUpperCase())) return raw.trim().toUpperCase() as UnitStatus;
   if (/^(occupied|current|occ|leased|notice|ntv|onnotice|pending|resident|y|yes|true|1)$/.test(compact)) return "OCCUPIED";
   if (/^(vacant|vac|empty|ready|available|unoccupied|unrented|n|no|false|0)$/.test(compact)) return "VACANT";
-  if (/^(down|offline|model|admin|employee|makeready|nrv|unrentable)$/.test(compact)) return "DOWN";
+  if (/^(down|offline|makeready|nrv|unrentable)$/.test(compact)) return "DOWN";
+  return null;
+}
+
+/** Sub-status kept beside the 3-state status. Model, employee, and admin are not collapsed to DOWN. */
+export function parseUnitSubstatus(raw: string): "MODEL" | "EMPLOYEE" | "ADMIN" | "DOWN" | null {
+  const compact = raw.trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (/^(model|modelunit)$/.test(compact)) return "MODEL";
+  if (/^(employee|employeeunit)$/.test(compact)) return "EMPLOYEE";
+  if (/^(admin|office|adminoffice)$/.test(compact)) return "ADMIN";
+  if (/^(down|offline|makeready|nrv|unrentable)$/.test(compact)) return "DOWN";
   return null;
 }
 
@@ -489,7 +499,8 @@ export function parseMappedRentRollRows(
 
       const statusRaw = cell(cols, map.status);
       const resident = cell(cols, map.resident);
-      let statusValue = parseRentRollStatus(statusRaw);
+      const substatus = parseUnitSubstatus(statusRaw);
+      let statusValue = substatus === "MODEL" || substatus === "EMPLOYEE" || substatus === "ADMIN" ? "OCCUPIED" : substatus === "DOWN" ? "DOWN" : parseRentRollStatus(statusRaw);
       if (!statusValue && resident) {
         statusValue = /^(vacant|vac|empty|n\/a|-)$/i.test(resident) ? "VACANT" : "OCCUPIED";
       }
@@ -530,6 +541,7 @@ export function parseMappedRentRollRows(
         bathsTenths: bathsToTenths(bathsN),
         sqft: sqftN,
         status: statusValue,
+        substatus: substatus ?? undefined,
         marketRent,
         inPlaceRent,
         leaseStart: parseBrokerDate(cell(cols, map.lease_start), line, "lease_start", opts.lenient ?? true),

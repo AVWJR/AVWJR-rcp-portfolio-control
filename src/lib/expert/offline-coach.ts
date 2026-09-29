@@ -296,7 +296,7 @@ function monthEndUploadCopy(ctx: ExpertClientContext): string {
 8. Click **Soft close**, finish anything still flagged, then **Hard lock**. To undo a lock, enter a reason and a ticket and click **Reopen**. A hard-locked month will not take another upload until you reopen it.
 9. The original files stay in the vault. Dashboards, the waterfall, proformas, and LP packs follow the latest hard-locked period unless you pick another month in the header.
 
-Loss-to-lease is its own line (4015), not a concession. Model, employee, and down units stay inside GPR and come out on 4040. Cash flow before debt service is the same number the waterfall already calls CFADS.`;
+Loss-to-lease is its own line (4015), not a concession. Model, employee, and admin units stay inside GPR and come out on 4040. Offline down units stay out of GPR. Cash flow before debt service is the same number the waterfall already calls CFADS. Cash flow after debt service on the property chart is NOI − interest − principal.`;
 }
 
 function rentRollImportCopy(ctx: ExpertClientContext): string {

@@ -1,5 +1,6 @@
 import { MASTER_COA_BY_CODE } from "@rcp/ledger";
 import { parseBudgetCsv } from "@rcp/properties";
+import { resolveReportingPeriod } from "@/lib/period-default";
 import { prisma } from "@/lib/prisma";
 import { exportBudgetCsv, loadBudgetMap, replaceBudget } from "@/lib/budgets";
 import { assertReplaceConfirmed } from "@/lib/import-guard";
@@ -16,7 +17,8 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("entity") ?? "";
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
-  const { year, month } = parsePeriod(url.searchParams.get("period"));
+  const period = await resolveReportingPeriod(entity.code, url.searchParams.get("period"));
+  const { year, month } = parsePeriod(period);
 
   if (url.searchParams.get("format") === "csv") {
     const csv = await exportBudgetCsv({ entityId: entity.id, year, month });
@@ -46,12 +48,13 @@ export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
   let code = "";
   let csv = "";
-  let period = "2026-08";
+  let period: string | null = null;
   let confirmReplace = false;
   if (contentType.includes("multipart/form-data")) {
     const form = await request.formData();
     code = String(form.get("entity") ?? "");
-    period = String(form.get("period") ?? "2026-08");
+    const rawPeriod = form.get("period");
+    period = rawPeriod == null || String(rawPeriod).trim() === "" ? null : String(rawPeriod);
     const file = form.get("file");
     if (file instanceof File) csv = await file.text();
     else csv = String(form.get("csv") ?? "");
@@ -65,13 +68,14 @@ export async function POST(request: Request) {
     };
     code = body.entity ?? "";
     csv = body.csv ?? "";
-    period = body.period ?? "2026-08";
+    period = body.period ?? null;
     confirmReplace = Boolean(body.confirmReplace);
   }
 
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
-  const { year, month } = parsePeriod(period);
+  const resolved = await resolveReportingPeriod(entity.code, period);
+  const { year, month } = parsePeriod(resolved);
 
   try {
     const rows = parseBudgetCsv(csv);

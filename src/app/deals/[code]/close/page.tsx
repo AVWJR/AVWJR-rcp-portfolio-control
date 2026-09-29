@@ -1,7 +1,9 @@
 import { CloseDropzone } from "@/components/deals/close-dropzone";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
+import { loadYtdBudgetMap } from "@/lib/budgets";
 import { loadCloseWorkspace } from "@/lib/close/workspace";
 import { buildIncomeStatement, formatUsd, MASTER_COA } from "@rcp/ledger";
+import { incomeStatementFromBudget, incomeStatementKeyedAmounts } from "@rcp/reporting";
 import { notFound } from "next/navigation";
 
 export default async function MonthEndClosePage({
@@ -18,13 +20,22 @@ export default async function MonthEndClosePage({
     <ReportShell searchParams={merged} pathname={`/deals/${code}/close`}>
       {async (ctx) => {
         if (ctx.entity.type !== "SPE" || ctx.entity.code !== code) notFound();
-        const workspace = await loadCloseWorkspace(ctx.entity.id, ctx.year, ctx.month);
+        const [workspace, ytdBudgetMap] = await Promise.all([
+          loadCloseWorkspace(ctx.entity.id, ctx.year, ctx.month),
+          loadYtdBudgetMap({
+            entityIds: [ctx.entity.id],
+            year: ctx.year,
+            month: ctx.month,
+          }),
+        ]);
         const ytd = buildIncomeStatement({
           throughEnd: ctx.statements.ytdActivity,
           inPeriod: ctx.statements.ytdActivity,
           eliminate: false,
         });
         const ytdByKey = new Map(ytd.rows.map((row) => [row.key, row.amount]));
+        const ytdBudget = ytdBudgetMap.size > 0 ? incomeStatementKeyedAmounts(incomeStatementFromBudget(ytdBudgetMap)) : null;
+        const momByKey = ctx.statements.mom ? incomeStatementKeyedAmounts(ctx.statements.mom) : null;
         const period = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
         return (
           <div className="space-y-8">
@@ -108,7 +119,9 @@ export default async function MonthEndClosePage({
 
             <section className="overflow-x-auto">
               <h2 className="font-display text-2xl text-navy-900">Income statement</h2>
-              <p className="mb-2 text-sm text-ink-700">Actual and prior are the books. Budget is the monthly budget. YTD is the fiscal year through this month.</p>
+              <p className="mb-2 text-sm text-ink-700">
+                Actual is this month. Prior year is the same month last year. Month-over-month is optional. YTD budget is January through this month.
+              </p>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-ink-500">
@@ -116,23 +129,35 @@ export default async function MonthEndClosePage({
                     <th>Actual</th>
                     <th>Budget</th>
                     <th>Var</th>
-                    <th>Prior</th>
+                    <th>Prior year</th>
+                    <th>MoM</th>
                     <th>YTD</th>
+                    <th>YTD Budget</th>
+                    <th>YTD Var</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ctx.statements.os.rows.map((row) => (
-                    <tr key={row.key} className="border-b border-black/5">
-                      <td className="py-1" style={{ paddingLeft: row.indent * 16 }}>
-                        {row.label}
-                      </td>
-                      <td className="tabular">{row.actual == null ? "" : formatUsd(row.actual)}</td>
-                      <td className="tabular">{row.budget == null ? "—" : formatUsd(row.budget)}</td>
-                      <td className="tabular">{row.variance == null ? "—" : formatUsd(row.variance)}</td>
-                      <td className="tabular">{row.prior == null ? "—" : formatUsd(row.prior)}</td>
-                      <td className="tabular">{ytdByKey.get(row.key) == null ? "—" : formatUsd(ytdByKey.get(row.key) ?? 0n)}</td>
-                    </tr>
-                  ))}
+                  {ctx.statements.os.rows.map((row) => {
+                    const ytdActual = ytdByKey.get(row.key);
+                    const ytdPlan = ytdBudget?.get(row.key);
+                    const ytdVar = ytdActual != null && ytdPlan != null ? ytdActual - ytdPlan : null;
+                    const mom = momByKey?.get(row.key);
+                    return (
+                      <tr key={row.key} className="border-b border-black/5">
+                        <td className="py-1" style={{ paddingLeft: row.indent * 16 }}>
+                          {row.label}
+                        </td>
+                        <td className="tabular">{row.actual == null ? "" : formatUsd(row.actual)}</td>
+                        <td className="tabular">{row.budget == null ? "—" : formatUsd(row.budget)}</td>
+                        <td className="tabular">{row.variance == null ? "—" : formatUsd(row.variance)}</td>
+                        <td className="tabular">{row.prior == null ? "—" : formatUsd(row.prior)}</td>
+                        <td className="tabular">{mom == null ? "—" : formatUsd(mom)}</td>
+                        <td className="tabular">{ytdActual == null ? "—" : formatUsd(ytdActual)}</td>
+                        <td className="tabular">{ytdPlan == null ? "—" : formatUsd(ytdPlan)}</td>
+                        <td className="tabular">{ytdVar == null ? "—" : formatUsd(ytdVar)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </section>
@@ -143,15 +168,18 @@ export default async function MonthEndClosePage({
                 Prior-year retained earnings and current-year earnings are separate. Intercompany 1310/2310 and 6310/7010
                 drop out of the combined roll-up, not of this SPE.
               </p>
-              <ul className="text-sm">
-                {ctx.statements.bs.rows
-                  .filter((row) => row.emphasis === "total" || row.emphasis === "subtotal" || row.code === "3100" || row.code === "3900")
-                  .map((row) => (
-                    <li key={row.key}>
-                      {row.label}: {row.amount == null ? "—" : formatUsd(row.amount)}
-                    </li>
+              <table className="w-full text-sm">
+                <tbody>
+                  {ctx.statements.bs.rows.map((row) => (
+                    <tr key={row.key} className="border-b border-black/5">
+                      <td className="py-1" style={{ paddingLeft: row.indent * 16 }}>
+                        {row.label}
+                      </td>
+                      <td className="tabular">{row.amount == null ? "" : formatUsd(row.amount)}</td>
+                    </tr>
                   ))}
-              </ul>
+                </tbody>
+              </table>
             </section>
 
             <section>
@@ -175,9 +203,23 @@ export default async function MonthEndClosePage({
               <p>
                 Occupied {workspace.summary.occupiedCount}. Move-ins {workspace.summary.moveIns}. Move-outs{" "}
                 {workspace.summary.moveOuts}. MTM {workspace.summary.mtmCount}. Next-12-month expirations{" "}
-                {workspace.summary.next12RolloverCount}. Deposits {formatUsd(workspace.summary.depositsCents)}. Delinquency{" "}
-                {formatUsd(workspace.summary.delinquencyCents)}.
+                {workspace.summary.next12RolloverCount}. Average remaining term{" "}
+                {workspace.summary.averageRemainingMonths ?? "—"} months. Rent-weighted remaining term{" "}
+                {workspace.summary.rentWeightedRemainingMonths ?? "—"} months. Average original term{" "}
+                {workspace.summary.averageOriginalMonths ?? "—"} months. Rent-weighted original term{" "}
+                {workspace.summary.rentWeightedOriginalMonths ?? "—"} months. Deposits{" "}
+                {formatUsd(workspace.summary.depositsCents)}. Delinquency {formatUsd(workspace.summary.delinquencyCents)}.
               </p>
+              <p className="mt-2">Expirations by quarter</p>
+              <ul>
+                {workspace.summary.quarters
+                  .filter((bucket) => bucket.count > 0)
+                  .map((bucket) => (
+                    <li key={bucket.key}>
+                      {bucket.label}: {bucket.count} · {formatUsd(bucket.leaseRentCents)}
+                    </li>
+                  ))}
+              </ul>
               <ul className="mt-2">
                 {workspace.summary.buckets
                   .filter((bucket) => bucket.count > 0)

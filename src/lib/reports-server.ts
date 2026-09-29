@@ -82,6 +82,7 @@ export async function buildAllStatements(opts: {
     bs: buildBalanceSheet(input),
     cf: buildCashFlow(input),
     os: operating.operating,
+    mom: operating.mom,
     kpis: operating.kpis,
     units: operating.units,
   };
