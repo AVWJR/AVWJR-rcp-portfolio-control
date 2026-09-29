@@ -1,5 +1,5 @@
 import { dollars } from "@rcp/ledger";
-import type { PeriodSnapshot } from "@rcp/reporting";
+import { emptyDistributionActuals, type PeriodSnapshot } from "@rcp/reporting";
 
 export function fixtureSnapshot(overrides: Partial<PeriodSnapshot> = {}): PeriodSnapshot {
   const noi = dollars(120_000);
@@ -115,6 +115,7 @@ export function fixtureSnapshot(overrides: Partial<PeriodSnapshot> = {}): Period
     waterfallPromoteGpCents: 0n,
     waterfallResidualLpCents: 0n,
     waterfallNote: null,
+    distributionActuals: emptyDistributionActuals(),
     trends: [
       {
         period: "2026-07",

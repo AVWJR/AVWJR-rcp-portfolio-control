@@ -142,6 +142,8 @@ model Entity {
   leaseSnapshots   LeasePeriodSnapshot[]
   monthEndEvents   MonthEndEvent[]
   tieOutTolerances TieOutTolerance[]
+  distributionEvents DistributionEvent[]
+  distributionAudits DistributionAudit[]
 }
 
 /// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
@@ -724,4 +726,75 @@ model MonthEndEvent {
   createdAt DateTime @default(now())
 
   @@index([entityId, year, month])
+}
+
+/// Posted distribution. Rows are insert-only. A correction is a new row
+/// whose reversesEventId points at the original. Amounts are USD cents.
+model DistributionEvent {
+  id                    String   @id @default(cuid())
+  entityId              String
+  entity                Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  eventDate             DateTime
+  year                  Int
+  month                 Int
+  periodLabel           String
+  grossCents            BigInt
+  /// OPERATING_CASH or CAPITAL_EVENT
+  source                String
+  memo                  String?
+  waterfallSnapshotJson String
+  actor                 String?
+  /// Set only on a reversing row. Unique so an event is reversed at most once.
+  reversesEventId       String?  @unique
+  reversesEvent         DistributionEvent?  @relation("DistributionReversal", fields: [reversesEventId], references: [id], onDelete: SetNull)
+  reversedBy            DistributionEvent?  @relation("DistributionReversal")
+  monthsAccrued         Int      @default(0)
+  capitalContributedCents BigInt
+  capitalReturnedCents    BigInt
+  unreturnedCapitalCents  BigInt
+  prefAccruedCents        BigInt
+  prefPaidCents           BigInt
+  prefUnpaidCents         BigInt
+  catchUpPaidCents        BigInt
+  catchUpTargetCents      BigInt
+  promoteEarnedCents      BigInt
+  cumulativeLpCents       BigInt
+  cumulativeRcpCents      BigInt
+  cumulativeCoGpCents     BigInt
+  tierTotalsJson          String   @default("{}")
+  createdAt               DateTime @default(now())
+
+  lines  DistributionAllocation[]
+  audits DistributionAudit[]
+
+  @@index([entityId, createdAt])
+}
+
+model DistributionAllocation {
+  id        String             @id @default(cuid())
+  eventId   String
+  event     DistributionEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tierKind  String
+  tierLabel String
+  lpCents   BigInt
+  rcpCents  BigInt
+  coGpCents BigInt
+  sortOrder Int
+
+  @@index([eventId])
+}
+
+/// Append-only log of each post and reversal. Not an edit of the event.
+model DistributionAudit {
+  id        String              @id @default(cuid())
+  entityId  String
+  entity    Entity              @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  eventId   String?
+  event     DistributionEvent?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  action    String
+  actor     String?
+  detail    String
+  createdAt DateTime            @default(now())
+
+  @@index([entityId, createdAt])
 }

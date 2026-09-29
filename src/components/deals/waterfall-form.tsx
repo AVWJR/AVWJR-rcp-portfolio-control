@@ -15,7 +15,7 @@ import {
   type WaterfallTemplateId,
   type WaterfallTier,
 } from "@rcp/ledger";
-import { centsToDollarsInput, dollarsInputToOptionalCents } from "@/lib/waterfall-inputs";
+import { DollarField } from "@/components/deals/dollar-field";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -50,6 +50,7 @@ export function WaterfallForm({
   distributableCents,
   cashCents,
   europeanPromoteOpen,
+  ledgerSource = false,
 }: {
   entityCode: string;
   entityName: string;
@@ -58,6 +59,7 @@ export function WaterfallForm({
   distributableCents: string;
   cashCents: string;
   europeanPromoteOpen: boolean;
+  ledgerSource?: boolean;
 }) {
   const router = useRouter();
   const [form, setFormState] = useState<FormState>(() => lockCatchUpTier(initial));
@@ -273,36 +275,44 @@ export function WaterfallForm({
           </label>
           <label className="text-sm text-ink-700">
             LP contributed capital ($)
-            <input
+            <DollarField
               className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
-              inputMode="decimal"
-              value={centsToDollarsInput(form.lpContributedCents)}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, lpContributedCents: dollarsInputToOptionalCents(e.target.value) ?? 0n }))
-              }
+              nullable={false}
+              value={form.lpContributedCents}
+              onValue={(next) => setForm((p) => ({ ...p, lpContributedCents: next ?? 0n }))}
             />
           </label>
           <label className="text-sm text-ink-700">
             Unreturned capital ($)
-            <input
-              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
-              inputMode="decimal"
-              placeholder="blank = use contributed"
-              value={centsToDollarsInput(form.unreturnedCapitalCents)}
-              onChange={(e) => setForm((p) => ({ ...p, unreturnedCapitalCents: dollarsInputToOptionalCents(e.target.value) }))}
+            <DollarField
+              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular disabled:bg-cream-100"
+              nullable
+              disabled={ledgerSource}
+              placeholder={ledgerSource ? undefined : "blank = use contributed"}
+              value={form.unreturnedCapitalCents}
+              onValue={(next) => setForm((p) => ({ ...p, unreturnedCapitalCents: next }))}
             />
-            <span className="mt-1 block text-xs text-ink-500">Leave blank to use LP contributed. A typed 0 stays 0.</span>
+            <span className="mt-1 block text-xs text-ink-500">
+              {ledgerSource
+                ? "From the distribution ledger. This box is no longer typed by hand."
+                : "Leave blank to use LP contributed. A typed 0 stays 0."}
+            </span>
           </label>
           <label className="text-sm text-ink-700">
             LP pref unpaid ($)
-            <input
-              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
-              inputMode="decimal"
-              placeholder="blank = none carried in"
-              value={centsToDollarsInput(form.unpaidPrefCents)}
-              onChange={(e) => setForm((p) => ({ ...p, unpaidPrefCents: dollarsInputToOptionalCents(e.target.value) }))}
+            <DollarField
+              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular disabled:bg-cream-100"
+              nullable
+              disabled={ledgerSource}
+              placeholder={ledgerSource ? undefined : "blank = none carried in"}
+              value={form.unpaidPrefCents}
+              onValue={(next) => setForm((p) => ({ ...p, unpaidPrefCents: next }))}
             />
-            <span className="mt-1 block text-xs text-ink-500">Leave blank for none carried in. A typed 0 stays 0.</span>
+            <span className="mt-1 block text-xs text-ink-500">
+              {ledgerSource
+                ? "From the distribution ledger — preferred return still unpaid after posted distributions."
+                : "Leave blank for none carried in. A typed 0 stays 0."}
+            </span>
           </label>
         </div>
         <label className="mt-4 block text-sm text-ink-700">

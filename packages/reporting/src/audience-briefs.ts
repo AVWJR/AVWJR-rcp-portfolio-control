@@ -79,7 +79,17 @@ export const AUDIENCE_BRIEFS: Record<AudienceId, AudienceBrief> = {
       "gp_promote",
       "upb",
     ],
-    chartIds: ["portfolio_concentration", "occupancy_breakeven", "t12_status", "covenant_watchlist"],
+    chartIds: [
+      "dist_capital_returned",
+      "dist_pref_over_time",
+      "dist_by_party",
+      "dist_tier_gauge",
+      "dist_dpi",
+      "portfolio_concentration",
+      "occupancy_breakeven",
+      "t12_status",
+      "covenant_watchlist",
+    ],
     exclude: [
       "full chart of accounts dump",
       "K-1 / tax bridge detail",

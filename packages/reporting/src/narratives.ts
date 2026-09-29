@@ -220,7 +220,13 @@ function citationCatalog(snap: PeriodSnapshot, audience: AudienceId): Record<Aud
     liquidity: cite("liquidity", "Liquidity", formatMonthsCoverage(snap.liquidityMonthsHundredths), "months", "Cash ÷ period OpEx"),
     fee_income: cite("fee_income", "Fee income 7010", formatUsd(fee), "USD", "AM / OpCo fee line · below NOI on the SPE"),
     am_fees: cite("am_fees", "AM fees 6310", formatUsd(snap.amFeesCents), "USD", "Sit below NOI — proof tile"),
-    ga_ratio: cite("ga_ratio", "G&A %", formatBpsAsPercent(snap.gaRatioBps), "%", "OpCo G&A ÷ fee income · not an SPE OpEx ratio"),
+    ga_ratio: cite(
+      "ga_ratio",
+      "OpCo G&A ÷ AM fee income",
+      formatBpsAsPercent(snap.gaRatioBps),
+      "%",
+      "OpCo (5110+5610+5990) ÷ 7010 · not an SPE OpEx ratio",
+    ),
     look_through_noi: cite(
       "look_through_noi",
       "Look-through period NOI",

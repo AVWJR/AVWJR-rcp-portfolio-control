@@ -126,13 +126,28 @@ export function waterfallSplitSentence(snap: PeriodSnapshot): string {
   );
 }
 
+function ledgerActualsSentence(snap: PeriodSnapshot): string {
+  const actuals = snap.distributionActuals;
+  if (!actuals?.hasEvents) {
+    return "Distribution ledger: nothing posted yet, so the deal starts at $0 distributed and unreturned capital equals contributed capital.";
+  }
+  return (
+    `Distribution ledger actuals (cash already paid, separate from the illustrative current-period waterfall): ` +
+    `LP ${formatUsd(actuals.cumulativeLpCents)}, RCP ${formatUsd(actuals.cumulativeRcpCents)}, Co-GP ${formatUsd(actuals.cumulativeCoGpCents)}. ` +
+    `Preferred return accrued ${formatUsd(actuals.prefAccruedCents)}, paid ${formatUsd(actuals.prefPaidCents)}, still unpaid ${formatUsd(actuals.prefUnpaidCents)}. ` +
+    `Capital returned ${formatUsd(actuals.capitalReturnedCents)} of ${formatUsd(actuals.capitalContributedCents)} contributed.`
+  );
+}
+
 export function lpDistributionParagraph(snap: PeriodSnapshot): string {
   const cfads = audienceCfads(snap, "lp");
   const cash = audienceCash(snap, "lp");
+  const ledger = ledgerActualsSentence(snap);
   if (!snap.waterfallApplied) {
-    return `No investor distribution subledger and no capital-call notice are posted for ${snap.period}. The book distributions proxy is CFADS of ${formatUsd(cfads.cents)} (100% look-through until a deal waterfall is saved): period NOI ${formatUsd(snap.noiCents)} less period PPE additions ${formatUsd(snap.periodCapexCents)} and the monthly reserve requirement of ${formatUsd(snap.reserveRequirementCents)}. Ending SPE book cash is ${formatUsd(poolCash(snap))}, including replacement-reserve cash of ${formatUsd(snap.cashReserveCents)}.`;
+    return `${ledger} No investor distribution subledger and no capital-call notice are posted for ${snap.period}. The book distributions proxy is CFADS of ${formatUsd(cfads.cents)} (100% look-through until a deal waterfall is saved): period NOI ${formatUsd(snap.noiCents)} less period PPE additions ${formatUsd(snap.periodCapexCents)} and the monthly reserve requirement of ${formatUsd(snap.reserveRequirementCents)}. Ending SPE book cash is ${formatUsd(poolCash(snap))}, including replacement-reserve cash of ${formatUsd(snap.cashReserveCents)}.`;
   }
   return (
+    `${ledger} The illustrative current-period waterfall is not cash paid. ` +
     `No investor distribution subledger and no capital-call notice are posted for ${snap.period}. ` +
     `The same SPE waterfall that amends OpCo cash flow splits this period’s CFADS pool of ${formatUsd(poolCfads(snap))} into ` +
     `**LP share after waterfall** ${formatUsd(cfads.cents)} versus **GP/RCP after waterfall** ${formatUsd(snap.rcpShareOfDistributableCents)}` +

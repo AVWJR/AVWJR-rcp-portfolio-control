@@ -1,4 +1,4 @@
-import { isDeleteDealQuery, isWaterfallQuery } from "./feature-intents";
+import { isDeleteDealQuery, isDistributionRecordQuery, isPrefOwedQuery, isWaterfallQuery } from "./feature-intents";
 import { describePage, withContext } from "./nav";
 import type {
   AnomalyFlag,
@@ -70,6 +70,7 @@ export function chromeAlias(label: string, href?: string): string {
   if (path.includes("/proforma") || (/\bproforma\b/.test(n) && /\b(deal|opco|lp|gp)\b/.test(n))) {
     return path.includes("opco") ? "opco_proforma" : "deal_proforma";
   }
+  if (path.includes("/distributions") || /\bdistribution ledger\b/.test(n)) return "distribution_ledger";
   if (path.includes("/waterfall") || (/\bwaterfall\b/.test(n) && /\b(deal|lp|gp|pref|promote|co.?gp)\b/.test(n))) return "deal_waterfall";
   if (path === "/deals" || (/\bdeals?\b/.test(n) && /\b(open|list)\b/.test(n))) return "deals_list";
   if (path) return `path:${path}`;
@@ -137,6 +138,20 @@ const IMPORT_RR_CHIP: ExpertChip = {
 
 function queryChips(q: string): ExpertChip[] | null {
   if (!q) return null;
+  if (isDistributionRecordQuery(q) || isPrefOwedQuery(q)) {
+    return [
+      {
+        id: "record_distribution",
+        label: "Record a distribution",
+        prompt: "How do I record a distribution?",
+      },
+      {
+        id: "pref_owed",
+        label: "Pref still owed",
+        prompt: "How much pref is still owed?",
+      },
+    ];
+  }
   if (isWaterfallQuery(q)) {
     return [
       {
@@ -228,6 +243,24 @@ export function rankSuggestedActions(
   const page = ctx.pathname;
   const viewer = isViewer(ctx.accessRole);
   const q = userText.trim().toLowerCase();
+
+  if (isDistributionRecordQuery(q) || isPrefOwedQuery(q)) {
+    const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-WBG";
+    return [
+      {
+        id: "act_distributions",
+        kind: "navigate",
+        label: "Open distribution ledger",
+        href: dest(`/deals/${spe}/distributions`, { ...ctx, entityCode: spe }),
+      },
+      {
+        id: "act_waterfall",
+        kind: "navigate",
+        label: "Open deal waterfall",
+        href: dest(`/deals/${spe}/waterfall`, { ...ctx, entityCode: spe }),
+      },
+    ];
+  }
 
   if (isWaterfallQuery(q)) {
     const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-HMTOS";

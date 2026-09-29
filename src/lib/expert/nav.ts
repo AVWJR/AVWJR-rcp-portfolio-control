@@ -98,6 +98,14 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    test: /^\/deals\/SPE-[A-Z0-9]+\/distributions$/,
+    title: "Distribution ledger",
+    hints: [
+      "Record a distribution: amount, operating cash or capital event, preview the waterfall split, then confirm.",
+      "Posted rows stay. Corrections are reversing distributions. Once something is posted, unreturned capital and unpaid pref come from this ledger.",
+    ],
+  },
+  {
     test: /^\/deals\/SPE-[A-Z0-9]+\/waterfall$/,
     title: "Deal waterfall",
     hints: [
@@ -224,6 +232,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "cf", href: "/reports/cash-flow", label: "Cash Flow", hint: "Indirect; ties to BS" },
   { id: "deals", href: "/deals", label: "Deals", hint: "Live SPE list and Add Deal drafts" },
   { id: "waterfall", href: "/deals", label: "Deal waterfall", hint: "LP/GP waterfall and Co-GP on a live SPE card — how do I set the deal waterfall?" },
+  { id: "distributions", href: "/deals", label: "Distribution ledger", hint: "Record a distribution and see how much pref is still owed on /deals/{SPE}/distributions" },
   { id: "deal_proforma", href: "/deals", label: "Deal proforma", hint: "Forward-looking Deal LP / Deal GP (RCP + Co-GP) on a live SPE" },
   { id: "opco_proforma", href: "/opco/proforma", label: "OpCo proforma", hint: "OpCo LPs and OpCo GPs after each SPE waterfall" },
   { id: "add_deal", href: "/deals/new", label: "Add Deal", hint: "Guided SPE intake" },
@@ -270,7 +279,7 @@ export function listNavTargets(): NavTarget[] {
 export function entityFromPathname(pathname: string): string | null {
   const dash = pathname.match(/^\/dashboard\/(SPE-[A-Z0-9]+|RCP-OPCO)$/);
   if (dash) return dash[1];
-  const wf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/waterfall$/);
+  const wf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/(?:waterfall|distributions|proforma)$/);
   if (wf) return wf[1];
   const pf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/proforma$/);
   if (pf) return pf[1];

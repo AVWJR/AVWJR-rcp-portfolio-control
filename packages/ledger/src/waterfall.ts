@@ -100,6 +100,13 @@ export type WaterfallRunInput = WaterfallCapitalState & {
    * Ignored for non-European templates.
    */
   europeanPromoteOpen?: boolean;
+  /**
+   * LP pref already paid on earlier distributions. Omitted means this run
+   * stands alone (existing single-period behavior).
+   */
+  priorLpPrefPaidCents?: bigint;
+  /** GP catch-up already paid on earlier distributions. Omitted means $0. */
+  priorCatchUpGpCents?: bigint;
 };
 
 export type WaterfallStep = {
@@ -687,9 +694,11 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
       const residual = residualPromoteSplit(config.tiers);
       const lpBps = residual ? residual.lpSplitBps : Math.max(0, tier.lpSplitBps);
       const gpBps = residual ? residual.gpSplitBps : Math.max(0, tier.gpSplitBps);
+      const priorPref = input.priorLpPrefPaidCents ?? 0n;
+      const priorCatchUp = input.priorCatchUpGpCents ?? 0n;
       const gross = catchUpGrossCents({
-        lpPrefPaidCents: lpPrefPaid,
-        gpPromoteSoFarCents: gpPromoteSoFar,
+        lpPrefPaidCents: lpPrefPaid + (priorPref > 0n ? priorPref : 0n),
+        gpPromoteSoFarCents: gpPromoteSoFar + (priorCatchUp > 0n ? priorCatchUp : 0n),
         lpSplitBps: lpBps,
         gpSplitBps: gpBps,
         catchUpBps: config.catchUpBps,

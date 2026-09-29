@@ -424,7 +424,7 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
   },
   {
     id: "ga_ratio",
-    label: "G&A %",
+    label: "OpCo G&A ÷ AM fee income",
     formula: "(5110 + 5610 + 5990) ÷ 7010",
     unit: "bps",
     noiDefinition: "period",
@@ -439,6 +439,37 @@ export const RATIO_DICTIONARY: RatioDefinition[] = [
       { kind: "account", code: "5990", label: "Other Operating Expenses", statement: "os" },
       { kind: "account", code: "7010", label: "Asset Management Fee Income", statement: "os" },
     ],
+  },
+  {
+    id: "am_fee_coverage",
+    label: "AM fee coverage",
+    formula: "7010 ÷ (5110 + 5610 + 5990)",
+    unit: "multiple_bps",
+    noiDefinition: "period",
+    source: "gl",
+    status: "ready",
+    phase: "D",
+    description:
+      "How many times asset-management fee income covers OpCo G&A. Inverse of OpCo G&A ÷ AM fee income. Blank when G&A is zero.",
+    contributors: [
+      { kind: "account", code: "7010", label: "Asset Management Fee Income", statement: "os" },
+      { kind: "account", code: "5110", label: "Payroll", statement: "os" },
+      { kind: "account", code: "5610", label: "Administrative", statement: "os" },
+      { kind: "account", code: "5990", label: "Other Operating Expenses", statement: "os" },
+    ],
+  },
+  {
+    id: "rcp_distributions_received",
+    label: "RCP distributions received",
+    formula: "Σ SPE cumulative RCP share of posted distribution-ledger events",
+    unit: "usd_cents",
+    noiDefinition: null,
+    source: "mixed",
+    status: "ready",
+    phase: "F+",
+    description:
+      "Cash RCP has actually received on posted deal distributions. Separate from the illustrative CFADS-after-waterfall tiles.",
+    contributors: [{ kind: "entity", field: "rcpDistributions", label: "Cumulative RCP distributions received" }],
   },
   {
     id: "liquidity_months",

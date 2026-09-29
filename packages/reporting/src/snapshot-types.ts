@@ -101,6 +101,61 @@ export type HeatCell = {
   tone: HeatCellTone;
 };
 
+export type DistributionWaterfallPosition = "ROC" | "PREF" | "CATCH_UP" | "PROMOTE";
+
+/** Cash already paid through the deal distribution ledger. Separate from the illustrative CFADS waterfall. */
+export type DistributionActuals = {
+  hasEvents: boolean;
+  ready: boolean;
+  capitalSource: "ledger" | "waterfall";
+  position: DistributionWaterfallPosition;
+  capitalContributedCents: bigint;
+  capitalReturnedCents: bigint;
+  unreturnedCapitalCents: bigint;
+  prefAccruedCents: bigint;
+  prefPaidCents: bigint;
+  prefUnpaidCents: bigint;
+  catchUpPaidCents: bigint;
+  catchUpTargetCents: bigint;
+  promoteEarnedCents: bigint;
+  cumulativeLpCents: bigint;
+  cumulativeRcpCents: bigint;
+  cumulativeCoGpCents: bigint;
+  dpiBps: number | null;
+  points: {
+    period: string;
+    accruedCents: bigint;
+    paidCents: bigint;
+    unpaidCents: bigint;
+    lpCents: bigint;
+    rcpCents: bigint;
+    coGpCents: bigint;
+  }[];
+};
+
+export function emptyDistributionActuals(): DistributionActuals {
+  return {
+    hasEvents: false,
+    ready: true,
+    capitalSource: "waterfall",
+    position: "ROC",
+    capitalContributedCents: 0n,
+    capitalReturnedCents: 0n,
+    unreturnedCapitalCents: 0n,
+    prefAccruedCents: 0n,
+    prefPaidCents: 0n,
+    prefUnpaidCents: 0n,
+    catchUpPaidCents: 0n,
+    catchUpTargetCents: 0n,
+    promoteEarnedCents: 0n,
+    cumulativeLpCents: 0n,
+    cumulativeRcpCents: 0n,
+    cumulativeCoGpCents: 0n,
+    dpiBps: null,
+    points: [],
+  };
+}
+
 export type PeriodSnapshot = {
   entityCode: string;
   entityName: string;
@@ -215,6 +270,7 @@ export type PeriodSnapshot = {
   waterfallPromoteGpCents: bigint;
   waterfallResidualLpCents: bigint;
   waterfallNote: string | null;
+  distributionActuals: DistributionActuals;
 
   trends: TrendPoint[];
   loans: LoanBrief[];

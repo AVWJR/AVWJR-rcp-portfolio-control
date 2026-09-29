@@ -1,5 +1,5 @@
 import { applyWaterfallTemplate, dollars, formatUsd, runWaterfall, summarizeWaterfall } from "@rcp/ledger";
-import { audienceCfads, buildNarrative, buildPack, waterfallSplitSentence } from "@rcp/reporting";
+import { audienceCfads, buildNarrative, buildPack, emptyDistributionActuals, waterfallSplitSentence } from "@rcp/reporting";
 import { describe, expect, it } from "vitest";
 import { fixtureSnapshot } from "./fixtures/period-snapshot";
 
@@ -98,6 +98,46 @@ describe("packs and narratives follow the SPE waterfall", () => {
       expect(ask && ask.kind === "risks" && ask.ask).toMatch(/LP share/);
     }
     expect(waterfallSplitSentence(snap)).toMatch(/LP share/);
+    expect(text).toMatch(/Distribution ledger: nothing posted yet/);
+    expect(text).toMatch(/illustrative current-period waterfall is not cash paid/);
+  });
+
+  it("LP pack prints ledger actuals separately from the illustrative waterfall", () => {
+    const snap = appliedSnap();
+    snap.distributionActuals = {
+      ...emptyDistributionActuals(),
+      hasEvents: true,
+      capitalSource: "ledger",
+      capitalContributedCents: dollars(3_000_000),
+      capitalReturnedCents: dollars(56_700),
+      unreturnedCapitalCents: dollars(2_943_300),
+      prefAccruedCents: dollars(59_622),
+      prefPaidCents: 0n,
+      prefUnpaidCents: dollars(59_622),
+      cumulativeLpCents: dollars(56_700),
+      dpiBps: 189,
+    };
+    const narrative = buildNarrative(snap, "lp").sections.map((s) => s.body).join(" ");
+    expect(narrative).toMatch(/Distribution ledger actuals \(cash already paid/);
+    expect(narrative).toMatch(/illustrative current-period waterfall is not cash paid/);
+    expect(narrative).toContain(formatUsd(dollars(56_700)));
+    expect(narrative).toContain("LP share after waterfall");
+    const pack = buildPack(snap, "monthly_investor");
+    const visuals = pack.slides.filter((s) => s.kind === "visuals").flatMap((s) => (s.kind === "visuals" ? s.visuals : []));
+    expect(visuals.map((v) => v.chartId)).toEqual([
+      "dist_capital_returned",
+      "dist_pref_over_time",
+      "dist_by_party",
+      "dist_tier_gauge",
+      "dist_dpi",
+    ]);
+    const appendix = pack.slides.find((s) => s.kind === "appendix");
+    expect(appendix && appendix.kind === "appendix").toBe(true);
+    if (appendix && appendix.kind === "appendix") {
+      expect(appendix.tables.some((t) => /Distribution ledger actuals/i.test(t.title))).toBe(true);
+      expect(appendix.tables.some((t) => /illustrative current period — not cash paid/i.test(t.title))).toBe(true);
+      expect(appendix.bullets.some((b) => /cash already paid/i.test(b))).toBe(true);
+    }
   });
 
   it("GP narrative uses GP/RCP after waterfall; lender keeps SPE book CFADS", () => {

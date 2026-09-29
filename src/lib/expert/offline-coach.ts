@@ -1,5 +1,13 @@
 import { composeExpertChrome, pageProcessLead, rankChips, rankSuggestedActions } from "./actions";
-import { isClearHowToQuery, isDeleteDealQuery, isMonthEndUploadQuery, isVagueQuery, isWaterfallQuery } from "./feature-intents";
+import {
+  isClearHowToQuery,
+  isDeleteDealQuery,
+  isDistributionRecordQuery,
+  isMonthEndUploadQuery,
+  isPrefOwedQuery,
+  isVagueQuery,
+  isWaterfallQuery,
+} from "./feature-intents";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
@@ -391,6 +399,32 @@ You asked: “${userText.trim()}”
 Are you asking about a number on this page, something missing for this entity, or a click path?`;
 }
 
+function recordDistributionCopy(ctx: ExpertClientContext): string {
+  const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-WBG";
+  const href = link(`/deals/${spe}/distributions`, { ...ctx, entityCode: spe }, `distribution ledger for ${spe}`);
+  return `**How do I record a distribution?**
+
+Gold nav **Deals** → the SPE card (**${spe}**) → **Distributions**. Direct: ${href}.
+
+1. Enter the gross amount. A blank box is not a distribution. Zero stays zero and is not posted.
+2. Choose **operating cash** or a **capital event**. The period follows the date you pick.
+3. **Preview allocation** runs that deal’s saved waterfall (return of capital, then pref, then catch-up, then promote) and shows Deal LPs / RCP / Co-GP before anything is saved.
+4. **Confirm and post**. The row is permanent. A deal with nothing posted starts at **$0 distributed**, and unreturned capital equals contributed capital.
+5. To correct a posting, **Reverse** the latest one. Posted rows cannot be edited or deleted.
+
+Partners in read-only view can look, not post.`;
+}
+
+function prefOwedCopy(ctx: ExpertClientContext): string {
+  const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-WBG";
+  const href = link(`/deals/${spe}/distributions`, { ...ctx, entityCode: spe }, `distribution ledger for ${spe}`);
+  return `**How much pref is still owed?**
+
+Open ${href}. **LP pref unpaid** is preferred return accrued on unreturned capital minus what posted distributions have actually paid. I will not invent a dollar amount from this chat — the ledger is the figure.
+
+If nothing has been posted, the deal is at **$0 distributed**. Unpaid pref then starts from what was carried on the waterfall (a blank field means none carried in; a typed 0 stays 0). Once a distribution is posted, unreturned capital and unpaid pref on the waterfall come from this ledger.`;
+}
+
 function waterfallCopy(ctx: ExpertClientContext): string {
   const spe = ctx.entityCode.startsWith("SPE-") ? ctx.entityCode : "SPE-HMTOS";
   const list = link("/deals", ctx, "Deals");
@@ -486,6 +520,10 @@ export function answerOffline(
   }
   if (isMonthEndUploadQuery(q) || /upload august close|month-end close|month end close/.test(q)) {
     content = monthEndUploadCopy(ctx);
+  } else if (isDistributionRecordQuery(q)) {
+    content = recordDistributionCopy(ctx);
+  } else if (isPrefOwedQuery(q)) {
+    content = prefOwedCopy(ctx);
   } else if (isWaterfallQuery(q) || /how do i set the deal waterfall/.test(q)) {
     content = waterfallCopy(ctx);
   } else if (isDeleteDealQuery(q)) {
