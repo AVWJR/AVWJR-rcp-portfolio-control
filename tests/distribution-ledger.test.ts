@@ -313,6 +313,18 @@ describe("catch-up across distributions", () => {
     expect(grossCatch).toBeGreaterThanOrEqual(partial.state.catchUpTargetCents);
     expect(waterfallPosition(partial.state, config)).toBe("CATCH_UP");
 
+    const fortyFive = applyDistribution(seed, prior, anchor, {
+      year: 2026,
+      month: 6,
+      grossCents: dollars(45_000),
+      source: "OPERATING_CASH",
+    });
+    // c·g·P/(c−g) = 0.5·0.2·80,000/(0.5−0.2) = $26,666.66. GP receives half of $45,000.
+    expect(fortyFive.state.catchUpTargetCents).toBe(2_666_666n);
+    expect(fortyFive.state.catchUpPaidCents).toBe(dollars(22_500));
+    expect(waterfallPosition(fortyFive.state, config)).toBe("CATCH_UP");
+    expect(waterfallPosition(fortyFive.state, config)).not.toBe("PROMOTE");
+
     const rest = applyDistribution(seed, partial.state, anchor, {
       year: 2026,
       month: 6,
@@ -494,6 +506,41 @@ describe("distribution posting guards", () => {
       expect(loaded?.capitalSource).toBe("waterfall");
       expect(centsToDollarsInput(loaded?.unreturnedCapitalCents)).toBe("");
       expect(centsToDollarsInput(loaded?.unpaidPrefCents)).toBe("");
+    } finally {
+      await deleteSpe(entity.id);
+    }
+  });
+
+  it("seeds the next posting from the waterfall boxes after every distribution is reversed", async () => {
+    const entity = await freshSpe("SD");
+    try {
+      const posted = await post(entity.id, 2026, 1, MONTHLY);
+      const original = posted.events.find((event) => !event.reversesEventId);
+      if (!original) throw new Error("expected a posting");
+      await reverseDistribution({
+        entityId: entity.id,
+        eventId: original.id,
+        actor: "principal",
+        role: "principal",
+      });
+      const tmpl = applyWaterfallTemplate("institutional_catchup");
+      await saveSpeWaterfall(entity.id, {
+        ...tmpl,
+        lpContributedCents: LP,
+        unreturnedCapitalCents: 0n,
+        unpaidPrefCents: 0n,
+        prefPaidToDateCents: 0n,
+      });
+      const next = await post(entity.id, 2026, 2, MONTHLY);
+      const active = next.events.filter((event) => !event.reversesEventId && !event.reversed);
+      const latest = active.at(-1);
+      if (!latest) throw new Error("expected the new posting");
+      const sum = (kind: "ROC" | "PREF" | "CATCH_UP" | "PROMOTE", party: "lpCents" | "rcpCents" | "coGpCents") =>
+        latest.lines.filter((line) => line.tierKind === kind).reduce((total, line) => total + line[party], 0n);
+      expect(sum("ROC", "lpCents")).toBe(0n);
+      expect(sum("PROMOTE", "lpCents")).toBe(dollars(15_120));
+      expect(sum("PROMOTE", "rcpCents")).toBe(dollars(3_780));
+      expect(sum("PROMOTE", "coGpCents")).toBe(0n);
     } finally {
       await deleteSpe(entity.id);
     }

@@ -28,6 +28,65 @@ function drawChrome(doc: PDFKit.PDFDocument, pack: BuiltPack, title: string) {
 
 const CHART_LABEL_BAND = 52;
 
+function categorySlots(count: number, x: number, w: number): { gap: number; barW: number; left: (index: number) => number } {
+  const n = Math.max(1, count);
+  if (n === 1) {
+    const barW = Math.min(72, Math.max(36, w * 0.16));
+    const left = x + (w - barW) / 2;
+    return { gap: 0, barW, left: () => left };
+  }
+  const gap = 10;
+  const barW = (w - gap * (n - 1)) / n;
+  return {
+    gap,
+    barW,
+    left: (index) => x + index * (barW + gap),
+  };
+}
+
+/** Point size that keeps "Aug 26" on one line inside its bar slot. */
+function categoryFontSize(label: string, slotW: number): number {
+  const base = PACK_TYPE.pdf.chartLabel;
+  const widthAt = (size: number) => Math.max(1, label.length) * size * 0.5;
+  if (widthAt(base) <= slotW + 2) return base;
+  const fit = Math.floor((slotW + 2) / (Math.max(1, label.length) * 0.5));
+  return Math.max(7, Math.min(base, fit));
+}
+
+/** Keep month labels on one line so "Aug 26" does not become "Au g 26". Center the label on its bar. */
+function drawCategoryLabel(doc: PDFKit.PDFDocument, label: string, barX: number, barW: number, y: number) {
+  doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(categoryFontSize(label, barW)).text(label, barX, y, {
+    width: Math.max(barW, 1),
+    align: "center",
+    lineBreak: false,
+  });
+}
+
+function drawSeriesLegend(
+  doc: PDFKit.PDFDocument,
+  series: { name: string; color: string }[],
+  x: number,
+  y: number,
+  w: number,
+) {
+  let lx = x;
+  let ly = y;
+  series.forEach((ser) => {
+    const textW = Math.max(40, Math.ceil(ser.name.length * 7.5));
+    const itemW = 14 + textW;
+    if (lx > x && lx + itemW > x + w) {
+      lx = x;
+      ly += 14;
+    }
+    doc.rect(lx, ly, 8, 8).fill(ser.color);
+    doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.chartLabel).text(ser.name, lx + 12, ly - 2, {
+      width: textW,
+      lineBreak: false,
+    });
+    lx += itemW + 12;
+  });
+}
+
 function simpleBars(
   doc: PDFKit.PDFDocument,
   items: { label: string; usd: number; color: string }[],
@@ -37,17 +96,15 @@ function simpleBars(
   h: number,
 ) {
   const max = Math.max(1, ...items.map((i) => Math.abs(i.usd)));
-  const gap = 12;
   const labelH = CHART_LABEL_BAND;
-  const barW = Math.max(12, (w - gap * items.length) / items.length);
+  const plotH = h - labelH;
+  const slots = categorySlots(items.length, x, w);
   items.forEach((item, i) => {
-    const bx = x + i * (barW + gap);
-    const bh = (Math.abs(item.usd) / max) * (h - labelH);
-    doc.rect(bx, y + (h - labelH) - bh, barW, Math.max(2, bh)).fill(item.color);
-    doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.chartLabel).text(item.label, bx - 4, y + h - labelH + 8, {
-      width: barW + 8,
-      align: "center",
-    });
+    const bx = slots.left(i);
+    const bh = (Math.abs(item.usd) / max) * plotH;
+    const drawn = Math.max(item.usd === 0 ? 2 : 0, bh);
+    doc.rect(bx, y + plotH - drawn, slots.barW, Math.max(2, drawn)).fill(item.color);
+    drawCategoryLabel(doc, item.label, bx, slots.barW, y + plotH + 8);
   });
 }
 
@@ -64,32 +121,51 @@ function groupedBars(
   const labelH = CHART_LABEL_BAND;
   const plotH = Math.max(20, h - labelH - legendH);
   const max = Math.max(1, ...series.flatMap((ser) => ser.values.map((value) => Math.abs(value))));
-  const groupGap = 8;
+  const slots = categorySlots(labels.length, x, w);
   const innerGap = 2;
-  const groupW = Math.max(18, (w - groupGap * Math.max(0, labels.length - 1)) / Math.max(1, labels.length));
-  const barW = Math.max(3, (groupW - innerGap * Math.max(0, series.length - 1)) / Math.max(1, series.length));
+  const barW = Math.max(3, (slots.barW - innerGap * Math.max(0, series.length - 1)) / Math.max(1, series.length));
   labels.forEach((label, i) => {
-    const gx = x + i * (groupW + groupGap);
+    const gx = slots.left(i);
     series.forEach((ser, s) => {
       const value = Math.abs(ser.values[i] ?? 0);
       const bh = (value / max) * plotH;
       const bx = gx + s * (barW + innerGap);
       if (bh > 0) doc.rect(bx, y + plotH - bh, barW, Math.max(2, bh)).fill(ser.color);
     });
-    doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.chartLabel).text(label, gx - 2, y + plotH + 6, {
-      width: groupW + 4,
-      align: "center",
-    });
+    drawCategoryLabel(doc, label, gx, slots.barW, y + plotH + 6);
   });
-  let lx = x;
-  const ly = y + h - 12;
-  series.forEach((ser) => {
-    doc.rect(lx, ly, 8, 8).fill(ser.color);
-    doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.chartLabel).text(ser.name, lx + 12, ly - 2, {
-      width: 64,
+  drawSeriesLegend(doc, series, x, y + h - 14, w);
+}
+
+function stackedBars(
+  doc: PDFKit.PDFDocument,
+  labels: string[],
+  series: { name: string; values: number[]; color: string }[],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const legendH = 22;
+  const labelH = CHART_LABEL_BAND;
+  const plotH = Math.max(20, h - labelH - legendH);
+  const totals = labels.map((_, i) => series.reduce((sum, ser) => sum + Math.abs(ser.values[i] ?? 0), 0));
+  const max = Math.max(1, ...totals);
+  const slots = categorySlots(labels.length, x, w);
+  labels.forEach((label, i) => {
+    const bx = slots.left(i);
+    let stacked = 0;
+    series.forEach((ser) => {
+      const value = Math.abs(ser.values[i] ?? 0);
+      const bh = (value / max) * plotH;
+      if (bh <= 0) return;
+      doc.rect(bx, y + plotH - stacked - bh, slots.barW, bh).fill(ser.color);
+      stacked += bh;
     });
-    lx += 84;
+    if (stacked === 0) doc.rect(bx, y + plotH - 2, slots.barW, 2).fill(series[0]?.color ?? PACK_PALETTE.navy);
+    drawCategoryLabel(doc, label, bx, slots.barW, y + plotH + 6);
   });
+  drawSeriesLegend(doc, series, x, y + h - 14, w);
 }
 
 function waterfallBars(doc: PDFKit.PDFDocument, bars: WaterfallBar[], x: number, y: number, w: number, h: number) {
@@ -104,10 +180,7 @@ function waterfallBars(doc: PDFKit.PDFDocument, bars: WaterfallBar[], x: number,
     const baseH = (bar.baseUsd / max) * (h - labelH);
     const by = y + (h - labelH) - baseH - bh;
     doc.rect(bx, by, barW, Math.max(2, bh)).fill(color);
-    doc.fillColor(PACK_PALETTE.ink).font("Times-Roman").fontSize(PACK_TYPE.pdf.chartLabel).text(bar.label, bx - 4, y + h - labelH + 8, {
-      width: barW + 8,
-      align: "center",
-    });
+    drawCategoryLabel(doc, bar.label, bx, barW, y + h - labelH + 8);
   });
 }
 
@@ -180,6 +253,11 @@ function drawRenderable(doc: PDFKit.PDFDocument, pack: BuiltPack, visual: Render
     const prefChart = visual.series.some((ser) => ser.name === "Unpaid");
     if (prefChart && visual.series.length > 1 && !visual.stacked) {
       groupedBars(doc, labels, visual.series, inner.x, inner.y, inner.w, inner.h);
+      return;
+    }
+    const partyChart = visual.series.some((ser) => ser.name === "Deal LPs") && visual.series.some((ser) => ser.name === "Co-GP");
+    if (partyChart && visual.series.length > 1) {
+      stackedBars(doc, labels, visual.series, inner.x, inner.y, inner.w, inner.h);
       return;
     }
     simpleBars(

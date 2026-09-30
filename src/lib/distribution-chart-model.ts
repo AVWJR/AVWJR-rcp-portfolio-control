@@ -49,8 +49,8 @@ export function chartModelFromBoard(board: DistributionBoard): DistributionChart
       pref:
         unpaid > 0n
           ? `${formatUsd(unpaid)} of preferred return is still unpaid after what has actually been distributed.`
-          : "Preferred return accrued so far has been paid. The unpaid line is the balance still owed.",
-      parties: `Deal LPs have received ${formatUsd(board.current.cumulativeLpCents)}; RCP has received ${formatUsd(board.current.cumulativeRcpCents)}.`,
+          : "Preferred return accrued so far has been paid. The unpaid bars are the balance still owed.",
+      parties: `Deal LPs have received ${formatUsd(board.current.cumulativeLpCents)}; RCP has received ${formatUsd(board.current.cumulativeRcpCents)}; Co-GP has received ${formatUsd(board.current.cumulativeCoGpCents)}.`,
       tier: `The deal is in ${TIER_LABEL[board.position]}. Later tiers wait until this one is satisfied.`,
       dpi: `LP multiple to date is ${formatBpsAsMultiple(board.dpiBps)} — distributions divided by capital contributed. ${formatUsd(returned)} of capital is back${beforeNote}.`,
     },

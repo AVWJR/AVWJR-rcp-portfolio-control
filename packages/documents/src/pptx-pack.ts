@@ -289,7 +289,8 @@ function drawRenderable(
       chartColors: visual.series.map((s) => hex(s.color)),
       showValue: false,
       valAxisHidden: false,
-      catAxisLabelFontSize: PACK_TYPE.pptx.chartAxis,
+      catAxisLabelFontFace: "Calibri",
+      catAxisLabelFontSize: 10,
       valAxisLabelFontSize: PACK_TYPE.pptx.chartAxis,
     });
     return;

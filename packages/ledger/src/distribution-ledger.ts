@@ -128,7 +128,17 @@ export function catchUpTargetCents(config: WaterfallConfig, lpPrefPaidCents: big
   const residual = residualPromoteSplit(config.tiers);
   if (!residual || residual.lpSplitBps <= 0 || residual.gpSplitBps <= 0) return 0n;
   const pref = lpPrefPaidCents > 0n ? lpPrefPaidCents : 0n;
-  return (pref * BigInt(residual.gpSplitBps)) / BigInt(residual.lpSplitBps);
+  const lpBps = residual.lpSplitBps;
+  const gpBps = residual.gpSplitBps;
+  const total = lpBps + gpBps;
+  const rate = Math.min(10_000, Math.max(0, Math.round(config.catchUpBps)));
+  // 100% catch-up: GP target is P·g/l. Below 100%, the GP only receives c of each
+  // catch-up dollar, so the gauge target is c·g·P/(c−g) and stays in catch-up longer.
+  if (rate < 10_000 && total > 0) {
+    const denom = BigInt(rate) * BigInt(total) - BigInt(gpBps) * 10_000n;
+    if (denom > 0n) return (BigInt(rate) * BigInt(gpBps) * pref) / denom;
+  }
+  return (pref * BigInt(gpBps)) / BigInt(lpBps);
 }
 
 export function lpDpiBps(lpDistributedCents: bigint, contributedCents: bigint): number | null {

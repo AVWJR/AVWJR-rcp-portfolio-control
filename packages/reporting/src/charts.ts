@@ -699,7 +699,7 @@ export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distr
   const prefFoot =
     actuals.prefUnpaidCents > 0n
       ? `${formatUsd(actuals.prefUnpaidCents)} of preferred return is still unpaid after what has actually been distributed.`
-      : "Preferred return accrued so far has been paid. The unpaid line is the balance still owed.";
+      : "Preferred return accrued so far has been paid. The unpaid bars are the balance still owed.";
   return {
     capital: {
       title: CHART_TITLES.dist_capital_returned,
@@ -720,7 +720,7 @@ export function buildDistributionCharts(snap: PeriodSnapshot): ChartSuite["distr
     },
     parties: {
       title: CHART_TITLES.dist_by_party,
-      footnote: `Deal LPs have received ${formatUsd(actuals.cumulativeLpCents)}; RCP has received ${formatUsd(actuals.cumulativeRcpCents)}.`,
+      footnote: `Deal LPs have received ${formatUsd(actuals.cumulativeLpCents)}; RCP has received ${formatUsd(actuals.cumulativeRcpCents)}; Co-GP has received ${formatUsd(actuals.cumulativeCoGpCents)}.`,
       points: points.map((point) => ({
         period: shortPeriodLabel(point.period),
         lpUsd: centsToUsdNumber(point.lpCents),
