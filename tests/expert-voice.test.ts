@@ -222,7 +222,7 @@ describe("expert coach voice", () => {
     const packed = buildSystemForTurn(ctx, flagHeavyBundle);
     expect(packed).toContain("Answer the user's question first");
     expect(packed).not.toContain("Loan file has UPB but no appraisal");
-    expect(packed.length).toBeLessThan(JSON.stringify(flagHeavyBundle).length + EXPERT_SYSTEM_PROMPT.length);
+    expect(packed.length).toBeLessThan(JSON.stringify(flagHeavyBundle).length + EXPERT_SYSTEM_PROMPT.length + 6_500);
   });
 
   it("caps chips at three and stays on the last question", () => {

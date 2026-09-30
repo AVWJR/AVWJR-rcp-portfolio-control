@@ -21,9 +21,11 @@ export async function assertNoOpenSuspense(entityId: string, through?: Date) {
   if (net !== 0n) throw new SuspenseOpenError();
 }
 
+export const HARD_CLOSE_BLOCKED_PREFIX = "Hard close is blocked:";
+
 export function assertTieOutsAllowLock(rows: TieOut[]) {
   const failed = hardTieFailures(rows);
   if (failed.length > 0) {
-    throw new Error(`Hard close is blocked: ${failed.map((row) => `${row.id} ${row.detail}`).join(" ")}`);
+    throw new Error(`${HARD_CLOSE_BLOCKED_PREFIX} ${failed.map((row) => `${row.id} ${row.detail}`).join(" ")}`);
   }
 }

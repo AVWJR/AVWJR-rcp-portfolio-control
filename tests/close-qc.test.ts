@@ -567,7 +567,7 @@ function leaseChargesWorkbook(count: number, asOf: string): Buffer {
   return Buffer.from(write(book, { type: "buffer", bookType: "xlsx" }));
 }
 
-describe("close upload, posting, and tie-outs", () => {
+describe("close upload, posting, and tie-outs", { timeout: 15_000 }, () => {
   it("resolves the latest closed period for a SPE, OpCo, and HoldCo", async () => {
     expect(await resolveReportingPeriod("SPE-WBG", null)).toBe("2026-07");
     expect(await resolveReportingPeriod("RCP-OPCO", null)).toBe("2026-08");

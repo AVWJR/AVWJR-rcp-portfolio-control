@@ -9,6 +9,7 @@ import {
   isVagueQuery,
   isWaterfallQuery,
 } from "./feature-intents";
+import { answerFromHowTos, EXPERT_HOWTOS } from "./howtos";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
@@ -155,7 +156,7 @@ Demo reminder: SPE-WBG 2026-07 is hard locked; 2026-08 stays open.`;
 const NAMED_ASSETS: { match: RegExp; code: string; name: string }[] = [
   { match: /harrington|spe-hrp|\bhrp\b/, code: "SPE-HRP", name: "Harrington" },
   { match: /willow|spe-wbg|\bwbg\b/, code: "SPE-WBG", name: "Willow Bend" },
-  { match: /canyon|spe-cvc|\bcvc\b/, code: "SPE-CVC", name: "Canyon View" },
+  { match: /canyon|spe-cvc|\bcvc\b/, code: "SPE-CVC", name: "Crestview Commons" },
   { match: /harbor|spe-hcr|\bhcr\b/, code: "SPE-HCR", name: "Harbor Court" },
 ];
 
@@ -282,7 +283,8 @@ Do this in the product — click paths only. Drop the broker **XLSX** on Add Dea
 3. **XLSX rent rolls are first-class.** A dialect detector picks **Yardi Lease Charges** (nested \`r-rent\` blocks), **redIQ** R9 (\`UnitID\`, \`OccStatus\`, \`MktRent\`, \`InPlaceRent\`), or **broker/Yardi-MRI flat** rows and writes the same canonical Unit model. Original workbooks stay in Vault; a Canonical template is also vaulted. Auto-ingest creates or reuses the SPE. The done screen must say **Rent roll — N units written** or fail with detected headers — never silent 0 units.
 4. If columns cannot be mapped you will see **could not map columns: … Detected headers: …** — not a silent vault-only success. Ask me with that header list. Do not invent units. Existing SPE with 0 units and a vaulted RR (Kind Other is fine): **Apply / Re-apply rent roll** on Properties / Vault / Dashboard.
 5. After ingest, open ${props} and ${link("/dashboard", ctx, "Dashboard")} for the new \`SPE-xxx\` (header period **2026-08**). Occupancy / loss-to-lease come from the rent roll, not GL 4020.
-6. T12 / P&L workbooks map to a **broker T12 overlay** (monthly budget + dashboard strip). Those dollars are **not** posted to the GL. The file also stays in ${vault}. Loan basics stay on Apply if you have them. If units already exist, **confirm replace**. Do not invent LTV.
+6. T12 / P&L workbooks map to a **broker T12 overlay** (monthly budget + dashboard strip). Confirming a move to **Owned** posts the saved broker T12 into the SPE books. Pipeline, Screened, and Test do not post those journals. The file also stays in ${vault}. Loan basics stay on Apply if you have them. If units already exist, **confirm replace**. Do not invent LTV.
+7. On step 5, **Create the SPE**, the **Deal status** select defaults to **Owned**. Pick Pipeline or Screened when you are only screening. Change it later on the deal profile or in the Library.
 
 RCP mailbox address is **not decided yet**. Until \`RCP_INGEST_MAILBOX\` and a connector exist, **Scan RCP inbox** is an honest no-op.
 
@@ -304,7 +306,7 @@ function monthEndUploadCopy(ctx: ExpertClientContext): string {
 7. If the month already has above-NOI journals (accounts 4xxx and 5xxx), the page lists each one (memo, source, and amount) before anything is reversed. Check **Reverse the journals listed above**, enter a reason, and click **Reverse operating journals**. Interest, depreciation, amortization, and the OpCo asset-management fee (6310/2310) stay on the books. Seeded **SPE-WBG 2026-08** lists GPR, vacancy, concessions, other income, and operating expenses. Reversing those listed journals is what lets the package post without counting NOI twice. Then click **Post this period into the SPE books**. You should see the income statement with Actual, Budget, Var, Prior, and YTD, the balance sheet with prior-year earnings and current-year earnings on separate lines, and the rent-roll tie-out list (RR-1 through RR-13).
 8. Tie-out limits for this SPE are set on the same page under **Tie-out tolerance** (key, cents, bps, days).
 9. Click **Soft close**, finish anything still flagged, then **Hard lock**. After a soft close, Post and Reverse stay refused until a controller checks the box and writes a reason. To undo a lock, enter a reason and a ticket and click **Reopen**. A hard-locked month will not take another upload until you reopen it.
-10. The original files stay in the vault. OpCo and HoldCo default to the latest month hard-closed by every live SPE, and the header lists the SPEs still open. Dashboards, the waterfall, proformas, and LP packs follow that period unless you pick another month.
+10. The original files stay in the vault. OpCo and HoldCo default to the latest month hard-closed by every Owned SPE, and the header lists the SPEs still open. Dashboards, the waterfall, proformas, and LP packs follow that period unless you pick another month.
 
 Loss-to-lease is its own line (4015), not a concession. Model, employee, and admin units stay inside GPR and come out on 4040. Offline down units stay out of GPR. Cash flow before debt service is the same number the waterfall already calls CFADS. Cash flow after debt service on the property chart is NOI − interest − principal.`;
 }
@@ -435,13 +437,13 @@ function waterfallCopy(ctx: ExpertClientContext): string {
   const opco = link("/dashboard/RCP-OPCO", { ...ctx, entityCode: "RCP-OPCO", view: "combined" }, "OpCo dashboard");
   return `**How to set the deal waterfall, Co-GP, and proformas**
 
-Gold nav **Deals** → ${list} → open the SPE card (**${spe}** — or any live SPE) → **LP/GP waterfall**. Direct: ${form}.
+Gold nav **Deals** → ${list} → open the SPE card (**${spe}** — or any Owned SPE) → **LP/GP waterfall**. Direct: ${form}.
 
 1. Click a template chip: Simple pref + promote, Institutional catch-up, Multi-hurdle IRR, American / deal-by-deal, or European / whole-fund. Existing SPEs start as **100% look-through** (today’s OpCo stack) until you choose — nothing silent-changes demo numbers.
 2. Edit pref rate, compounding, catch-up, hurdle IRRs, LP/GP splits, GP co-invest %, promote base, lookback/clawback, LP contributed capital, and notes.
 3. Optional **Co-GP** (third party at this SPE): name, % of GP promote/catch-up/residual, and % of GP co-invest. Leave 0% / blank name for the prior two-party LP vs single GP/RCP model.
 4. The gold **Applies to OpCo rollup** preview splits this period’s CFADS into **Deal LP** vs **RCP** vs **Co-GP**. OpCo uses RCP only.
-5. **Save waterfall**. Live ${opco} cash / CFADS / liquidity then use the RCP share after waterfall. The **Monthly Investor Pack** and LP/GP/IC narratives reprint this same split (LP share / RCP / Co-GP / pref unpaid) — they do not stay on 100% look-through. Property NOI stays look-through. Soft-archived SPEs stay out of rollup.
+5. **Save waterfall**. Live ${opco} cash / CFADS / liquidity then use the RCP share after waterfall. The **Monthly Investor Pack** and LP/GP/IC narratives reprint this same split (LP share / RCP / Co-GP / pref unpaid) — they do not stay on 100% look-through. Property NOI stays look-through. Only Owned SPEs roll up. Pipeline, Screened, Test, and soft-archived SPEs stay out.
 
 **Proformas** (forward-looking, same waterfall + Co-GP — not historical books): Deal LPs and Deal GPs (RCP + Co-GP) at ${dealPf}. OpCo LPs (aggregated Deal LPs) and OpCo GPs (RCP platform) at ${opcoPf}.
 
@@ -452,9 +454,11 @@ function deleteDealCopy(ctx: ExpertClientContext): string {
   const list = link("/deals", ctx, "Deals");
   const archive = link("/archive", ctx, "Deal Archive");
   const vault = link("/vault", ctx, "Vault");
-  return `Click **Delete** on a live ${list} row (or on that SPE’s ${vault} when a deal is selected). Two-step confirm: read the impact, then type the SPE code.
+  return `Click **Delete** on a live ${list} row, on a Library row when the deal is not Owned, or inside the **Archive this deal** section on the deal profile (that heading is not the button; the button is **Delete**), or on that SPE’s ${vault} when a deal is selected. Two-step confirm: read the impact, then type the SPE code.
 
 That is a **soft-archive**, not a hard wipe. The SPE leaves live Deals and the OpCo combined roll-up. Books, ledgers, and vault documents stay. Find it under gold nav **Deal Archive** — ${archive} — not a tab under Deals. There is no Archive tab under Deals.
+
+Pipeline and Screened deals are not on the Deals list. Use the Library row **Delete**, or open the deal profile **Archive this deal** section and click **Delete**.
 
 From Deal Archive: study vault or books, then **Restore** with the same two-step confirm.
 
@@ -469,7 +473,7 @@ You can remove a **vault document**. That does not delete the SPE. **Delete** on
 }
 
 function narrativesCopy(ctx: ExpertClientContext): string {
-  return `Gold nav **Narratives** — ${link("/narratives", ctx, "Narratives")} — five audience tones (LP / GP / IC / Lender / Mgmt) from the **same** period snapshot. Pick the audience, then export PDF / PPTX from the matching pack (cover → KPI strip → thesis → insight visuals → risks → appendix). Soft-archived SPEs stay out of live packs.
+  return `Gold nav **Narratives** — ${link("/narratives", ctx, "Narratives")} — five audience tones (LP / GP / IC / Lender / Mgmt) from the **same** period snapshot. Pick the audience, then export PDF / PPTX from the matching pack (cover → KPI strip → thesis → insight visuals → risks → appendix). Only Owned SPEs are in live packs. Pipeline, Screened, Test, and soft-archived SPEs stay out.
 
 It does not invent covenants or LTV. Scheduler (${link("/scheduler", ctx, "Scheduler")}) writes pack files; it does not email.`;
 }
@@ -511,6 +515,14 @@ function featureHowTo(q: string, ctx: ExpertClientContext): string {
 Name the screen or the job (delete a deal, add deal, vault a file, export a pack, close the period) and I will give the click path.`;
 }
 
+const LIVE_METRIC = /\b(?:dscr|debt yield|occupancy|noi|variance)\b/i;
+
+/** A how-to keyword still matches after the live-metric words are removed. */
+function howToClearlyMatches(question: string): boolean {
+  const stripped = question.replace(/\b(?:dscr|debt yield|occupancy|noi|variance)\b/gi, " ");
+  return EXPERT_HOWTOS.some((entry) => entry.keywords.some((keyword) => keyword.test(stripped)));
+}
+
 function navHelp(text: string, ctx: ExpertClientContext): string {
   const q = text.toLowerCase();
   const targets = listNavTargets().filter(
@@ -530,40 +542,52 @@ export function answerOffline(
   bundle: OfflineBundle,
 ): ExpertMessage {
   const q = userText.trim().toLowerCase();
+  const howto = answerFromHowTos(userText, ctx.pathname);
   let content: string;
   if (!q || q === "open" || q === "hello" || q === "hi") {
     return buildOpener(ctx, bundle);
   }
-  if (isMonthEndUploadQuery(q) || /upload august close|month-end close|month end close/.test(q)) {
+  if (
+    (isMonthEndUploadQuery(q) || /upload august close|month-end close|month end close/.test(q)) &&
+    !/not owned|does not post journals/.test(q)
+  ) {
     content = monthEndUploadCopy(ctx);
   } else if (isDistributionRecordQuery(q)) {
     content = recordDistributionCopy(ctx);
   } else if (isPrefOwedQuery(q)) {
     content = prefOwedCopy(ctx);
-  } else if (isWaterfallQuery(q) || /how do i set the deal waterfall/.test(q)) {
-    content = waterfallCopy(ctx);
   } else if (isLibraryCriteriaQuery(q)) {
     content = libraryCriteriaCopy(ctx);
   } else if (isDeleteDealQuery(q)) {
     content = deleteDealCopy(ctx);
   } else if (/tour|this page|controls|lost|where am i/.test(q) && !/wrong/.test(q)) {
     content = tour(ctx);
-  } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
-    content = addDealFlow(ctx);
-  } else if (/import rent roll|rent-?roll csv|xlsx|map columns|workbook/.test(q)) {
-    content = rentRollImportCopy(ctx);
-  } else if (/check ?list|month-end|month end|close books|soft close|hard lock/.test(q)) {
-    content = checklistMode(ctx, bundle);
-  } else if (/wrong on this page|audit/.test(q) || (q.includes("wrong") && q.includes("page"))) {
-    content = pageAudit(ctx, bundle);
   } else if (/what does |what is |mean\b|explain /.test(q) && /noi/.test(q)) {
     content = explainNoi(ctx, bundle);
   } else if (/what.?s missing|missing for|missing data|completeness|gaps? for|score/.test(q)) {
     content = completenessCopy(ctx, bundle, userText);
-  } else if (/anomal|dscr|debt yield|occupan|variance|what.?s wrong/.test(q)) {
-    content = /dscr|debt yield|occupan|noi|bridge/.test(q)
+  } else if (/import rent roll|rent-?roll csv|xlsx|map columns|workbook/.test(q)) {
+    content = rentRollImportCopy(ctx);
+  } else if (/check ?list|close books|what.?s left|left on the checklist|before (?:a )?hard lock/.test(q)) {
+    content = checklistMode(ctx, bundle);
+  } else if (/wrong on this page|audit/.test(q) || (q.includes("wrong") && q.includes("page"))) {
+    content = pageAudit(ctx, bundle);
+  } else if (/anomal/.test(q) || (LIVE_METRIC.test(q) && !howToClearlyMatches(userText))) {
+    content = LIVE_METRIC.test(q)
       ? `${kpiCopy(ctx, bundle, q)}\n\n${anomaliesCopy(ctx, bundle)}`
       : anomaliesCopy(ctx, bundle);
+  } else if (/how do i set the deal waterfall/.test(q)) {
+    content = waterfallCopy(ctx);
+  } else if (/^(?:add a new deal|how do i add a new deal)\??$/.test(q)) {
+    content = addDealFlow(ctx);
+  } else if (howto) {
+    content = howto;
+  } else if (isWaterfallQuery(q)) {
+    content = waterfallCopy(ctx);
+  } else if (/what.?s wrong/.test(q)) {
+    content = anomaliesCopy(ctx, bundle);
+  } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
+    content = addDealFlow(ctx);
   } else if (/lender pack/.test(q)) {
     content = packFlow("lender", ctx, bundle);
   } else if (/lp pack|investor pack|lp narrative/.test(q)) {

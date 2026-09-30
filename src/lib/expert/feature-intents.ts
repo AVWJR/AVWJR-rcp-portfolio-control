@@ -5,6 +5,7 @@ export function isWaterfallQuery(q: string): boolean {
 }
 
 export function isDistributionRecordQuery(q: string): boolean {
+  if (/soft-archived|before the latest|preview this amount|refused/.test(q)) return false;
   return /record a distribution|post a distribution|distribution ledger/.test(q);
 }
 
@@ -13,6 +14,8 @@ export function isPrefOwedQuery(q: string): boolean {
 }
 
 export function isDeleteDealQuery(q: string): boolean {
+  if (/without deleting|stop counting|get it back|archived the wrong/.test(q)) return false;
+  if (/delete that row|wrong deal/.test(q) && /posted|distribution|\$\d/.test(q)) return false;
   return /(delete|remove|undo|get rid of|kill|archive|hide|restore)\b.{0,40}\b(deal|spe|propert|intake|draft)\b|\b(deal|spe|propert)\b.{0,20}\b(delete|remove|archive|hide|restore)\b|deal archive|archived deals?/i.test(
     q,
   );
@@ -26,8 +29,8 @@ export function isVagueQuery(q: string): boolean {
 }
 
 export function isMonthEndUploadQuery(q: string): boolean {
-  if (/month-end close|month end close|upload .{0,40}close|close for /.test(q)) return true;
-  return /upload|drop|package/.test(q) && /close|month-end|month end|p&l|income statement|balance sheet/.test(q);
+  if (/month-end close|month end close|upload .{0,40}close/.test(q)) return true;
+  return /upload|drop|package/.test(q) && /\bclose\b|month-end|month end|p&l|income statement|balance sheet/.test(q);
 }
 
 export function isLibraryCriteriaQuery(q: string): boolean {

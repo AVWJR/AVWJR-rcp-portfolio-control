@@ -8,6 +8,11 @@ import { isOwnedSpe, ownedSpeWhere } from "@/lib/owned-spe";
 import { prisma } from "@/lib/prisma";
 
 export const ARCHIVE_ACTOR_PRINCIPAL = "principal";
+export const TYPE_SPE_CODE = "Type the SPE code to confirm.";
+export const CONFIRM_SPE_CODE_PREFIX = "Confirmation must match the SPE code";
+export const ALREADY_IN_ARCHIVE_SUFFIX = "is already in Deal Archive.";
+export const ALREADY_LIVE_DEAL_SUFFIX = "is already a live deal. Restore is only for archived SPEs.";
+export const ONLY_SPES = "Only SPEs can be deleted or restored.";
 
 export { PERMANENT_DEMO_SPE_CODES, deleteImpactCopy, isPermanentDemoSpe, permanentDemoDeleteMessage };
 
@@ -110,7 +115,7 @@ async function loadSpe(code: string) {
   }
   if (entity.type !== "SPE") {
     throw new ArchiveValidationError(
-      `${entity.code} is a ${entity.type}, not a property SPE. Only SPEs can be deleted or restored.`,
+      `${entity.code} is a ${entity.type}, not a property SPE. ${ONLY_SPES}`,
       "code",
     );
   }
@@ -119,11 +124,11 @@ async function loadSpe(code: string) {
 
 function assertConfirmCode(confirmCode: string | undefined, expected: string) {
   if (!confirmCode?.trim()) {
-    throw new ArchiveValidationError("Type the SPE code to confirm.", "confirmCode");
+    throw new ArchiveValidationError(TYPE_SPE_CODE, "confirmCode");
   }
   if (!confirmCodesMatch(confirmCode, expected)) {
     throw new ArchiveValidationError(
-      `Confirmation must match the SPE code ${expected} exactly (letters and numbers).`,
+      `${CONFIRM_SPE_CODE_PREFIX} ${expected} exactly (letters and numbers).`,
       "confirmCode",
     );
   }
@@ -140,7 +145,7 @@ export async function archiveSpe(opts: {
   }
   assertConfirmCode(opts.confirmCode, entity.code);
   if (entity.lifecycleStatus === "ARCHIVED") {
-    throw new ArchiveValidationError(`${entity.code} is already in Deal Archive.`, "code");
+    throw new ArchiveValidationError(`${entity.code} ${ALREADY_IN_ARCHIVE_SUFFIX}`, "code");
   }
   const updated = await prisma.entity.update({
     where: { id: entity.id },
@@ -162,7 +167,7 @@ export async function restoreSpe(opts: {
   const entity = await loadSpe(opts.code);
   assertConfirmCode(opts.confirmCode, entity.code);
   if (entity.lifecycleStatus !== "ARCHIVED") {
-    throw new ArchiveValidationError(`${entity.code} is already a live deal. Restore is only for archived SPEs.`, "code");
+    throw new ArchiveValidationError(`${entity.code} ${ALREADY_LIVE_DEAL_SUFFIX}`, "code");
   }
   const updated = await prisma.entity.update({
     where: { id: entity.id },

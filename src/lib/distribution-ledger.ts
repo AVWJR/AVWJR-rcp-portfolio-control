@@ -38,18 +38,33 @@ export class DistributionLedgerError extends Error {
   }
 }
 
+export const POSTED_DISTRIBUTION_EDIT =
+  "Posted distributions cannot be edited. Record a reversing distribution instead.";
+export const POSTED_DISTRIBUTION_DELETE =
+  "Posted distributions cannot be deleted. Record a reversing distribution instead.";
+export const CONCURRENT_POST = "Another distribution was just recorded. Refresh and preview again.";
+export const AMOUNT_WHOLE_CENTS = "Amount must be whole cents";
+export const PREVIEW_BEFORE_CONFIRM = "Preview this amount before confirming.";
+export const DISTRIBUTION_ARCHIVED =
+  "This SPE is soft-archived. Restore it from Deal Archive before recording a distribution.";
+export const DISTRIBUTION_NOT_OWNED_SUFFIX = "not Owned. Distributions are not posted for this deal.";
+export const REVERSING_ROW_LOCKED = "A reversing row cannot be edited or reversed again.";
+export const ALREADY_REVERSED = "That distribution is already reversed.";
+export const REVERSE_LATEST_FIRST = "Reverse the latest distribution first so the running totals stay in order.";
+export const DISTRIBUTION_SOURCE = "Source must be operating cash or a capital event.";
+export const DISTRIBUTION_PERIOD = "Pick a period such as 2026-08.";
+export const DISTRIBUTION_DATE = "Distribution date is not valid.";
+
+export function distributionBeforeLatestMessage(label: string): string {
+  return `That period is before the latest distribution (${label}). Pick that month or a later one.`;
+}
+
 export function rejectDistributionEdit(): never {
-  throw new DistributionLedgerError(
-    "Posted distributions cannot be edited. Record a reversing distribution instead.",
-    409,
-  );
+  throw new DistributionLedgerError(POSTED_DISTRIBUTION_EDIT, 409);
 }
 
 export function rejectDistributionDelete(): never {
-  throw new DistributionLedgerError(
-    "Posted distributions cannot be deleted. Record a reversing distribution instead.",
-    409,
-  );
+  throw new DistributionLedgerError(POSTED_DISTRIBUTION_DELETE, 409);
 }
 
 export function assertCanMutateDistributions(role: "principal" | "viewer" | null | undefined): void {
@@ -192,8 +207,6 @@ function isUniqueClash(error: unknown): boolean {
   return /unique constraint failed/i.test(message);
 }
 
-const CONCURRENT_POST = "Another distribution was just recorded. Refresh and preview again.";
-
 type DistributionWriteGate = () => Promise<void>;
 
 /** Test seam. Unset in production so two posts only overlap across one event-loop turn. */
@@ -212,7 +225,7 @@ function yieldToConcurrentPost(): Promise<void> {
 export function parseWholeCents(value: unknown): bigint {
   if (typeof value === "number" && Number.isInteger(value)) return BigInt(value);
   if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return BigInt(value.trim());
-  throw new DistributionLedgerError("Amount must be whole cents", 400);
+  throw new DistributionLedgerError(AMOUNT_WHOLE_CENTS, 400);
 }
 
 export function assertPreviewGrossMatches(grossCents: bigint, previewGrossCents: unknown): void {
@@ -220,10 +233,10 @@ export function assertPreviewGrossMatches(grossCents: bigint, previewGrossCents:
   try {
     preview = parseWholeCents(previewGrossCents);
   } catch {
-    throw new DistributionLedgerError("Preview this amount before confirming.", 409);
+    throw new DistributionLedgerError(PREVIEW_BEFORE_CONFIRM, 409);
   }
   if (preview !== grossCents) {
-    throw new DistributionLedgerError("Preview this amount before confirming.", 409);
+    throw new DistributionLedgerError(PREVIEW_BEFORE_CONFIRM, 409);
   }
 }
 
@@ -232,10 +245,7 @@ function assertPeriodNotBefore(anchor: { year: number; month: number } | null, y
   const earlier = year < anchor.year || (year === anchor.year && month < anchor.month);
   if (!earlier) return;
   const label = `${anchor.year}-${String(anchor.month).padStart(2, "0")}`;
-  throw new DistributionLedgerError(
-    `That period is before the latest distribution (${label}). Pick that month or a later one.`,
-    409,
-  );
+  throw new DistributionLedgerError(distributionBeforeLatestMessage(label), 409);
 }
 
 async function assertSpeOpen(entityId: string): Promise<void> {
@@ -246,13 +256,13 @@ async function assertSpeOpen(entityId: string): Promise<void> {
   if (!entity || entity.type !== "SPE") throw new DistributionLedgerError("Unknown SPE.", 404);
   if (isArchivedSpe(entity)) {
     throw new DistributionLedgerError(
-      "This SPE is soft-archived. Restore it from Deal Archive before recording a distribution.",
+      DISTRIBUTION_ARCHIVED,
       409,
     );
   }
   if (!isOwnedSpe(entity)) {
     throw new DistributionLedgerError(
-      `${entity.code} is ${effectiveDealStatus(entity)}, not Owned. Distributions are not posted for this deal.`,
+      `${entity.code} is ${effectiveDealStatus(entity)}, ${DISTRIBUTION_NOT_OWNED_SUFFIX}`,
       409,
     );
   }
@@ -657,16 +667,16 @@ export async function reverseDistribution(opts: {
       const target = rows.find((row) => row.id === opts.eventId);
       if (!target) throw new DistributionLedgerError("That distribution is not on this deal.", 404);
       if (target.reversesEventId) {
-        throw new DistributionLedgerError("A reversing row cannot be edited or reversed again.", 409);
+        throw new DistributionLedgerError(REVERSING_ROW_LOCKED, 409);
       }
       const reversed = reversedIds(rows);
       if (reversed.has(target.id)) {
-        throw new DistributionLedgerError("That distribution is already reversed.", 409);
+        throw new DistributionLedgerError(ALREADY_REVERSED, 409);
       }
       const active = activeRows(rows);
       const latest = active[active.length - 1];
       if (!latest || latest.id !== target.id) {
-        throw new DistributionLedgerError("Reverse the latest distribution first so the running totals stay in order.", 409);
+        throw new DistributionLedgerError(REVERSE_LATEST_FIRST, 409);
       }
       const priorIndex = active.length - 2;
       const restored = priorIndex >= 0 ? stateFromRow(active[priorIndex]!) : openingFromSnapshot(target.waterfallSnapshotJson, record);

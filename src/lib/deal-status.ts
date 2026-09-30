@@ -32,6 +32,16 @@ export class DealStatusError extends Error {
   }
 }
 
+export const DEAL_STATUS_CHOICES = "Choose Pipeline, Screened, Owned, or Test.";
+export const DEAL_STATUS_NOT_ARCHIVED =
+  "Archived is the existing Deal Archive. Use Delete on the Deals list and type the SPE code. This screen does not archive or delete.";
+export const DEAL_STATUS_REASON = "Say why you are changing the status.";
+export const BROKER_T12_WILL_POST = "The saved broker T12 will be posted into the books.";
+
+export function dealStatusArchivedMessage(code: string): string {
+  return `${code} is Archived. Restore it from Deal Archive if it should come back. Restoring does not delete anything.`;
+}
+
 export function ownedExitCopy(code: string, name: string): string {
   return (
     `Moving ${name} (${code}) out of Owned takes it out of the OpCo roll-up, month-end close, and the distribution ledger. ` +
@@ -43,7 +53,7 @@ export function ownedExitCopy(code: string, name: string): string {
 export function ownedEntryCopy(code: string, name: string): string {
   return (
     `Marking ${name} (${code}) Owned puts it into the real OpCo books, month-end close, and the distribution ledger. ` +
-    `The saved broker T12 will be posted into the books. ` +
+    `${BROKER_T12_WILL_POST} ` +
     `Confirm that RCP has closed on this deal.`
   );
 }
@@ -116,17 +126,17 @@ export async function changeDealStatus(opts: {
 }> {
   const code = opts.code.trim().toUpperCase();
   if (!isDealStatus(opts.toStatus)) {
-    throw new DealStatusError("Choose Pipeline, Screened, Owned, or Test.");
+    throw new DealStatusError(DEAL_STATUS_CHOICES);
   }
   const toStatus = opts.toStatus;
   if (toStatus === "ARCHIVED") {
     throw new DealStatusError(
-      "Archived is the existing Deal Archive. Use Delete on the Deals list and type the SPE code. This screen does not archive or delete.",
+      DEAL_STATUS_NOT_ARCHIVED,
     );
   }
   const reason = opts.reason?.trim() ?? "";
   if (!reason) {
-    throw new DealStatusError("Say why you are changing the status.");
+    throw new DealStatusError(DEAL_STATUS_REASON);
   }
 
   const entity = await prisma.entity.findUnique({ where: { code } });
@@ -135,7 +145,7 @@ export async function changeDealStatus(opts: {
   }
   if (entity.lifecycleStatus === "ARCHIVED") {
     throw new DealStatusError(
-      `${code} is Archived. Restore it from Deal Archive if it should come back. Restoring does not delete anything.`,
+      dealStatusArchivedMessage(code),
     );
   }
 

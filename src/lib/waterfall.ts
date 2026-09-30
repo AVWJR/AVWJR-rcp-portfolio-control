@@ -556,6 +556,9 @@ export function scaleCashBreakdown(
   return { operating, reserve, escrow, deposits: deposits < 0n ? 0n : deposits, total: gpCents };
 }
 
+export const PICK_WATERFALL_TEMPLATE = "Pick a waterfall template (including 100% look-through).";
+export const WATERFALL_PER_SPE = "Waterfall is per property SPE, not HoldCo or OpCo.";
+
 export function parseWaterfallSave(body: Partial<WaterfallSaveInput>): {
   config: WaterfallConfig;
   lpContributedCents: bigint;
@@ -564,7 +567,7 @@ export function parseWaterfallSave(body: Partial<WaterfallSaveInput>): {
   prefPaidToDateCents: bigint;
 } {
   if (!body.templateId || !isWaterfallTemplateId(body.templateId)) {
-    throw new DealValidationError("Pick a waterfall template (including 100% look-through).", "templateId");
+    throw new DealValidationError(PICK_WATERFALL_TEMPLATE, "templateId");
   }
   const base = applyWaterfallTemplate(body.templateId);
   const compounding = (WATERFALL_COMPOUNDING as readonly string[]).includes(String(body.compounding))
@@ -602,7 +605,7 @@ export function parseWaterfallSave(body: Partial<WaterfallSaveInput>): {
 export async function saveSpeWaterfall(entityId: string, body: Partial<WaterfallSaveInput>): Promise<SpeWaterfallRecord> {
   const entity = await prisma.entity.findUnique({ where: { id: entityId } });
   if (!entity || entity.type !== "SPE") {
-    throw new DealValidationError("Waterfall is per property SPE, not HoldCo or OpCo.", "code");
+    throw new DealValidationError(WATERFALL_PER_SPE, "code");
   }
   const parsed = parseWaterfallSave(body);
   const ledger = (await ledgerCapitalByEntity([entityId])).get(entityId);

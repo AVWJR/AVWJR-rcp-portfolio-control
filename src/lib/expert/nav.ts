@@ -3,8 +3,9 @@ import type { ExpertClientContext, NavTarget } from "./types";
 export const DEFAULT_ENTITY = "RCP-OPCO";
 export const DEFAULT_PERIOD = "2026-08";
 
-const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
+export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints: string[] }[] = [
   {
+    pattern: "/",
     test: /^\/$/,
     title: "Overview",
     hints: [
@@ -13,6 +14,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/dashboard/ratios/[ratioId]",
     test: /^\/dashboard\/ratios\/[^/]+$/,
     title: "Ratio drill-down",
     hints: [
@@ -21,11 +23,13 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/dashboard/ratios",
     test: /^\/dashboard\/ratios$/,
     title: "Ratio dictionary",
     hints: ["Every live ratio with units and source. LTV and delinquency stay gated."],
   },
   {
+    pattern: "/dashboard/[entityCode]",
     test: /^\/dashboard\/(SPE-[A-Z]+|RCP-OPCO)$/,
     title: "Property / OpCo dashboard",
     hints: [
@@ -34,29 +38,34 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/deals/[code]/close",
     test: /^\/deals\/[^/]+\/close$/,
     title: "Month-end close",
     hints: [
       "Drop the manager package. Files are classified and kept.",
-      "Map unmapped lines before hard lock. Reopen needs a reason and a ticket.",
+      "Hard lock needs a soft close first, a complete checklist, no suspense or unmapped lines, and tie-outs that pass (RR-1, RR-11, RR-12). Reopen needs a reason and a ticket.",
     ],
   },
   {
+    pattern: "/dashboard",
     test: /^\/dashboard$/,
     title: "Dashboards",
     hints: ["OpCo combined roll-up and SPE property dashboards. HoldCo has no operating dashboard."],
   },
   {
+    pattern: "/narratives/packs/[packId]",
     test: /^\/narratives\/packs\/[^/]+$/,
     title: "Report pack preview",
-    hints: ["Export PDF or PPTX. Same executive spine for every audience. Soft-archived SPEs stay out. LTV stays gated."],
+    hints: ["Export PDF or PPTX. Same executive spine for every audience. Only Owned SPEs are included. Pipeline, Screened, Test, and soft-archived SPEs stay out. LTV stays gated."],
   },
   {
+    pattern: "/narratives",
     test: /^\/narratives$/,
     title: "Narratives",
     hints: ["LP, GP, IC, Lender, and Management tones from the same period snapshot. Does not invent covenants."],
   },
   {
+    pattern: "/reports/operating-statement",
     test: /^\/reports\/operating-statement$/,
     title: "Operating statement",
     hints: [
@@ -65,31 +74,37 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/reports/trial-balance",
     test: /^\/reports\/trial-balance$/,
     title: "Trial balance",
     hints: ["As-of posted activity. Debits must equal credits."],
   },
   {
+    pattern: "/reports/income-statement",
     test: /^\/reports\/income-statement$/,
     title: "Income statement",
     hints: ["Book P/L with the same NOI math as the operating statement (no budget columns)."],
   },
   {
+    pattern: "/reports/balance-sheet",
     test: /^\/reports\/balance-sheet$/,
     title: "Balance sheet",
     hints: ["Assets = liabilities + equity, including unclosed NI and CIP 1460."],
   },
   {
+    pattern: "/reports/cash-flow",
     test: /^\/reports\/cash-flow$/,
     title: "Cash flow",
     hints: ["Indirect method. Ending cash should tie to the balance sheet."],
   },
   {
+    pattern: "/reports/packs",
     test: /^\/reports\/packs$/,
     title: "Report packs",
     hints: ["Alias of the pack catalog. Prefer /narratives/packs/{id}."],
   },
   {
+    pattern: "/properties/[code]",
     test: /^\/properties\/[^/]+$/,
     title: "Property rent roll",
     hints: [
@@ -98,14 +113,16 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/deals/[code]/distributions",
     test: /^\/deals\/SPE-[A-Z0-9]+\/distributions$/,
     title: "Distribution ledger",
     hints: [
       "Record a distribution: amount, operating cash or capital event, preview the waterfall split, then confirm.",
-      "Posted rows stay. Corrections are reversing distributions. Once something is posted, unreturned capital and unpaid pref come from this ledger.",
+      "Posted rows stay. Corrections use Reverse on the latest row only. Download CSV, History, and the Where we are in the waterfall gauge sit on this page. Once something is posted, unreturned capital and unpaid pref come from this ledger.",
     ],
   },
   {
+    pattern: "/deals/[code]/waterfall",
     test: /^\/deals\/SPE-[A-Z0-9]+\/waterfall$/,
     title: "Deal waterfall",
     hints: [
@@ -114,6 +131,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/deals/[code]/proforma",
     test: /^\/deals\/SPE-[A-Z0-9]+\/proforma$/,
     title: "Deal proforma",
     hints: [
@@ -122,14 +140,16 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/opco/proforma",
     test: /^\/opco\/proforma$/,
     title: "OpCo proforma",
     hints: [
-      "Aggregates each live SPE’s deal waterfall. OpCo LPs = Deal LPs; OpCo GPs = RCP platform. Co-GP stays at the deal.",
+      "Aggregates each Owned SPE’s deal waterfall. OpCo LPs = Deal LPs; OpCo GPs = RCP platform. Co-GP stays at the deal.",
       "Optional OpCo-level pref if you enter platform capital. Same source of truth as live rollup and LP packs.",
     ],
   },
   {
+    pattern: "/deals/new",
     test: /^\/deals\/new$/,
     title: "Add Deal",
     hints: [
@@ -139,6 +159,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/library",
     test: /^\/library$/,
     title: "Deal Library",
     hints: [
@@ -148,6 +169,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/deals/[code]",
     test: /^\/deals\/SPE-[A-Z0-9]+$/,
     title: "Deal profile",
     hints: [
@@ -156,15 +178,17 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/deals",
     test: /^\/deals$/,
     title: "Deals",
     hints: [
-      "Live SPE list plus saved Add Deal drafts. New deals are SPE entities under OpCo (usually RCP-OPCO).",
+      "Owned SPE list plus saved Add Deal drafts. Pipeline and Screened live in the Library. New deals are SPE entities under OpCo (usually RCP-OPCO).",
       "Delete on a row is a two-step soft-archive. Deleted SPEs are not here — gold nav Deal Archive.",
       "LP/GP waterfall is on each SPE card — not buried. Default 100% look-through until a template is saved.",
     ],
   },
   {
+    pattern: "/archive",
     test: /^\/archive$/,
     title: "Deal Archive",
     hints: [
@@ -173,21 +197,25 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/properties",
     test: /^\/properties$/,
     title: "Properties",
     hints: ["SPE list with unit counts. Open a property for the rent roll and occupancy."],
   },
   {
+    pattern: "/debt",
     test: /^\/debt$/,
     title: "Debt",
     hints: ["First-mortgage file, UPB, DSCR and debt yield vs loan thresholds. Do not invent LTV from book cost."],
   },
   {
+    pattern: "/capex",
     test: /^\/capex$/,
     title: "CapEx / CIP",
     hints: ["CapEx vs R&M. CIP stays on 1460 until placed in service. R&M (5210) stays in NOI."],
   },
   {
+    pattern: "/close",
     test: /^\/close$/,
     title: "Period close",
     hints: [
@@ -196,11 +224,13 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/tax/k1",
     test: /^\/tax\/k1$/,
     title: "Partner capital / K-1 export",
     hints: ["Beg + contrib − dist ± book NI = end. CPA prep only — not a filed Schedule K-1."],
   },
   {
+    pattern: "/tax",
     test: /^\/tax$/,
     title: "Books-to-tax bridge",
     hints: [
@@ -209,6 +239,7 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/vault",
     test: /^\/vault$/,
     title: "Document vault",
     hints: [
@@ -217,16 +248,19 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    pattern: "/scheduler",
     test: /^\/scheduler$/,
     title: "Scheduled reporting",
     hints: ["Monthly investor and quarterly lender jobs. Writes files; does not email."],
   },
   {
+    pattern: "/vendors",
     test: /^\/vendors$/,
     title: "1099 vendor hooks",
     hints: ["Vendor master + reportable overlay. Phase A AP has no invoice subledger. Not a filed 1099."],
   },
   {
+    pattern: "/admin/seed",
     test: /^\/admin\/seed$/,
     title: "Load demo data",
     hints: ["Admin-only seed for an empty deploy. Demo books only — does not file taxes."],
@@ -266,6 +300,10 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "scheduler", href: "/scheduler", label: "Scheduler", hint: "Pack jobs" },
   { id: "vendors", href: "/vendors", label: "1099", hint: "Vendor overlay" },
 ];
+
+export function listPageCatalogPatterns(): string[] {
+  return PAGE_CATALOG.map((row) => row.pattern);
+}
 
 export function describePage(pathname: string): { title: string; hints: string[] } {
   const hit = PAGE_CATALOG.find((row) => row.test.test(pathname));
