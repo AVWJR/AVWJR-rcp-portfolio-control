@@ -287,6 +287,22 @@ describe("Expert offline eval set", () => {
     expect(om.answer).not.toMatch(/IC Memo|Open \*\*Month-end close\*\*/);
   });
 
+  it("keeps a trailing question mark from hiding a fact or sending a vault upload to Add Deal", () => {
+    const library = readExpertContext("/library", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
+    const owned = answerOffline(
+      "If I mark a Pipeline deal Owned, what happens to the broker T12?",
+      library,
+      emptyBundle,
+    ).content;
+    expect(owned).toMatch(/saved broker T12 is posted into the SPE books when you confirm a move to Owned/i);
+
+    const vault = readExpertContext("/vault", new URLSearchParams("entity=SPE-WBG&period=2026-08"));
+    const lease = answerOffline("Can I upload a 20 MB lease PDF to the vault?", vault, emptyBundle).content;
+    expect(lease).toMatch(/Gold nav \*\*Vault\*\*/);
+    expect(lease).toMatch(/entity document store/i);
+    expect(lease).not.toMatch(/Create the SPE/);
+  });
+
   it("keeps how-to answers and the system reference inside a sentence boundary", () => {
     const question = "Hard close is blocked: RR-1 Rent roll is missing. Reopen requires a non-empty reason and ticket.";
     const answer = answerFromHowTos(question, "/deals/SPE-WBG/close");

@@ -608,7 +608,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     keywords: [
       /add a new deal/i,
       /pipeline instead of owned|mark it as pipeline|create the spe|step 5/i,
-      /413|6 mb|blob|offering memorandum|\bom\b|\d+\s*mb/i,
+      /413|6 mb|blob|offering memorandum|\bom\b/i,
       /broker package|just to screen|in the opco numbers/i,
     ],
     steps: [
@@ -1261,16 +1261,27 @@ export function publicHowTo(entry: ExpertHowTo) {
   };
 }
 
+/**
+ * Drop punctuation so a trailing ? or . does not hide a phrase that ends the string.
+ * Hyphens stay, so month-end remains one word and does not match a bare "month end".
+ */
+function normalizeMatchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9%$ -]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function symptomMatchesQuestion(symptom: string, question: string): boolean {
-  const q = question.toLowerCase();
-  const s = symptom.toLowerCase().trim();
+  const q = normalizeMatchText(question);
+  const s = normalizeMatchText(symptom);
   if (!s || !q) return false;
   if (q.includes(s)) return true;
-  const compact = s.replace(/\s+/g, " ");
-  for (let length = Math.min(48, compact.length); length >= 18; length -= 1) {
-    for (let index = 0; index + length <= compact.length; index += 1) {
-      if (index > 0 && compact[index - 1] !== " ") continue;
-      const phrase = compact.slice(index, index + length).trim();
+  for (let length = Math.min(48, s.length); length >= 18; length -= 1) {
+    for (let index = 0; index + length <= s.length; index += 1) {
+      if (index > 0 && s[index - 1] !== " ") continue;
+      const phrase = s.slice(index, index + length).trim();
       if (phrase.length >= 18 && q.includes(phrase)) return true;
     }
   }
@@ -1305,8 +1316,8 @@ const FACT_STOP_WORDS = new Set([
 ]);
 
 function factMatchesQuestion(fact: string, question: string): boolean {
-  const factText = fact.toLowerCase();
-  const asked = question.toLowerCase().replace(/\s+/g, " ").trim();
+  const factText = normalizeMatchText(fact);
+  const asked = normalizeMatchText(question);
   for (let length = Math.min(42, asked.length); length >= 8; length -= 1) {
     for (let index = 0; index + length <= asked.length; index += 1) {
       if (index > 0 && asked[index - 1] !== " ") continue;
