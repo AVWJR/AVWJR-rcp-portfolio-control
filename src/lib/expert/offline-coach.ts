@@ -9,7 +9,7 @@ import {
   isVagueQuery,
   isWaterfallQuery,
 } from "./feature-intents";
-import { answerFromHowTos } from "./howtos";
+import { answerFromHowTos, EXPERT_HOWTOS } from "./howtos";
 import { describePage, listNavTargets, withContext } from "./nav";
 import { formatContextChip } from "./period";
 import type {
@@ -515,6 +515,14 @@ function featureHowTo(q: string, ctx: ExpertClientContext): string {
 Name the screen or the job (delete a deal, add deal, vault a file, export a pack, close the period) and I will give the click path.`;
 }
 
+const LIVE_METRIC = /\b(?:dscr|debt yield|occupancy|noi|variance)\b/i;
+
+/** A how-to keyword still matches after the live-metric words are removed. */
+function howToClearlyMatches(question: string): boolean {
+  const stripped = question.replace(/\b(?:dscr|debt yield|occupancy|noi|variance)\b/gi, " ");
+  return EXPERT_HOWTOS.some((entry) => entry.keywords.some((keyword) => keyword.test(stripped)));
+}
+
 function navHelp(text: string, ctx: ExpertClientContext): string {
   const q = text.toLowerCase();
   const targets = listNavTargets().filter(
@@ -564,8 +572,8 @@ export function answerOffline(
     content = checklistMode(ctx, bundle);
   } else if (/wrong on this page|audit/.test(q) || (q.includes("wrong") && q.includes("page"))) {
     content = pageAudit(ctx, bundle);
-  } else if (/anomal|what is the debt yield|debt yield for|what is (?:the )?dscr|dscr for|what is (?:the )?occupancy|occupancy for|what is the variance/.test(q)) {
-    content = /dscr|debt yield|occupan|noi|bridge/.test(q)
+  } else if (/anomal/.test(q) || (LIVE_METRIC.test(q) && !howToClearlyMatches(userText))) {
+    content = LIVE_METRIC.test(q)
       ? `${kpiCopy(ctx, bundle, q)}\n\n${anomaliesCopy(ctx, bundle)}`
       : anomaliesCopy(ctx, bundle);
   } else if (/how do i set the deal waterfall/.test(q)) {

@@ -180,6 +180,76 @@ describe("Expert offline eval set", () => {
     const yieldAnswer = answerOffline("what is the debt yield for Willow Bend", waterfall, emptyBundle).content;
     expect(yieldAnswer).toMatch(/cannot read KPIs|debt yield|Live KPIs/i);
     expect(yieldAnswer).not.toMatch(/Only Owned SPEs can post a month-end close/);
+
+    const keywordCases: { question: string; id: string }[] = [
+      { question: "why is the AM fee coverage tile empty", id: "dashboard.tiles" },
+      { question: "what is overhead coverage", id: "dashboard.tiles" },
+      { question: "can I record a distribution dated before an existing month", id: "distributions.ledger" },
+      { question: "I archived the wrong SPE, how do I get it back", id: "archive.lifecycle" },
+      { question: "how do I restore a deal I archived", id: "archive.lifecycle" },
+      { question: "stop counting this deal in OpCo without deleting it", id: "library.statuses" },
+      { question: "I left unreturned capital empty", id: "waterfall.deal" },
+    ];
+    for (const row of keywordCases) {
+      const best = findHowTos(row.question, "/", 8).find((entry) =>
+        entry.keywords.some((keyword) => keyword.test(row.question)),
+      );
+      expect(best?.id, row.question).toBe(row.id);
+    }
+    const emptyTile = answerFromHowTos("why is the AM fee coverage tile empty", "/dashboard/RCP-OPCO");
+    expect(emptyTile).toMatch(/blank/i);
+    expect(emptyTile).toMatch(/5110/);
+    const dated = answerFromHowTos("can I record a distribution dated before an existing month", "/deals/SPE-WBG/distributions");
+    expect(dated).toMatch(/forward only/i);
+    const restore = answerFromHowTos("I archived the wrong SPE, how do I get it back", "/archive");
+    expect(restore).toMatch(/Deal Archive/);
+    expect(restore).toMatch(/Restore/);
+    const stopCounting = answerFromHowTos("stop counting this deal in OpCo without deleting it", "/library");
+    expect(stopCounting).toMatch(/Pipeline or Screened/);
+    const leftEmpty = answerFromHowTos("I left unreturned capital empty", "/deals/SPE-WBG/waterfall");
+    expect(leftEmpty).toMatch(/typed 0 stays 0/);
+    expect(leftEmpty).toMatch(/blank/i);
+    const ga = answerFromHowTos("which accounts make up OpCo G&A", "/dashboard/RCP-OPCO");
+    expect(ga).not.toMatch(/Type the SPE code|Demo data is already present|Hard close is blocked/);
+  });
+
+  it("sends live metric questions to figures unless a how-to keyword still matches", () => {
+    const ctx = readExpertContext("/dashboard/SPE-WBG", new URLSearchParams("entity=SPE-WBG&period=2026-08"));
+    const liveBundle: OfflineBundle = {
+      ...emptyBundle,
+      kpis: {
+        entityCode: "SPE-WBG",
+        entityName: "Willow Bend Gardens LLC",
+        periodLabel: "2026-08",
+        kind: "property",
+        viewLabel: "SPE",
+        tiles: [
+          { id: "dscr", display: "1.16x", hint: "Look-through DSCR", gated: false },
+          { id: "debt_yield", display: "8.25%", hint: "Debt yield", gated: false },
+          { id: "physical_occupancy", display: "94%", hint: "Physical occupancy", gated: false },
+          { id: "noi_period", display: "$16,410", hint: "Period NOI", gated: false },
+        ],
+        notes: [],
+      },
+    };
+    const dscr = answerOffline("What is our DSCR this month?", ctx, liveBundle).content;
+    expect(dscr).toMatch(/Live KPIs/);
+    expect(dscr).toMatch(/1\.16x/);
+    expect(dscr).not.toMatch(/Month-end close/);
+    const occupancy = answerOffline("How's occupancy at Willow Bend?", ctx, liveBundle).content;
+    expect(occupancy).toMatch(/Live KPIs/);
+    expect(occupancy).toMatch(/94%/);
+    expect(occupancy).not.toMatch(/Month-end close/);
+    const debtYield = answerOffline("debt yield?", ctx, liveBundle).content;
+    expect(debtYield).toMatch(/Live KPIs/);
+    expect(debtYield).toMatch(/8\.25%/);
+    expect(debtYield).not.toMatch(/Month-end close/);
+    const criteria = items.find((item) => item.id === "CRT-1");
+    expect(criteria).toBeTruthy();
+    const criteriaAnswer = answerOffline(criteria!.question, ctx, liveBundle).content;
+    expect(criteriaAnswer).toMatch(/Add criterion|Hard limit|preset/i);
+    expect(criteriaAnswer).toMatch(/Library/);
+    expect(criteriaAnswer).not.toMatch(/Live KPIs|cannot read KPIs|Month-end close/);
   });
 
   it("keeps how-to answers and the system reference inside a sentence boundary", () => {
@@ -188,6 +258,7 @@ describe("Expert offline eval set", () => {
     expect(answer).toBeTruthy();
     expect(answer!.length).toBeLessThanOrEqual(1_200);
     expect(answer).toMatch(/[.!?]["')\]]?$/);
+    expect((answer!.split("**").length - 1) % 2).toBe(0);
     const reference = buildHowToReference("/deals/SPE-WBG/close", question);
     expect(reference.length).toBeLessThanOrEqual(6_000);
     expect(reference).not.toMatch(/\.\.\.$/);

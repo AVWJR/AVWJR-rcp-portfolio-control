@@ -108,7 +108,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     steps: [
       "Gold nav Deals → the Owned SPE card → Month-end close. Pick the month, then drop the T12 or GL and the rent roll.",
       "Review the classification. Click Post this period into the SPE books. Posting again replaces the prior import journals. In a soft-closed month, Post auto-reverses those journals and reposts the package.",
-      "Click Soft close, finish the checklist, then Hard lock. A soft-closed correction needs the controller override and a reason. Reopen always needs a reason and a ticket.",
+      "Click Soft close, finish the checklist, then Hard lock. Reopen always needs a reason and a ticket. A soft-closed correction needs the controller override and a reason.",
       "On Period Close (/close), Soft close and Hard lock are only for Owned deals. Pipeline, Screened, and Test are disabled.",
     ],
     facts: [
@@ -248,7 +248,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     keywords: [
       /lp\/gp waterfall|set the (?:lp|deal) waterfall|deal waterfall/i,
       /waterfall template|simple pref|institutional catch-up|multi-hurdle|look-through|american \/ deal|european/i,
-      /unpaid pref|unreturned capital|typed 0|typed zero/i,
+      /unpaid pref|unreturned capital|typed 0|typed zero|left empty/i,
       /distributed today|operating cash available|period cfads|available to distribute/i,
       /catch-up %|catch-up percent|catch-up row|50\/50/i,
       /co-gp partner|add a co-gp/i,
@@ -262,7 +262,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     facts: [
       "Templates are 100% look-through (the default), Simple pref + promote, Institutional catch-up, Multi-hurdle IRR, American deal-by-deal, and European whole-fund. Custom means edit the tiers table.",
       "Catch-up % is the GP share of each catch-up dollar. The GP target follows the residual row. It is not a 50/50 split on the catch-up row. A typed 0 stays 0.",
-      "Unreturned capital: blank means LP contributed, and a typed 0 stays 0. Unpaid pref: blank means none carried in, and a typed 0 stays 0.",
+      "Unreturned capital left empty, or blank, means LP contributed, and a typed 0 stays 0. Unpaid pref left empty, or blank, means none carried in, and a typed 0 stays 0.",
       "If SPE cash were distributed today uses operating cash available. That excludes reserves, escrow, and tenant deposits. It is not period CFADS.",
       "Co-GP stays at the deal. OpCo uses the RCP share after Save.",
     ],
@@ -335,7 +335,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     keywords: [
       /record a distribution/i,
       /wrong amount|download csv|distribution history|as csv/i,
-      /before the latest distribution|preview this amount before confirming/i,
+      /before the latest distribution|preview this amount before confirming|dated before|before an existing month|forward only/i,
       /where we are in the waterfall|which waterfall tier/i,
       /soft-archived|distributions are not posted/i,
       /another distribution was just recorded/i,
@@ -351,7 +351,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       "Preview, then confirm. Confirm posts only the same amount and date you previewed. The amount must be greater than zero.",
       "Corrections use Reverse on the latest active row only. There is no opposite-amount posting and no delete of a posted row.",
       "The page has Download CSV, History, and the Where we are in the waterfall gauge. Those figures also feed the monthly investor pack.",
-      "The ledger posts forward only. A date before the latest posted distribution is refused.",
+      "The ledger posts forward only. A distribution dated before an existing month, or before the latest posted distribution, is refused.",
       "A soft-archived SPE must be restored from Deal Archive before a distribution. A deal that is not Owned cannot post one either.",
     ],
     troubleshooting: [
@@ -452,6 +452,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /move it to owned|broker t12|screened deal|pipeline to owned|change status/i,
       /to test|permanent demo/i,
       /archive a pipeline|not on the deals list/i,
+      /stop counting in opco|without deleting/i,
     ],
     steps: [
       "Open Library to see Pipeline, Screened, Owned, Archived, and Test.",
@@ -460,11 +461,12 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     facts: [
       "Statuses are Pipeline, Screened, Owned, Archived, and Test. Only Owned deals are in the OpCo numbers, month-end close, packs, proforma, and dashboards.",
-      "Confirming a move to Owned posts the saved broker T12 into the SPE books.",
+      "The saved broker T12 is posted into the SPE books when you confirm a move to Owned.",
       "SPE-WBG, SPE-CVC, and SPE-HCR are permanent demo deals and cannot leave Owned. Test is reserved for the Phase 4 purge because Test would take the deal out of the roll-up.",
       "A deal with a posted distribution or a closed month is books-locked. It can leave Owned only through Archive (Delete, then type the SPE code). This screen will not remove it.",
       "Status cannot be set to Archived on this screen. Use Deal Archive. An archived deal must be restored before the status can change.",
       "Pipeline and Screened deals are not on the Deals page. Find them in the Library.",
+      "To stop counting a deal in the OpCo numbers without deleting it, set Deal status to Pipeline or Screened.",
     ],
     troubleshooting: [
       {
@@ -650,6 +652,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /crestview|spe-cvc|why can't i delete/i,
       /posted distribution or a closed month|back to pipeline/i,
       /type the spe code/i,
+      /get it back|archived the wrong|\brestore\b/i,
     ],
     steps: [
       "Click Delete on the Deals row (Owned) or the Library row (not Owned). On the deal profile, the Archive this deal section is a heading; the button inside it is Delete.",
@@ -661,6 +664,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       "Permanent demo SPEs SPE-WBG, SPE-CVC (Crestview Commons), and SPE-HCR cannot be deleted.",
       "A books-locked Owned deal, one with a posted distribution or a closed month, can leave the live list only through Archive.",
       "There is no Archive tab under Deals.",
+      "To get it back after you archived the wrong SPE, open Deal Archive and Restore. Books, ledgers, and vault files stay.",
     ],
     troubleshooting: [
       {
@@ -759,6 +763,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /not on the opco dashboard|pipeline.{0,40}dashboard/i,
       /which accounts.{0,80}g&a|g&a.{0,40}accounts/i,
       /7010|5110/i,
+      /tile is empty|overhead coverage|coverage is empty|empty coverage tile/i,
     ],
     steps: [
       "Open Dashboard and switch to RCP-OPCO.",
@@ -766,7 +771,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     facts: [
       "G&A as a percentage of AM fee income is (5110 + 5610 + 5990) ÷ 7010 on the OpCo dashboard.",
-      "Over 100% means AM fees don't cover OpCo overhead.",
+      "Over 100% means AM fees don't cover OpCo overhead. That overhead coverage gap is the G&A ratio above 100%.",
       "AM fee coverage is 7010 ÷ posted OpCo G&A (5110 + 5610 + 5990), shown as a multiple (x). The tile reads those posted accounts and stays blank until OpCo G&A expenses are posted in the books. A zero denominator has no multiple.",
       "Library → Fees → Save G&A budget does not feed the AM fee coverage tile. That budget is used only by the Library.",
       "A Pipeline deal is not on the OpCo dashboard or the Deals page. It is in the Library. Only Owned deals roll up.",
@@ -1268,14 +1273,78 @@ function symptomMatchesQuestion(symptom: string, question: string): boolean {
       if (phrase.length >= 18 && q.includes(phrase)) return true;
     }
   }
-  const words = compact.split(/[^a-z0-9%]+/).filter((word) => word.length >= 5 && !SYMPTOM_STOP_WORDS.has(word));
-  const hits = words.filter((word) => q.includes(word));
-  const strong = hits.filter((word) => word.length >= 6);
-  return hits.length >= 3 || strong.length >= 2;
+  return false;
+}
+
+const FACT_STOP_WORDS = new Set([
+  ...SYMPTOM_STOP_WORDS,
+  "close",
+  "closed",
+  "post",
+  "posted",
+  "hard",
+  "lock",
+  "open",
+  "only",
+  "first",
+  "needs",
+  "deal",
+  "deals",
+  "month",
+  "soft",
+  "same",
+  "again",
+  "prior",
+  "click",
+  "enter",
+  "leave",
+  "stays",
+  "means",
+  "until",
+]);
+
+function factMatchesQuestion(fact: string, question: string): boolean {
+  const factText = fact.toLowerCase();
+  const asked = question.toLowerCase().replace(/\s+/g, " ").trim();
+  for (let length = Math.min(42, asked.length); length >= 8; length -= 1) {
+    for (let index = 0; index + length <= asked.length; index += 1) {
+      if (index > 0 && asked[index - 1] !== " ") continue;
+      const end = index + length;
+      if (end < asked.length && asked[end] !== " ") continue;
+      const phrase = asked.slice(index, end);
+      if (!phrase.includes(" ")) continue;
+      if (factText.includes(phrase)) return true;
+    }
+  }
+  const tokens = (text: string) =>
+    new Set(
+      text
+        .toLowerCase()
+        .split(/[^a-z0-9%]+/)
+        .filter((word) => word.length >= 6 && !FACT_STOP_WORDS.has(word)),
+    );
+  const askedTokens = tokens(question);
+  const factTokens = tokens(fact);
+  const questionWords = new Set(question.toLowerCase().split(/[^a-z0-9%]+/));
+  const factWords = new Set(fact.toLowerCase().split(/[^a-z0-9%]+/));
+  if (
+    (questionWords.has("empty") || questionWords.has("blank")) &&
+    (factWords.has("empty") || factWords.has("blank")) &&
+    [...factTokens].some((word) => askedTokens.has(word))
+  ) {
+    return true;
+  }
+  let hits = 0;
+  for (const word of factTokens) if (askedTokens.has(word)) hits += 1;
+  return hits >= 2;
+}
+
+function boldMarkerCount(text: string): number {
+  return text.split("**").length - 1;
 }
 
 /** Cut at a sentence end. Returns "" when the cap has no sentence boundary. */
-function truncateAtSentence(text: string, cap: number): string {
+function cutAtSentence(text: string, cap: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= cap) return trimmed;
   const slice = trimmed.slice(0, cap);
@@ -1293,6 +1362,20 @@ function truncateAtSentence(text: string, cap: number): string {
   const paragraph = slice.lastIndexOf("\n\n");
   if (paragraph >= 40) return slice.slice(0, paragraph).trim();
   return "";
+}
+
+/** Cut at a sentence, and never leave an opening ** without its close. */
+function truncateAtSentence(text: string, cap: number): string {
+  let out = cutAtSentence(text, cap);
+  for (let pass = 0; pass < 4 && boldMarkerCount(out) % 2 === 1; pass += 1) {
+    if (out.length + 2 <= cap && /[.!?]["')\]]?$/.test(out)) {
+      const closed = out.replace(/([.!?])(["')\]]?)$/, "**$1$2");
+      if (boldMarkerCount(closed) % 2 === 0) return closed;
+    }
+    const last = out.lastIndexOf("**");
+    out = cutAtSentence(last >= 0 ? out.slice(0, last) : "", cap);
+  }
+  return out;
 }
 
 function formatHowToEntry(entry: ExpertHowTo): string {
@@ -1317,12 +1400,13 @@ export function answerFromHowTos(question: string, pathname?: string): string | 
   const best = scored.find((row) => row.score > 0);
   if (!best) return null;
   const entry = best.entry;
+  const facts = entry.facts.filter((fact, index) => index === 0 || factMatchesQuestion(fact, question));
   const steps = entry.steps.map((step, index) => `${index + 1}. ${step}`).join("\n");
   const trouble = entry.troubleshooting
     .filter((row) => symptomMatchesQuestion(row.symptom, question))
     .map((row) => `**${row.symptom}** ${row.cause} ${row.fix}`)
     .join("\n");
-  const body = [entry.facts[0], "", entry.navPath, "", steps, trouble ? `\n${trouble}` : ""].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  const body = [facts.join("\n\n"), "", entry.navPath, "", steps, trouble ? `\n${trouble}` : ""].join("\n").replace(/\n{3,}/g, "\n\n").trim();
   return truncateAtSentence(body, HOWTO_ANSWER_CAP);
 }
 

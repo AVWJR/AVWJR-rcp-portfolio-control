@@ -21,9 +21,19 @@ const idsToDelete: string[] = [];
 
 afterAll(async () => {
   if (idsToDelete.length) {
+    await prisma.dealStatusEvent.deleteMany({ where: { entityId: { in: idsToDelete } } });
+    await prisma.dealAnalysisSnapshot.deleteMany({ where: { entityId: { in: idsToDelete } } });
+    await prisma.distributionAllocation.deleteMany({ where: { event: { entityId: { in: idsToDelete } } } });
+    await prisma.distributionAudit.deleteMany({ where: { entityId: { in: idsToDelete } } });
+    await prisma.distributionEvent.deleteMany({ where: { entityId: { in: idsToDelete } } });
+    await prisma.speWaterfall.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.dealIntake.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.vaultDocument.deleteMany({ where: { entityId: { in: idsToDelete } } });
-    await prisma.journalLine.deleteMany({ where: { journal: { entityId: { in: idsToDelete } } } });
+    await prisma.journalLine.deleteMany({
+      where: {
+        OR: [{ journal: { entityId: { in: idsToDelete } } }, { account: { entityId: { in: idsToDelete } } }],
+      },
+    });
     await prisma.journal.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.loan.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.unit.deleteMany({ where: { entityId: { in: idsToDelete } } });

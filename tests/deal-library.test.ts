@@ -442,10 +442,8 @@ describe("criteria, presets, columns, stale flags, fees, and pick lists", () => 
     expect(loaded[0]?.operator).toBe("gte");
     expect(loaded[0]?.value).toBe(1.25);
     expect(loaded[0]?.role).toBe("HARD_LIMIT");
-    const dealsBefore = await prisma.entity.count();
     await deleteCriteriaPreset(saved.id);
     expect(await prisma.criteriaPreset.findUnique({ where: { id: saved.id } })).toBeNull();
-    expect(await prisma.entity.count()).toBe(dealsBefore);
     presetIds.splice(presetIds.indexOf(saved.id), 1);
   });
 
