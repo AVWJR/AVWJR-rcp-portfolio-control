@@ -51,15 +51,13 @@ import {
   SOFT_CLOSE_FROM_OPEN,
   SUSPENSE_1999_ZERO,
 } from "@rcp/ledger";
+import { nonOwnedCloseMessage } from "@/lib/period-close";
 import { PICK_WATERFALL_TEMPLATE, WATERFALL_PER_SPE } from "@/lib/waterfall";
 import { describe, expect, it } from "vitest";
 
 /**
  * Future authors: when you add a user-facing 400/409 guard, add the exact text to
  * tests/fixtures/expert-guard-messages.json and to a how-to troubleshooting symptom.
- * The three PR #43 messages (non-Owned soft/hard close, broker T12 on a closed month,
- * and broker T12 post failure) stay out of that fixture until PR #43 is on main.
- * They are already troubleshooting symptoms in howtos.ts.
  */
 
 const ROOT = process.cwd();
@@ -195,6 +193,7 @@ describe("Expert how-to coverage", () => {
       HARD_CLOSE_BLOCKED_PREFIX,
       CLOSE_SOFT_OVERRIDE,
       CLOSE_NOT_OWNED_SUFFIX,
+      nonOwnedCloseMessage("SPE-X", "PIPELINE"),
       UNMAPPED_SUSPENSE,
       SUSPENSE_1999_ZERO,
       HARD_LOCK_REQUIRES_SOFT,
