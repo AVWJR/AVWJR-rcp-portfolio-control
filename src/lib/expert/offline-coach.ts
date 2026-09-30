@@ -568,6 +568,10 @@ export function answerOffline(
     content = /dscr|debt yield|occupan|noi|bridge/.test(q)
       ? `${kpiCopy(ctx, bundle, q)}\n\n${anomaliesCopy(ctx, bundle)}`
       : anomaliesCopy(ctx, bundle);
+  } else if (/how do i set the deal waterfall/.test(q)) {
+    content = waterfallCopy(ctx);
+  } else if (/^(?:add a new deal|how do i add a new deal)\??$/.test(q)) {
+    content = addDealFlow(ctx);
   } else if (howto) {
     content = howto;
   } else if (isWaterfallQuery(q)) {
