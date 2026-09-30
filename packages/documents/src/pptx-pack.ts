@@ -244,6 +244,26 @@ function toneFill(tone: "navy" | "gold" | "fail" | "pass" | "watch" | "neutral")
   return NAVY;
 }
 
+/** Dollar ticks such as $4.0M. An all-zero series would otherwise scale 0–1. */
+function partyDollarAxis(series: { values: number[] }[]): {
+  valAxisLabelFormatCode: string;
+  valAxisMinVal: number;
+  valAxisMaxVal?: number;
+} {
+  const count = Math.max(0, ...series.map((ser) => ser.values.length));
+  let max = 0;
+  for (let i = 0; i < count; i++) {
+    let sum = 0;
+    for (const ser of series) sum += Math.abs(ser.values[i] ?? 0);
+    if (sum > max) max = sum;
+  }
+  if (max <= 0) {
+    return { valAxisMinVal: 0, valAxisMaxVal: 1_000_000, valAxisLabelFormatCode: '$#,##0.0,,"M"' };
+  }
+  const valAxisLabelFormatCode = max >= 1_000_000 ? '$#,##0.0,,"M"' : max >= 1_000 ? '$#,##0,"K"' : "$#,##0";
+  return { valAxisMinVal: 0, valAxisLabelFormatCode };
+}
+
 function drawRenderable(
   pres: PptxGenJS,
   slide: ReturnType<PptxGenJS["addSlide"]>,
@@ -277,6 +297,7 @@ function drawRenderable(
   const inner = { x: box.x, y: box.y + headerH, w: box.w, h: box.h - headerH - bottomPad };
 
   if (visual.mode === "bars") {
+    const partyChart = visual.series.some((ser) => ser.name === "Deal LPs") && visual.series.some((ser) => ser.name === "Co-GP");
     slide.addChart(pres.ChartType.bar, visual.series, {
       x: inner.x,
       y: inner.y,
@@ -289,8 +310,10 @@ function drawRenderable(
       chartColors: visual.series.map((s) => hex(s.color)),
       showValue: false,
       valAxisHidden: false,
-      catAxisLabelFontSize: PACK_TYPE.pptx.chartAxis,
+      catAxisLabelFontFace: "Calibri",
+      catAxisLabelFontSize: 10,
       valAxisLabelFontSize: PACK_TYPE.pptx.chartAxis,
+      ...(partyChart ? partyDollarAxis(visual.series) : {}),
     });
     return;
   }

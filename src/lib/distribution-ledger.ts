@@ -250,6 +250,13 @@ function activeRows(rows: StoredEvent[]): StoredEvent[] {
   return rows.filter((row) => !row.reversesEventId && !reversed.has(row.id));
 }
 
+/** No active postings means the waterfall page is the seed, not the last reversal row. */
+function priorForNextPost(rows: StoredEvent[], opening: DistributionRunningTotals): DistributionRunningTotals {
+  const active = activeRows(rows);
+  if (active.length === 0) return opening;
+  return stateFromRow(active[active.length - 1]!);
+}
+
 async function rawWaterfall(entityId: string): Promise<SpeWaterfallRecord | null> {
   const entity = await prisma.entity.findUnique({
     where: { id: entityId },
@@ -379,7 +386,8 @@ export async function loadDistributionBoard(entityId: string, lpDealCodes?: stri
   }
   const reversed = reversedIds(rows);
   const active = activeRows(rows);
-  const current = rows.length ? stateFromRow(rows[rows.length - 1]!) : opening;
+  // A full reversal leaves only the reversing row. The boxes on the waterfall page are the opening, not that row.
+  const current = active.length ? stateFromRow(active[active.length - 1]!) : opening;
   return {
     ready,
     entityId: record.entityId,
@@ -518,7 +526,7 @@ export async function previewDistribution(opts: {
   const active = activeRows(rows);
   const seed = await seedFor(record, opts.entityId);
   const opening = openingDistributionState(seed);
-  const prior = rows.length ? stateFromRow(rows[rows.length - 1]!) : opening;
+  const prior = priorForNextPost(rows, opening);
   const anchor = active.length ? { year: active[active.length - 1]!.year, month: active[active.length - 1]!.month } : null;
   assertPeriodNotBefore(anchor, opts.year, opts.month);
   const posting: DistributionPosting = {
@@ -567,7 +575,7 @@ export async function postDistribution(opts: {
       const anchor = active.length ? { year: active[active.length - 1]!.year, month: active[active.length - 1]!.month } : null;
       assertPeriodNotBefore(anchor, opts.year, opts.month);
       const opening = openingDistributionState(seed);
-      const prior = rows.length ? stateFromRow(rows[rows.length - 1]!) : opening;
+      const prior = priorForNextPost(rows, opening);
       let applied: AppliedDistribution;
       try {
         applied = applyDistribution(seed, prior, anchor, {
