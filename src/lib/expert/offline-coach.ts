@@ -7,6 +7,7 @@ import {
   isMonthEndUploadQuery,
   isPrefOwedQuery,
   isVagueQuery,
+  isWaterfallQuery,
 } from "./feature-intents";
 import { answerFromHowTos } from "./howtos";
 import { describePage, listNavTargets, withContext } from "./nav";
@@ -453,11 +454,11 @@ function deleteDealCopy(ctx: ExpertClientContext): string {
   const list = link("/deals", ctx, "Deals");
   const archive = link("/archive", ctx, "Deal Archive");
   const vault = link("/vault", ctx, "Vault");
-  return `Click **Delete** on a live ${list} row, on a Library row when the deal is not Owned, or **Archive this deal** on the deal profile (or on that SPE’s ${vault} when a deal is selected). Two-step confirm: read the impact, then type the SPE code.
+  return `Click **Delete** on a live ${list} row, on a Library row when the deal is not Owned, or inside the **Archive this deal** section on the deal profile (that heading is not the button; the button is **Delete**), or on that SPE’s ${vault} when a deal is selected. Two-step confirm: read the impact, then type the SPE code.
 
 That is a **soft-archive**, not a hard wipe. The SPE leaves live Deals and the OpCo combined roll-up. Books, ledgers, and vault documents stay. Find it under gold nav **Deal Archive** — ${archive} — not a tab under Deals. There is no Archive tab under Deals.
 
-Pipeline and Screened deals are not on the Deals list. Use the Library row **Delete** or the deal profile **Archive this deal**.
+Pipeline and Screened deals are not on the Deals list. Use the Library row **Delete**, or open the deal profile **Archive this deal** section and click **Delete**.
 
 From Deal Archive: study vault or books, then **Restore** with the same two-step confirm.
 
@@ -547,8 +548,6 @@ export function answerOffline(
     content = recordDistributionCopy(ctx);
   } else if (isPrefOwedQuery(q)) {
     content = prefOwedCopy(ctx);
-  } else if (/how do i set the deal waterfall/.test(q)) {
-    content = waterfallCopy(ctx);
   } else if (isLibraryCriteriaQuery(q)) {
     content = libraryCriteriaCopy(ctx);
   } else if (isDeleteDealQuery(q)) {
@@ -561,18 +560,22 @@ export function answerOffline(
     content = completenessCopy(ctx, bundle, userText);
   } else if (/import rent roll|rent-?roll csv|xlsx|map columns|workbook/.test(q)) {
     content = rentRollImportCopy(ctx);
-  } else if (howto) {
-    content = howto;
-  } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
-    content = addDealFlow(ctx);
-  } else if (/check ?list|month-end|month end|close books|soft close|hard lock/.test(q)) {
+  } else if (/check ?list|close books|what.?s left|left on the checklist|before (?:a )?hard lock/.test(q)) {
     content = checklistMode(ctx, bundle);
   } else if (/wrong on this page|audit/.test(q) || (q.includes("wrong") && q.includes("page"))) {
     content = pageAudit(ctx, bundle);
-  } else if (/anomal|dscr|debt yield|occupan|variance|what.?s wrong/.test(q)) {
+  } else if (/anomal|what is the debt yield|debt yield for|what is (?:the )?dscr|dscr for|what is (?:the )?occupancy|occupancy for|what is the variance/.test(q)) {
     content = /dscr|debt yield|occupan|noi|bridge/.test(q)
       ? `${kpiCopy(ctx, bundle, q)}\n\n${anomaliesCopy(ctx, bundle)}`
       : anomaliesCopy(ctx, bundle);
+  } else if (howto) {
+    content = howto;
+  } else if (isWaterfallQuery(q)) {
+    content = waterfallCopy(ctx);
+  } else if (/what.?s wrong/.test(q)) {
+    content = anomaliesCopy(ctx, bundle);
+  } else if (/add (a )?new deal|new deal|add deal|onboard (a )?(deal|spe|property)|new (spe|property)/.test(q)) {
+    content = addDealFlow(ctx);
   } else if (/lender pack/.test(q)) {
     content = packFlow("lender", ctx, bundle);
   } else if (/lp pack|investor pack|lp narrative/.test(q)) {

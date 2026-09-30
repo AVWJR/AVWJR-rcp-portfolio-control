@@ -18,6 +18,40 @@ export type ExpertHowTo = {
 };
 
 const HOWTO_REFERENCE_CAP = 6_000;
+const HOWTO_ANSWER_CAP = 1_200;
+
+const SYMPTOM_STOP_WORDS = new Set([
+  "this",
+  "that",
+  "with",
+  "from",
+  "your",
+  "have",
+  "been",
+  "only",
+  "before",
+  "after",
+  "month",
+  "deal",
+  "does",
+  "will",
+  "into",
+  "when",
+  "what",
+  "which",
+  "there",
+  "their",
+  "about",
+  "than",
+  "then",
+  "must",
+  "every",
+  "where",
+  "would",
+  "could",
+  "should",
+  "because",
+]);
 
 export function routeMatches(pattern: string, pathname: string): boolean {
   const source = pattern
@@ -63,17 +97,18 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     keywords: [
       /month-end close|soft close|soft-closed/i,
       /hard lock|hard close/i,
-      /post this period into the spe books|posted into the spe books|financials and rent roll/i,
-      /repost|corrected p&l|journals that are already/i,
+      /post(?:ed)? (?:this period )?into the spe books/i,
+      /repost|corrected p&l/i,
       /rr-1|rr-11|rr-12|rent roll is missing/i,
       /controller override|i am the controller/i,
       /does not post journals for this deal|pipeline, not owned/i,
       /reverse operating journals/i,
+      /reopen|\bticket\b/i,
     ],
     steps: [
       "Gold nav Deals → the Owned SPE card → Month-end close. Pick the month, then drop the T12 or GL and the rent roll.",
-      "Review the classification. Click Post this period into the SPE books.",
-      "Click Soft close, finish the checklist, then Hard lock.",
+      "Review the classification. Click Post this period into the SPE books. Posting again replaces the prior import journals. In a soft-closed month, Post auto-reverses those journals and reposts the package.",
+      "Click Soft close, finish the checklist, then Hard lock. A soft-closed correction needs the controller override and a reason. Reopen always needs a reason and a ticket.",
       "On Period Close (/close), Soft close and Hard lock are only for Owned deals. Pipeline, Screened, and Test are disabled.",
     ],
     facts: [
@@ -211,17 +246,18 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     apiRoutes: ["/api/deals/[code]/waterfall"],
     navPath: "Deals → Owned SPE card → LP/GP waterfall → Save",
     keywords: [
-      /lp\/gp waterfall|where do i set the lp/i,
+      /lp\/gp waterfall|set the (?:lp|deal) waterfall|deal waterfall/i,
       /waterfall template|simple pref|institutional catch-up|multi-hurdle|look-through|american \/ deal|european/i,
-      /unpaid pref|unreturned capital|left it blank|typed 0/i,
-      /distributed today|operating cash available|period cfads/i,
-      /catch-up %|catch-up row|50\/50/i,
+      /unpaid pref|unreturned capital|typed 0|typed zero/i,
+      /distributed today|operating cash available|period cfads|available to distribute/i,
+      /catch-up %|catch-up percent|catch-up row|50\/50/i,
       /co-gp partner|add a co-gp/i,
     ],
     steps: [
       "Gold nav Deals → the Owned SPE card → LP/GP waterfall. A non-Owned deal opens the waterfall from the deal profile.",
       "Click a template, or edit the tiers table for a custom structure. Add a Co-GP with a name, % of GP promote/catch-up/residual, and % of GP co-invest.",
-      "Read the preview and click Save.",
+      "Read the preview and click Save. Catch-up % is the GP share of each catch-up dollar. The GP target follows the residual row.",
+      "If SPE cash were distributed today, that number uses operating cash available. It excludes reserves, escrow, and tenant deposits. It is not period CFADS.",
     ],
     facts: [
       "Templates are 100% look-through (the default), Simple pref + promote, Institutional catch-up, Multi-hurdle IRR, American deal-by-deal, and European whole-fund. Custom means edit the tiers table.",
@@ -260,12 +296,12 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /opco proforma/i,
       /deal proforma/i,
       /hold years|exit assumptions|cfads growth/i,
-      /by spe table|pipeline deal last week/i,
+      /by spe table|pipeline deal/i,
       /co-gp's share|opco gp line/i,
     ],
     steps: [
       "Open the deal proforma from the SPE (/deals/{code}/proforma) or the OpCo proforma at /opco/proforma.",
-      "Change Hold (years), CFADS growth, and Exit proceeds. Click through the same saved waterfall.",
+      "Change Hold (years), CFADS growth, and Exit proceeds. Click through the same saved waterfall. The By SPE table includes Owned SPEs only. A Pipeline deal stays in the Library. Co-GP stays at the deal. The OpCo GP line is the RCP platform.",
     ],
     facts: [
       "Proformas are forward-looking and do not post to the books. They are not historical books.",
@@ -303,6 +339,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /where we are in the waterfall|which waterfall tier/i,
       /soft-archived|distributions are not posted/i,
       /another distribution was just recorded/i,
+      /undo|mistake|\breverse\b/i,
     ],
     steps: [
       "Gold nav Deals → the Owned SPE card → Distributions.",
@@ -411,15 +448,15 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     navPath: "Library → deal name → Deal status → Owned → reason → Confirm",
     keywords: [
       /deal statuses|pipeline, screened, owned/i,
-      /archived and test|which ones are in the opco/i,
-      /move it to owned|broker t12|screened deal/i,
-      /to test|willow bend \(spe-wbg\)|permanent demo/i,
-      /archive a pipeline|not on the deals list|passed on/i,
+      /archived and test|opco numbers|in the opco/i,
+      /move it to owned|broker t12|screened deal|pipeline to owned|change status/i,
+      /to test|permanent demo/i,
+      /archive a pipeline|not on the deals list/i,
     ],
     steps: [
       "Open Library to see Pipeline, Screened, Owned, Archived, and Test.",
-      "To move a Screened deal to Owned, open the deal name, set Deal status to Owned, enter a reason, and confirm.",
-      "To archive a Pipeline deal, click Delete on the Library row or Archive this deal on the deal profile. Type the SPE code. It lands in Deal Archive.",
+      "To move a Screened deal to Owned, open the deal name, set Deal status to Owned, enter a reason, and confirm. SPE-WBG, SPE-CVC, and SPE-HCR are permanent demo deals and cannot leave Owned. Test is reserved for the Phase 4 purge because Test would take the deal out of the roll-up.",
+      "To archive a Pipeline deal, click Delete on the Library row. On the deal profile, open the Archive this deal section and click the Delete button inside it. Type the SPE code. It lands in Deal Archive.",
     ],
     facts: [
       "Statuses are Pipeline, Screened, Owned, Archived, and Test. Only Owned deals are in the OpCo numbers, month-end close, packs, proforma, and dashboards.",
@@ -438,7 +475,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       {
         symptom: "Archived is the existing Deal Archive. Use Delete on the Deals list and type the SPE code. This screen does not archive or delete.",
         cause: "Deal status cannot be set to Archived directly.",
-        fix: "Use Delete on the Deals row for an Owned deal, or Delete on the Library row / Archive this deal for a non-Owned deal.",
+        fix: "Use Delete on the Deals row for an Owned deal. For a non-Owned deal, use Delete on the Library row, or open the Archive this deal section on the deal profile and click Delete.",
       },
       {
         symptom: "Say why you are changing the status.",
@@ -511,7 +548,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /backfill analysis snapshots|show test deals|export csv|no snapshot|stale · 180/i,
     ],
     steps: [
-      "On Library, click + Add criterion. Pick DSCR, type 1.25, and set Hard limit. Add State is Georgia (GA). Click Save preset.",
+      "On Library, click + Add criterion. Pick DSCR, type 1.25, and set Hard limit. Add State is Georgia (GA). Click Save preset. Cap rate is annualized NOI divided by purchase price. Stale is amber at 90 days and red at 180.",
       "Enter purchase price, metro, and AM fee on the deal profile (Library fields). OpCo G&A is Library → Fees → Save G&A.",
       "Click Backfill analysis snapshots, Export CSV, and Show Test deals. Columns and Reset columns sit beside them.",
     ],
@@ -566,14 +603,14 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     navPath: "Deals → Add Deal (/deals/new) → Create the SPE → Deal status",
     keywords: [
-      /how do i add a new deal/i,
+      /add a new deal/i,
       /pipeline instead of owned|mark it as pipeline|create the spe|step 5/i,
       /413|6 mb|blob/i,
       /broker package|just to screen|in the opco numbers/i,
     ],
     steps: [
       "Gold nav Deals → Add Deal (/deals/new). Drop the OM, rent roll, or T12. Files upload one at a time, 32 MB each.",
-      "On step 5, Create the SPE, set the Deal status select. Owned is the default. Pick Pipeline or Screened if you are only screening.",
+      "On step 5, Create the SPE, set the Deal status select. Owned is the default. Pick Pipeline or Screened if you are only screening. If a screened deal landed in the OpCo numbers, open the deal profile from the Library and change the status.",
       "Files over about 3.5 MB go through Vercel Blob when BLOB_READ_WRITE_TOKEN is set. The function body cap is about 4.5 MB.",
     ],
     facts: [
@@ -615,7 +652,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /type the spe code/i,
     ],
     steps: [
-      "Click Delete on the Deals row (Owned), the Library row (not Owned), or Archive this deal on the deal profile.",
+      "Click Delete on the Deals row (Owned) or the Library row (not Owned). On the deal profile, the Archive this deal section is a heading; the button inside it is Delete.",
       "Read the impact, then type the SPE code.",
       "Open gold nav Deal Archive (/archive) and click Restore with the same two-step confirm.",
     ],
@@ -674,12 +711,12 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /monthly investor pack/i,
       /pdf or powerpoint|powerpoint|pptx/i,
       /actually recorded|waterfall estimate|illustrative/i,
-      /pipeline deal in the monthly|isn't my new pipeline/i,
+      /pipeline deal.{0,60}(?:pack|monthly)/i,
       /email the quarterly|does not email|quarterly lender pack/i,
     ],
     steps: [
       "Gold nav Narratives → Monthly Investor Pack (or Quarterly Lender Pack).",
-      "Export PDF or PPTX. The scheduler writes the same files on a cadence.",
+      "Export PDF or PPTX. The scheduler writes the same files on a cadence. Distribution figures come from the distribution ledger. The current-period waterfall stays illustrative and separate.",
     ],
     facts: [
       "Packs are PDF and PPTX. They are not emailed. The scheduler writes files and does not email.",
@@ -719,24 +756,26 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /g&a as a percentage|where do i see opco g&a/i,
       /am fee coverage/i,
       /g&a ratio|over 100%/i,
-      /not on the opco dashboard|added a new deal as pipeline/i,
+      /not on the opco dashboard|pipeline.{0,40}dashboard/i,
+      /which accounts.{0,80}g&a|g&a.{0,40}accounts/i,
       /7010|5110/i,
     ],
     steps: [
       "Open Dashboard and switch to RCP-OPCO.",
-      "Read the G&A ratio tile and the AM fee coverage tile. Click a tile for the formula.",
+      "Read the G&A ratio tile, (5110 + 5610 + 5990) ÷ 7010, and the AM fee coverage tile, 7010 ÷ (5110 + 5610 + 5990), shown as a multiple (x). Click a tile for the formula. A Pipeline deal is in the Library, not on this dashboard.",
     ],
     facts: [
       "G&A as a percentage of AM fee income is (5110 + 5610 + 5990) ÷ 7010 on the OpCo dashboard.",
       "Over 100% means AM fees don't cover OpCo overhead.",
-      "AM fee coverage is 7010 ÷ (5110 + 5610 + 5990), shown as a multiple (x). It is blank when G&A is zero.",
+      "AM fee coverage is 7010 ÷ posted OpCo G&A (5110 + 5610 + 5990), shown as a multiple (x). The tile reads those posted accounts and stays blank until OpCo G&A expenses are posted in the books. A zero denominator has no multiple.",
+      "Library → Fees → Save G&A budget does not feed the AM fee coverage tile. That budget is used only by the Library.",
       "A Pipeline deal is not on the OpCo dashboard or the Deals page. It is in the Library. Only Owned deals roll up.",
     ],
     troubleshooting: [
       {
         symptom: "The AM fee coverage tile is blank.",
-        cause: "The tile is blank when OpCo G&A (5110 + 5610 + 5990) is zero.",
-        fix: "Enter OpCo G&A under Library → Fees → Save G&A. The blank is because G&A is zero.",
+        cause: "The tile reads posted OpCo accounts 5110, 5610, and 5990. It stays blank until those OpCo G&A expenses are posted in the books, because a zero G&A denominator has no multiple.",
+        fix: "Post OpCo G&A to 5110, 5610, or 5990 in the books. Library → Fees → Save G&A budget does not feed this tile. That budget is used only by the Library.",
       },
       {
         symptom: "The G&A ratio tile shows over 100%.",
@@ -836,7 +875,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       "Edit purchase price, metro, and AM fee, then save. Use Deal status to move toward Owned.",
     ],
     facts: [
-      "The deal profile holds library fields, fees, deal status, Save analysis snapshot, and Archive this deal for non-Owned deals.",
+      "The deal profile holds library fields, fees, deal status, and Save analysis snapshot. For a non-Owned deal, Archive this deal is a section heading, and the button inside that section is Delete.",
       "A posted distribution or a closed month blocks leaving Owned except through Archive.",
     ],
     troubleshooting: [
@@ -1168,9 +1207,9 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     facts: ["This screen is admin-only demo seed. It does not file taxes and it is not a daily close step."],
     troubleshooting: [
       {
-        symptom: "Seed was refused.",
-        cause: "The deploy already has books, or the seed secret did not match.",
-        fix: "Leave existing books alone. Do not reseed a portfolio that already has deals.",
+        symptom: "Demo data is already present. Check wipe only if you intend to replace it.",
+        cause: "The deploy already has demo books, so Load demo data does not seed them again.",
+        fix: "Leave existing books alone. Check wipe only if you intend to replace the demo database.",
       },
     ],
     sourceRefs: ["src/lib/expert/nav.ts:230"],
@@ -1216,6 +1255,56 @@ export function publicHowTo(entry: ExpertHowTo) {
   };
 }
 
+function symptomMatchesQuestion(symptom: string, question: string): boolean {
+  const q = question.toLowerCase();
+  const s = symptom.toLowerCase().trim();
+  if (!s || !q) return false;
+  if (q.includes(s)) return true;
+  const compact = s.replace(/\s+/g, " ");
+  for (let length = Math.min(48, compact.length); length >= 18; length -= 1) {
+    for (let index = 0; index + length <= compact.length; index += 1) {
+      if (index > 0 && compact[index - 1] !== " ") continue;
+      const phrase = compact.slice(index, index + length).trim();
+      if (phrase.length >= 18 && q.includes(phrase)) return true;
+    }
+  }
+  const words = compact.split(/[^a-z0-9%]+/).filter((word) => word.length >= 5 && !SYMPTOM_STOP_WORDS.has(word));
+  const hits = words.filter((word) => q.includes(word));
+  const strong = hits.filter((word) => word.length >= 6);
+  return hits.length >= 3 || strong.length >= 2;
+}
+
+/** Cut at a sentence end. Returns "" when the cap has no sentence boundary. */
+function truncateAtSentence(text: string, cap: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= cap) return trimmed;
+  const slice = trimmed.slice(0, cap);
+  let cut = -1;
+  for (let index = slice.length - 1; index >= 0; index -= 1) {
+    const ch = slice[index];
+    if (ch !== "." && ch !== "?" && ch !== "!") continue;
+    const next = slice[index + 1];
+    if (next === undefined || next === " " || next === "\n" || next === '"' || next === ")") {
+      cut = index + 1;
+      break;
+    }
+  }
+  if (cut >= 40) return slice.slice(0, cut).trim();
+  const paragraph = slice.lastIndexOf("\n\n");
+  if (paragraph >= 40) return slice.slice(0, paragraph).trim();
+  return "";
+}
+
+function formatHowToEntry(entry: ExpertHowTo): string {
+  const lines = [`### ${entry.feature} (${entry.id})`, entry.navPath];
+  entry.steps.forEach((step, index) => lines.push(`${index + 1}. ${step}`));
+  for (const fact of entry.facts) lines.push(`- ${fact}`);
+  for (const row of entry.troubleshooting) {
+    lines.push(`- If you see "${row.symptom}": ${row.cause} ${row.fix}`);
+  }
+  return lines.join("\n");
+}
+
 export function answerFromHowTos(question: string, pathname?: string): string | null {
   const found = findHowTos(question, pathname, 8);
   const scored = found.map((entry, index) => ({
@@ -1230,9 +1319,11 @@ export function answerFromHowTos(question: string, pathname?: string): string | 
   const entry = best.entry;
   const steps = entry.steps.map((step, index) => `${index + 1}. ${step}`).join("\n");
   const trouble = entry.troubleshooting
+    .filter((row) => symptomMatchesQuestion(row.symptom, question))
     .map((row) => `**${row.symptom}** ${row.cause} ${row.fix}`)
     .join("\n");
-  return `${entry.facts[0]}\n\n${entry.navPath}\n\n${steps}\n\n${entry.facts.join(" ")}\n\n${trouble}`;
+  const body = [entry.facts[0], "", entry.navPath, "", steps, trouble ? `\n${trouble}` : ""].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return truncateAtSentence(body, HOWTO_ANSWER_CAP);
 }
 
 export function buildHowToReference(pathname: string, question: string): string {
@@ -1248,18 +1339,20 @@ export function buildHowToReference(pathname: string, question: string): string 
     for (const hint of hints) lines.push(`- ${hint}`);
     lines.push("");
   }
+  let text = lines.join("\n").trimEnd();
   for (const entry of matches) {
-    lines.push(`### ${entry.feature} (${entry.id})`);
-    lines.push(entry.navPath);
-    entry.steps.forEach((step, index) => lines.push(`${index + 1}. ${step}`));
-    for (const fact of entry.facts) lines.push(`- ${fact}`);
-    for (const row of entry.troubleshooting) {
-      lines.push(`- If you see "${row.symptom}": ${row.cause} ${row.fix}`);
+    const block = formatHowToEntry(entry);
+    const next = `${text}\n\n${block}`;
+    if (next.length <= HOWTO_REFERENCE_CAP) {
+      text = next;
+      continue;
     }
-    lines.push("");
-    if (lines.join("\n").length >= HOWTO_REFERENCE_CAP) break;
+    const room = HOWTO_REFERENCE_CAP - text.length - 2;
+    if (room >= 80) {
+      const partial = truncateAtSentence(block, room);
+      if (partial) text = `${text}\n\n${partial}`;
+    }
+    break;
   }
-  const text = lines.join("\n");
-  if (text.length <= HOWTO_REFERENCE_CAP) return text;
-  return `${text.slice(0, HOWTO_REFERENCE_CAP - 3)}...`;
+  return text;
 }
