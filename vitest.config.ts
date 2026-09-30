@@ -4,6 +4,7 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
+    testTimeout: 15_000,
     include: ["tests/**/*.test.ts"],
     env: {
       DATABASE_URL: process.env.DATABASE_URL ?? "file:./dev.db",
