@@ -43,6 +43,7 @@ export function Shell({
     type: string;
     unitCount: number | null;
     strategy: string | null;
+    disabledReason?: string | null;
   }[];
   activeEntity: string;
   year: number;

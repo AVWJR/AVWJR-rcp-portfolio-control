@@ -4,7 +4,7 @@ import { effectiveDealStatus, isOwnedSpe } from "@/lib/owned-spe";
 import { ensureMasterCoaCurrent } from "@/lib/entities";
 import { openPeriod } from "@/lib/deals/periods";
 import { parseRentRollSource } from "@/lib/deals/workbook";
-import { hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
+import { assertOwnedDealMayClose, hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
 import { assertTieOutsAllowLock } from "@/lib/close/guards";
 import { putStoredFile } from "@/lib/file-store";
 import { postJournal } from "@/lib/post-journal";
@@ -1152,6 +1152,9 @@ export async function transitionClose(opts: {
   reason?: string;
   ticket?: string;
 }) {
+  if (opts.action !== "reopen") {
+    await assertOwnedDealMayClose(opts.entityId);
+  }
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (opts.action === "soft") {
     await softClosePeriod(period.id);

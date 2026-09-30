@@ -10,7 +10,7 @@
 
 import { isPermanentDemoSpe, permanentDemoDeleteMessage } from "@/lib/archive";
 import { prisma } from "@/lib/prisma";
-import { postStoredBrokerT12Journals } from "@/lib/t12-overlay";
+import { BROKER_T12_SOURCE, postStoredBrokerT12Journals } from "@/lib/t12-overlay";
 import { effectiveDealStatus, isDealStatus, type DealStatusValue } from "@/lib/owned-spe";
 
 export {
@@ -59,6 +59,36 @@ export function booksLockStatusMessage(code: string): string {
   return (
     `${code} has a posted distribution or a closed month. It can leave Owned only through the existing Archive ` +
     `(Delete on the Deals list, then type the SPE code). That keeps the ledger. This screen will not remove it.`
+  );
+}
+
+function periodStateLabel(status: string): string {
+  if (status === "SOFT_CLOSED") return "soft-closed";
+  if (status === "CLOSED") return "closed";
+  return status.toLowerCase();
+}
+
+/**
+ * Moving to Owned posts the saved broker T12 into its target month.
+ * That month has to be open, or the status change is refused and nothing is written.
+ */
+async function assertBrokerT12PeriodOpen(entityId: string, code: string): Promise<void> {
+  const stored = await prisma.budgetLine.findFirst({
+    where: { entityId, source: BROKER_T12_SOURCE },
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+    select: { year: true, month: true },
+  });
+  if (!stored) return;
+  const period = await prisma.period.findUnique({
+    where: { entityId_year_month: { entityId, year: stored.year, month: stored.month } },
+    select: { status: true },
+  });
+  if (!period || period.status === "OPEN") return;
+  const label = `${stored.year}-${String(stored.month).padStart(2, "0")}`;
+  throw new DealStatusError(
+    `${code} has a saved broker T12 for ${label}, and that month is ${periodStateLabel(period.status)}. ` +
+      `Marking the deal Owned would post that T12 into the books, and only an open month can take it. ` +
+      `The status was not changed.`,
   );
 }
 
@@ -131,27 +161,48 @@ export async function changeDealStatus(opts: {
     if (!opts.confirmOwned) {
       throw new DealStatusError(ownedEntryCopy(entity.code, entity.name));
     }
+    await assertBrokerT12PeriodOpen(entity.id, entity.code);
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.entity.update({
-      where: { id: entity.id },
-      data: { dealStatus: toStatus },
-    });
-    await tx.dealStatusEvent.create({
-      data: {
-        entityId: entity.id,
-        fromStatus,
-        toStatus,
-        reason,
-        actor: opts.actor ?? "principal",
-      },
-    });
-  });
-
+  const movingToOwned = toStatus === "OWNED" && fromStatus !== "OWNED";
   let postedT12Lines = 0;
-  if (toStatus === "OWNED" && fromStatus !== "OWNED") {
-    postedT12Lines = await postStoredBrokerT12Journals(entity.id);
+  try {
+    postedT12Lines = await prisma.$transaction(async (tx) => {
+      await tx.entity.update({
+        where: { id: entity.id },
+        data: { dealStatus: toStatus },
+      });
+      await tx.dealStatusEvent.create({
+        data: {
+          entityId: entity.id,
+          fromStatus,
+          toStatus,
+          reason,
+          actor: opts.actor ?? "principal",
+        },
+      });
+      if (!movingToOwned) return 0;
+      return postStoredBrokerT12Journals(entity.id, tx);
+    });
+  } catch (error) {
+    if (error instanceof DealStatusError) throw error;
+    if (movingToOwned) {
+      const label = await brokerT12PeriodLabel(entity.id);
+      throw new DealStatusError(
+        `${entity.code} could not be marked Owned because its broker T12 for ${label} failed to post. The status was not changed.`,
+      );
+    }
+    throw error;
   }
   return { code: entity.code, name: entity.name, fromStatus, toStatus, postedT12Lines };
+}
+
+async function brokerT12PeriodLabel(entityId: string): Promise<string> {
+  const stored = await prisma.budgetLine.findFirst({
+    where: { entityId, source: BROKER_T12_SOURCE },
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+    select: { year: true, month: true },
+  });
+  if (!stored) return "the saved month";
+  return `${stored.year}-${String(stored.month).padStart(2, "0")}`;
 }

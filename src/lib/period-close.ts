@@ -8,21 +8,68 @@ import {
   assertSoftClose,
 } from "@rcp/ledger";
 import { assertNoOpenSuspense } from "./close/guards";
-import { prisma } from "./prisma";
+import { effectiveDealStatus, isOwnedSpe } from "./owned-spe";
+import { prisma, type Db } from "./prisma";
 
-export async function ensureChecklist(periodId: string) {
-  const existing = await prisma.closeChecklistItem.findMany({ where: { periodId } });
-  if (existing.length > 0) return existing;
-  await prisma.closeChecklistItem.createMany({
-    data: CLOSE_CHECKLIST.map((item) => ({
-      periodId,
-      code: item.code,
-      label: item.label,
-      sortOrder: item.sortOrder,
-      status: "PENDING",
-    })),
+const DEAL_STATUS_WORD: Record<string, string> = {
+  PIPELINE: "Pipeline",
+  SCREENED: "Screened",
+  OWNED: "Owned",
+  ARCHIVED: "Archived",
+  TEST: "Test",
+};
+
+export function nonOwnedCloseMessage(code: string, status: string): string {
+  const word = DEAL_STATUS_WORD[status] ?? status;
+  return `${code} is ${word}, not Owned. Soft close and hard close are only for Owned deals. This month was not closed.`;
+}
+
+/** Reason shown on the Period Close entity picker. Null when the entity may close. */
+export function closePickerNote(entity: {
+  type: string;
+  code: string;
+  lifecycleStatus?: string | null;
+  dealStatus?: string | null;
+}): string | null {
+  if (entity.type !== "SPE" || isOwnedSpe(entity)) return null;
+  return nonOwnedCloseMessage(entity.code, effectiveDealStatus(entity));
+}
+
+export async function assertOwnedDealMayClose(entityId: string): Promise<void> {
+  const entity = await prisma.entity.findUnique({
+    where: { id: entityId },
+    select: { type: true, code: true, lifecycleStatus: true, dealStatus: true },
   });
-  return prisma.closeChecklistItem.findMany({
+  if (!entity || entity.type !== "SPE" || isOwnedSpe(entity)) return;
+  throw new Error(nonOwnedCloseMessage(entity.code, effectiveDealStatus(entity)));
+}
+
+function isUniqueClash(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ("code" in error && (error as { code: unknown }).code === "P2002") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /unique constraint failed/i.test(message);
+}
+
+export async function ensureChecklist(periodId: string, db: Db = prisma) {
+  const existing = await db.closeChecklistItem.findMany({ where: { periodId } });
+  if (existing.length > 0) return existing;
+  try {
+    await db.closeChecklistItem.createMany({
+      data: CLOSE_CHECKLIST.map((item) => ({
+        periodId,
+        code: item.code,
+        label: item.label,
+        sortOrder: item.sortOrder,
+        status: "PENDING" as const,
+      })),
+    });
+  } catch (error) {
+    // Two closes can create the same month's checklist at once. The unique
+    // (period, code) row wins; the loser keeps the rows that landed.
+    if (!isUniqueClash(error)) throw error;
+  }
+  return db.closeChecklistItem.findMany({
     where: { periodId },
     orderBy: { sortOrder: "asc" },
   });
@@ -72,6 +119,7 @@ async function recordEvent(opts: {
 export async function softClosePeriod(periodId: string) {
   const period = await prisma.period.findUnique({ where: { id: periodId } });
   if (!period) throw new Error("Period not found");
+  await assertOwnedDealMayClose(period.entityId);
   assertSoftClose(period.status);
   await ensureChecklist(periodId);
   const updated = await prisma.period.update({
@@ -88,6 +136,7 @@ export async function hardLockPeriod(periodId: string) {
     include: { checklist: true },
   });
   if (!period) throw new Error("Period not found");
+  await assertOwnedDealMayClose(period.entityId);
   assertHardLock(period.status);
   await ensureChecklist(periodId);
   const items = await prisma.closeChecklistItem.findMany({ where: { periodId } });

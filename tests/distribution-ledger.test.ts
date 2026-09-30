@@ -6,6 +6,7 @@ import {
   parseWholeCents,
   postDistribution,
   previewDistribution,
+  setDistributionWriteGate,
   rejectDistributionDelete,
   rejectDistributionEdit,
   reverseDistribution,
@@ -487,9 +488,20 @@ describe("distribution posting guards", () => {
 
   it("lets one of two simultaneous posts win and keeps the totals equal to that gross", async () => {
     const entity = await freshSpe("RC");
+    let releaseBoth: () => void = () => {};
+    const bothReadPrior = new Promise<void>((resolve) => {
+      releaseBoth = resolve;
+    });
+    let arrived = 0;
+    setDistributionWriteGate(async () => {
+      arrived += 1;
+      if (arrived >= 2) releaseBoth();
+      await bothReadPrior;
+    });
     try {
       const amounts = [dollars(18_900), dollars(20_000)];
       const results = await Promise.allSettled(amounts.map((grossCents) => post(entity.id, 2026, 1, grossCents)));
+      expect(arrived).toBe(2);
       const ok = results.filter((result) => result.status === "fulfilled");
       const bad = results.filter((result) => result.status === "rejected");
       expect(ok).toHaveLength(1);
@@ -504,6 +516,7 @@ describe("distribution posting guards", () => {
       expect(board.current.cumulativeLpCents + board.current.cumulativeRcpCents + board.current.cumulativeCoGpCents).toBe(posted);
       expect(posted === dollars(18_900) || posted === dollars(20_000)).toBe(true);
     } finally {
+      setDistributionWriteGate(null);
       await deleteSpe(entity.id);
     }
   });

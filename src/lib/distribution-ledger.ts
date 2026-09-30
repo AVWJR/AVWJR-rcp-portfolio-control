@@ -194,8 +194,18 @@ function isUniqueClash(error: unknown): boolean {
 
 const CONCURRENT_POST = "Another distribution was just recorded. Refresh and preview again.";
 
+type DistributionWriteGate = () => Promise<void>;
+
+/** Test seam. Unset in production so two posts only overlap across one event-loop turn. */
+let distributionWriteGate: DistributionWriteGate | null = null;
+
+export function setDistributionWriteGate(gate: DistributionWriteGate | null): void {
+  distributionWriteGate = gate;
+}
+
 /** Lets a concurrent post read the current sequence before this one locks the row. */
 function yieldToConcurrentPost(): Promise<void> {
+  if (distributionWriteGate) return distributionWriteGate();
   return new Promise((resolve) => setImmediate(resolve));
 }
 

@@ -3,7 +3,8 @@ import { answerOffline, type OfflineBundle } from "@/lib/expert/offline-coach";
 import { listNavTargets, readExpertContext } from "@/lib/expert/nav";
 import { EXPERT_SYSTEM_PROMPT } from "@/lib/expert/system-prompt";
 import { archiveSpe } from "@/lib/archive";
-import { changeDealStatus, effectiveDealStatus, ownedEntryCopy } from "@/lib/deal-status";
+import { changeDealStatus, DealStatusError, effectiveDealStatus, ownedEntryCopy } from "@/lib/deal-status";
+import { transitionClose } from "@/lib/close/workspace";
 import { getDataCompleteness, getEntitySummary } from "@/lib/expert/tools";
 import { createEntityWithCoa } from "@/lib/entities";
 import { postJournal } from "@/lib/post-journal";
@@ -11,7 +12,7 @@ import { openPeriod } from "@/lib/deals/periods";
 import { buildOpCoDashboard } from "@/lib/dashboards";
 import { consolidationEntityIds } from "@/lib/queries";
 import { prisma } from "@/lib/prisma";
-import { postBrokerT12OverlayJournals } from "@/lib/t12-overlay";
+import { postBrokerT12OverlayJournals, setBrokerT12PostFailure } from "@/lib/t12-overlay";
 import {
   LIBRARY_COLUMNS,
   defaultColumnLayout,
@@ -103,6 +104,7 @@ async function cleanupSpe(id: string) {
     await tx.distributionAllocation.deleteMany({ where: { event: { entityId: id } } });
     await tx.distributionAudit.deleteMany({ where: { entityId: id } });
     await tx.distributionEvent.deleteMany({ where: { entityId: id } });
+    await tx.unit.deleteMany({ where: { entityId: id } });
     await tx.budgetLine.deleteMany({ where: { entityId: id } });
     await tx.journalLine.deleteMany({
       where: { OR: [{ journal: { entityId: id } }, { account: { entityId: id } }] },
@@ -139,6 +141,7 @@ afterAll(async () => {
     await prisma.distributionAllocation.deleteMany({ where: { event: { entityId: { in: idsToDelete } } } });
     await prisma.distributionAudit.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.distributionEvent.deleteMany({ where: { entityId: { in: idsToDelete } } });
+    await prisma.unit.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.budgetLine.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.journalLine.deleteMany({
       where: {
@@ -747,6 +750,216 @@ describe("CSV, Test deals, broker T12 snapshots, and posting on Owned", () => {
       reason: "leave the books",
       confirmRollup: true,
     });
+    await cleanupSpe(entity.id);
+  });
+
+  it("rolls back Owned when the broker T12 post fails", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-F${suffix}`.slice(0, 12);
+    const entity = await createEntityWithCoa({
+      code,
+      name: `Fail T12 ${suffix} LLC`,
+      type: "SPE",
+      parentId: opco.id,
+      dealStatus: "PIPELINE",
+    });
+    idsToDelete.push(entity.id);
+    await prisma.budgetLine.create({
+      data: {
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        accountCode: "4010",
+        amount: 10_000_000n,
+        source: "broker_t12",
+      },
+    });
+    setBrokerT12PostFailure("disk full");
+    try {
+      await expect(
+        changeDealStatus({ code, toStatus: "OWNED", reason: "closed", confirmOwned: true }),
+      ).rejects.toBeInstanceOf(DealStatusError);
+      await expect(
+        changeDealStatus({ code, toStatus: "OWNED", reason: "closed", confirmOwned: true }),
+      ).rejects.toThrow(
+        `${code} could not be marked Owned because its broker T12 for 2026-08 failed to post. The status was not changed.`,
+      );
+    } finally {
+      setBrokerT12PostFailure(null);
+    }
+    const row = await prisma.entity.findUniqueOrThrow({ where: { id: entity.id } });
+    expect(row.dealStatus).toBe("PIPELINE");
+    expect(await prisma.journal.count({ where: { entityId: entity.id } })).toBe(0);
+    expect(await prisma.dealStatusEvent.count({ where: { entityId: entity.id } })).toBe(0);
+    const ids = await consolidationEntityIds(opco.id);
+    expect(ids).not.toContain(entity.id);
+    const rollup = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
+    expect(rollup.properties.map((property) => property.entityCode)).not.toContain(code);
+    await cleanupSpe(entity.id);
+  });
+
+  it("refuses Owned when the saved broker T12 month is not open", async () => {
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-C${suffix}`.slice(0, 12);
+    const entity = await createEntityWithCoa({
+      code,
+      name: `Closed T12 ${suffix} LLC`,
+      type: "SPE",
+      dealStatus: "PIPELINE",
+    });
+    idsToDelete.push(entity.id);
+    await prisma.budgetLine.create({
+      data: {
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        accountCode: "4010",
+        amount: 10_000_000n,
+        source: "broker_t12",
+      },
+    });
+    const period = await openPeriod(entity.id, 2026, 8);
+    await prisma.period.update({ where: { id: period.id }, data: { status: "CLOSED" } });
+
+    await expect(
+      changeDealStatus({ code, toStatus: "OWNED", reason: "closed month", confirmOwned: true }),
+    ).rejects.toBeInstanceOf(DealStatusError);
+    await expect(
+      changeDealStatus({ code, toStatus: "OWNED", reason: "closed month", confirmOwned: true }),
+    ).rejects.toThrow(/2026-08.*closed.*status was not changed/i);
+    expect((await prisma.entity.findUnique({ where: { id: entity.id } }))?.dealStatus).toBe("PIPELINE");
+    expect(await prisma.dealStatusEvent.count({ where: { entityId: entity.id } })).toBe(0);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "broker_t12_overlay" } })).toBe(0);
+
+    await prisma.period.update({ where: { id: period.id }, data: { status: "SOFT_CLOSED" } });
+    await expect(
+      changeDealStatus({ code, toStatus: "OWNED", reason: "soft month", confirmOwned: true }),
+    ).rejects.toThrow(/soft-closed.*status was not changed/i);
+    expect((await prisma.entity.findUnique({ where: { id: entity.id } }))?.dealStatus).toBe("PIPELINE");
+
+    await prisma.period.update({ where: { id: period.id }, data: { status: "OPEN" } });
+    const owned = await changeDealStatus({
+      code,
+      toStatus: "OWNED",
+      reason: "month is open",
+      confirmOwned: true,
+    });
+    expect(owned.postedT12Lines).toBeGreaterThan(0);
+    expect((await prisma.entity.findUnique({ where: { id: entity.id } }))?.dealStatus).toBe("OWNED");
+    await changeDealStatus({
+      code,
+      toStatus: "TEST",
+      reason: "leave the books",
+      confirmRollup: true,
+    });
+    await cleanupSpe(entity.id);
+  });
+
+  it("refuses soft and hard close for a deal that is not Owned", async () => {
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-K${suffix}`.slice(0, 12);
+    const entity = await createEntityWithCoa({
+      code,
+      name: `No Close ${suffix} LLC`,
+      type: "SPE",
+      dealStatus: "PIPELINE",
+    });
+    idsToDelete.push(entity.id);
+    await expect(
+      transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "soft" }),
+    ).rejects.toThrow(/Pipeline, not Owned/);
+    await expect(
+      transitionClose({ entityId: entity.id, year: 2026, month: 8, action: "hard" }),
+    ).rejects.toThrow(/not Owned/);
+    expect(
+      await prisma.period.count({
+        where: { entityId: entity.id, status: { in: ["SOFT_CLOSED", "CLOSED"] } },
+      }),
+    ).toBe(0);
+    expect((await prisma.entity.findUnique({ where: { id: entity.id } }))?.dealStatus).toBe("PIPELINE");
+    await cleanupSpe(entity.id);
+  });
+
+  it("fills occupancy from the imported rent roll on a non-owned snapshot", async () => {
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-O${suffix}`.slice(0, 12);
+    const entity = await createEntityWithCoa({
+      code,
+      name: `Occ ${suffix} LLC`,
+      type: "SPE",
+      dealStatus: "PIPELINE",
+      unitCount: 3,
+    });
+    idsToDelete.push(entity.id);
+    const asOf = new Date("2026-08-15T16:00:00.000Z");
+    await prisma.unit.createMany({
+      data: [
+        {
+          entityId: entity.id,
+          unitCode: "101",
+          floorplan: "A",
+          beds: 1,
+          bathsTenths: 10,
+          sqft: 700,
+          status: "OCCUPIED",
+          marketRent: 100_000n,
+          inPlaceRent: 100_000n,
+          concessionCents: 0n,
+          asOfDate: asOf,
+        },
+        {
+          entityId: entity.id,
+          unitCode: "102",
+          floorplan: "A",
+          beds: 1,
+          bathsTenths: 10,
+          sqft: 700,
+          status: "OCCUPIED",
+          marketRent: 100_000n,
+          inPlaceRent: 100_000n,
+          concessionCents: 0n,
+          asOfDate: asOf,
+        },
+        {
+          entityId: entity.id,
+          unitCode: "103",
+          floorplan: "A",
+          beds: 1,
+          bathsTenths: 10,
+          sqft: 700,
+          status: "VACANT",
+          marketRent: 100_000n,
+          inPlaceRent: 0n,
+          concessionCents: 0n,
+          asOfDate: asOf,
+        },
+      ],
+    });
+    const empty = await captureDealSnapshot({ entityId: entity.id, year: 2026, month: 8, actor: "library-test" });
+    expect(empty.occupancyBps).toBe(Math.round((2 * 10_000) / 3));
+    expect(empty.capRateBps).toBeNull();
+    expect(empty.noiCents).toBeNull();
+
+    await prisma.budgetLine.create({
+      data: {
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        accountCode: "4010",
+        amount: 10_000_000n,
+        source: "broker_t12",
+      },
+    });
+    await prisma.entity.update({
+      where: { id: entity.id },
+      data: { purchasePriceCents: 1_200_000_000n },
+    });
+    const priced = await captureDealSnapshot({ entityId: entity.id, year: 2026, month: 8, actor: "library-test" });
+    expect(priced.basisLabel).toBe("Broker T12 (not in the books)");
+    expect(priced.occupancyBps).toBe(Math.round((2 * 10_000) / 3));
+    expect(priced.capRateBps).toBe(1000);
     await cleanupSpe(entity.id);
   });
 });

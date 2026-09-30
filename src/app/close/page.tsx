@@ -1,6 +1,6 @@
 import { ChecklistSelect, HardLockButton, ReopenForm, SoftCloseButton } from "@/components/close-forms";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
-import { periodStatusLabel } from "@/lib/period-close";
+import { closePickerNote, periodStatusLabel } from "@/lib/period-close";
 import { prisma } from "@/lib/prisma";
 
 export default async function ClosePage({
@@ -20,6 +20,7 @@ export default async function ClosePage({
         const selected = `${ctx.year}-${String(ctx.month).padStart(2, "0")}`;
         const focus = periods.filter((p) => p.entity.code === ctx.entity.code && p.label === selected);
         const current = focus[0] ?? null;
+        const closeBlock = current ? closePickerNote(current.entity) : closePickerNote(ctx.entity);
         return (
           <div className="space-y-6">
             <div>
@@ -69,9 +70,10 @@ export default async function ClosePage({
                     </h2>
                     <p className="text-sm text-ink-600">{periodStatusLabel(current.status)}</p>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    {current.status === "OPEN" ? <SoftCloseButton periodId={current.id} /> : null}
-                    {current.status === "SOFT_CLOSED" ? <HardLockButton periodId={current.id} /> : null}
+                  <div className="flex flex-wrap items-center gap-3">
+                    {closeBlock ? <p className="max-w-xl text-sm text-ink-700">{closeBlock}</p> : null}
+                    {!closeBlock && current.status === "OPEN" ? <SoftCloseButton periodId={current.id} /> : null}
+                    {!closeBlock && current.status === "SOFT_CLOSED" ? <HardLockButton periodId={current.id} /> : null}
                     {current.status !== "OPEN" ? <ReopenForm periodId={current.id} /> : null}
                   </div>
                 </div>

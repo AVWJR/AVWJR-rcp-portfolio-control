@@ -1,6 +1,6 @@
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import ws from "ws";
 import { isPostgresUrl, resolveDatabaseUrl } from "./db-provider";
 
@@ -23,6 +23,9 @@ function createPrismaClient(): PrismaClient {
 }
 
 export { createPrismaClient };
+
+/** Global client or the client bound to an interactive transaction. */
+export type Db = Prisma.TransactionClient | PrismaClient;
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
