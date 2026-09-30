@@ -14,6 +14,7 @@ import {
   type WaterfallConfig,
   type WaterfallRunResult,
   type WaterfallTierKind,
+  catchUpGrossCents,
   residualPromoteSplit,
   resolveUnpaidPrefCents,
   resolveUnreturnedCapitalCents,
@@ -132,13 +133,42 @@ export function catchUpTargetCents(config: WaterfallConfig, lpPrefPaidCents: big
   const gpBps = residual.gpSplitBps;
   const total = lpBps + gpBps;
   const rate = Math.min(10_000, Math.max(0, Math.round(config.catchUpBps)));
-  // 100% catch-up: GP target is P·g/l. Below 100%, the GP only receives c of each
-  // catch-up dollar, so the gauge target is c·g·P/(c−g) and stays in catch-up longer.
-  if (rate < 10_000 && total > 0) {
+  // The engine pays no catch-up when c ≤ g, including a 0% catch-up that is still enabled.
+  // Falling through to P·g/l would invent a target the waterfall never pays.
+  if (rate <= 0 || total <= 0) return 0n;
+  if (rate < 10_000) {
     const denom = BigInt(rate) * BigInt(total) - BigInt(gpBps) * 10_000n;
-    if (denom > 0n) return (BigInt(rate) * BigInt(gpBps) * pref) / denom;
+    if (denom <= 0n) return 0n;
+    // Below 100%, the GP only receives c of each catch-up dollar, so the target is c·g·P/(c−g).
+    return (BigInt(rate) * BigInt(gpBps) * pref) / denom;
   }
+  // 100% catch-up: GP target is P·g/l.
   return (pref * BigInt(gpBps)) / BigInt(lpBps);
+}
+
+/**
+ * GP cents the next catch-up dollar would still pay. The engine floors each cent,
+ * so a stored target can sit 1¢ above what will ever be paid.
+ */
+function catchUpGpStillDueCents(state: DistributionRunningTotals, config: WaterfallConfig): bigint {
+  if (!config.catchUpEnabled) return 0n;
+  const residual = residualPromoteSplit(config.tiers);
+  if (!residual || residual.gpSplitBps <= 0) return 0n;
+  const rate = Math.min(10_000, Math.max(0, Math.round(config.catchUpBps)));
+  if (rate <= 0) return 0n;
+  const catchUp = state.byTier.catchUp;
+  const promote = state.byTier.promote;
+  // G0 is GP catch-up plus GP promote already earned. Once promote has been paid,
+  // a leftover cent in the catch-up formula is rounding, not another catch-up tier.
+  const gross = catchUpGrossCents({
+    lpPrefPaidCents: state.byTier.pref.lpCents,
+    gpPromoteSoFarCents: catchUp.rcpCents + catchUp.coGpCents + promote.rcpCents + promote.coGpCents,
+    priorCatchUpGrossCents: catchUp.lpCents + catchUp.rcpCents + catchUp.coGpCents,
+    lpSplitBps: residual.lpSplitBps,
+    gpSplitBps: residual.gpSplitBps,
+    catchUpBps: rate,
+  });
+  return (gross * BigInt(rate)) / 10_000n;
 }
 
 export function lpDpiBps(lpDistributedCents: bigint, contributedCents: bigint): number | null {
@@ -163,8 +193,8 @@ export function capitalBackCents(
 export function waterfallPosition(state: DistributionRunningTotals, config: WaterfallConfig): WaterfallPosition {
   if (state.unreturnedCapitalCents > 0n) return "ROC";
   if (state.prefUnpaidCents > 0n) return "PREF";
-  // catchUpPaidCents is the GP's catch-up, compared with the GP target.
-  if (config.catchUpEnabled && state.catchUpPaidCents < state.catchUpTargetCents) return "CATCH_UP";
+  // Stay in catch-up only while the engine would still pay the GP at least 1¢.
+  if (catchUpGpStillDueCents(state, config) >= 1n) return "CATCH_UP";
   return "PROMOTE";
 }
 

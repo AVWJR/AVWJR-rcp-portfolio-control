@@ -5,6 +5,7 @@ import {
   loadDistributionBoard,
   parseWholeCents,
   postDistribution,
+  previewDistribution,
   rejectDistributionDelete,
   rejectDistributionEdit,
   reverseDistribution,
@@ -15,6 +16,7 @@ import { loadSpeWaterfall, saveSpeWaterfall, waterfallAmountsFromStored } from "
 import {
   applyDistribution,
   applyWaterfallTemplate,
+  catchUpTargetCents,
   dollars,
   openingDistributionState,
   runDistributionSequence,
@@ -345,6 +347,86 @@ describe("catch-up across distributions", () => {
     const profits = dollars(80_000) + dollars(140_000);
     expect(gpReceived(rest.state) * 10_000n / profits).toBe(2_000n);
   });
+
+  function partialCatchUp(catchUpBps: number) {
+    const config = { ...applyWaterfallTemplate("institutional_catchup"), catchUpBps };
+    const ledger: DistributionLedgerSeed = {
+      config,
+      lpContributedCents: LP,
+      openingUnreturnedCents: 0n,
+      openingUnpaidPrefCents: 0n,
+      europeanPromoteOpen: true,
+    };
+    return { config, ledger };
+  }
+
+  it("finishes a single $140,000 distribution at promote for 75%, 99.99%, and 33.33% catch-up", () => {
+    for (const catchUpBps of [7_500, 9_999, 3_333]) {
+      const { config, ledger } = partialCatchUp(catchUpBps);
+      const applied = applyDistribution(ledger, prefAlreadyPaid(config, dollars(80_000)), { year: 2026, month: 6 }, {
+        year: 2026,
+        month: 6,
+        grossCents: dollars(140_000),
+        source: "OPERATING_CASH",
+      });
+      expect(waterfallPosition(applied.state, config)).toBe("PROMOTE");
+    }
+    const seventyFive = partialCatchUp(7_500);
+    const rounded = applyDistribution(seventyFive.ledger, prefAlreadyPaid(seventyFive.config, dollars(80_000)), { year: 2026, month: 6 }, {
+      year: 2026,
+      month: 6,
+      grossCents: dollars(140_000),
+      source: "OPERATING_CASH",
+    });
+    expect(rounded.state.catchUpTargetCents).toBe(2_181_818n);
+    expect(rounded.state.catchUpPaidCents).toBe(2_181_817n);
+    expect(waterfallPosition(rounded.state, seventyFive.config)).toBe("PROMOTE");
+  });
+
+  it("reaches promote after a randomized sequence that ends with a $1,000,000 check", () => {
+    const random = (seed: number) => {
+      let state = seed >>> 0;
+      return () => {
+        state = (Math.imul(1664525, state) + 1013904223) >>> 0;
+        return state / 4294967296;
+      };
+    };
+    for (const catchUpBps of [7_500, 9_999, 3_333, 5_000, 10_000]) {
+      const { config, ledger } = partialCatchUp(catchUpBps);
+      for (let sample = 1; sample <= 8; sample++) {
+        const next = random(sample * 1_000 + catchUpBps);
+        const checks: bigint[] = [];
+        const count = 3 + Math.floor(next() * 5);
+        for (let i = 0; i < count; i++) checks.push(BigInt(1 + Math.floor(next() * 250_000)) * 100n);
+        checks.push(dollars(1_000_000));
+        let state = prefAlreadyPaid(config, dollars(80_000));
+        for (const grossCents of checks) {
+          state = applyDistribution(ledger, state, { year: 2026, month: 6 }, {
+            year: 2026,
+            month: 6,
+            grossCents,
+            source: "OPERATING_CASH",
+          }).state;
+        }
+        expect(waterfallPosition(state, config)).toBe("PROMOTE");
+      }
+    }
+  });
+
+  it("sets a zero catch-up target when the catch-up rate is at or below the 20% GP share", () => {
+    for (const catchUpBps of [2_000, 1_000, 0]) {
+      const { config, ledger } = partialCatchUp(catchUpBps);
+      expect(catchUpTargetCents(config, dollars(80_000))).toBe(0n);
+      const applied = applyDistribution(ledger, prefAlreadyPaid(config, dollars(80_000)), { year: 2026, month: 6 }, {
+        year: 2026,
+        month: 6,
+        grossCents: dollars(50_000),
+        source: "OPERATING_CASH",
+      });
+      expect(applied.state.catchUpTargetCents).toBe(0n);
+      expect(waterfallPosition(applied.state, config)).toBe("PROMOTE");
+    }
+  });
 });
 
 describe("distribution posting guards", () => {
@@ -541,6 +623,48 @@ describe("distribution posting guards", () => {
       expect(sum("PROMOTE", "lpCents")).toBe(dollars(15_120));
       expect(sum("PROMOTE", "rcpCents")).toBe(dollars(3_780));
       expect(sum("PROMOTE", "coGpCents")).toBe(0n);
+    } finally {
+      await deleteSpe(entity.id);
+    }
+  });
+
+  it("shows the waterfall boxes on the board after every distribution is reversed", async () => {
+    const entity = await freshSpe("BX");
+    try {
+      const posted = await post(entity.id, 2026, 1, MONTHLY);
+      const original = posted.events.find((event) => !event.reversesEventId);
+      if (!original) throw new Error("expected a posting");
+      await reverseDistribution({
+        entityId: entity.id,
+        eventId: original.id,
+        actor: "principal",
+        role: "principal",
+      });
+      const tmpl = applyWaterfallTemplate("institutional_catchup");
+      await saveSpeWaterfall(entity.id, {
+        ...tmpl,
+        lpContributedCents: LP,
+        unreturnedCapitalCents: 0n,
+        unpaidPrefCents: 0n,
+        prefPaidToDateCents: 0n,
+      });
+      const board = await loadDistributionBoard(entity.id);
+      if (!board) throw new Error("expected a board");
+      const preview = await previewDistribution({
+        entityId: entity.id,
+        year: 2026,
+        month: 2,
+        grossCents: MONTHLY,
+        source: "OPERATING_CASH",
+      });
+      expect(board.hasEvents).toBe(false);
+      expect(board.current.unreturnedCapitalCents).toBe(0n);
+      expect(board.current.prefUnpaidCents).toBe(0n);
+      expect(board.position).toBe("PROMOTE");
+      expect(board.dpiBps).toBe(0);
+      expect(preview.position).toBe("PROMOTE");
+      expect(preview.applied.state.unreturnedCapitalCents).toBe(0n);
+      expect(preview.applied.state.prefUnpaidCents).toBe(0n);
     } finally {
       await deleteSpe(entity.id);
     }

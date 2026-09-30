@@ -175,6 +175,31 @@ describe("distribution pack charts", () => {
     expect(xml).toContain("<c:legend");
     expect(xml).toMatch(/sz="1000"/);
     expect(xml).toContain("Calibri");
+    expect(xml).toContain("$#,##0,&quot;K&quot;");
+    expect(xml).toContain('<c:min val="0"/>');
+  });
+
+  it("formats a multi-million party axis in dollars and does not scale an empty axis from 0 to 1", async () => {
+    const millions = partyActuals([
+      {
+        period: "2026-08",
+        accruedCents: dollars(24_000),
+        paidCents: dollars(24_000),
+        unpaidCents: 0n,
+        lpCents: dollars(3_200_000),
+        rcpCents: dollars(800_000),
+        coGpCents: dollars(0),
+      },
+    ]);
+    const filled = pptxXml(await renderPptxPack(partyChartPack(fixtureSnapshot({ distributionActuals: millions }))));
+    expect(filled).toMatch(/<c:valAx>[\s\S]*?<c:numFmt formatCode="\$#,##0\.0,,&quot;M&quot;" sourceLinked="0"\/>[\s\S]*?<\/c:valAx>/);
+
+    const empty = pptxXml(await renderPptxPack(partyChartPack(fixtureSnapshot())));
+    const emptyAxis = empty.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)?.[0] ?? "";
+    expect(emptyAxis).toContain('<c:min val="0"/>');
+    expect(emptyAxis).toContain('<c:max val="1000000"/>');
+    expect(emptyAxis).not.toContain('<c:max val="1"/>');
+    expect(emptyAxis).toContain('formatCode="$#,##0.0,,&quot;M&quot;"');
   });
 
   it("lines the Start bar up with its label when no distributions have been posted", async () => {

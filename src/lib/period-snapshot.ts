@@ -123,7 +123,8 @@ function rollupActuals(boards: DistributionBoard[]): DistributionActuals {
     base.capitalContributedCents > 0n ? Number((base.cumulativeLpCents * 10_000n) / base.capitalContributedCents) : null;
   if (base.unreturnedCapitalCents > 0n) base.position = "ROC";
   else if (base.prefUnpaidCents > 0n) base.position = "PREF";
-  else if (base.catchUpTargetCents > base.catchUpPaidCents) base.position = "CATCH_UP";
+  // Each board already treats a 1¢ target gap as finished. Summing the targets would stick the combined gauge on Catch-up.
+  else if (boards.some((board) => board.position === "CATCH_UP")) base.position = "CATCH_UP";
   else base.position = base.hasEvents ? "PROMOTE" : "ROC";
   return base;
 }

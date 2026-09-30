@@ -386,7 +386,8 @@ export async function loadDistributionBoard(entityId: string, lpDealCodes?: stri
   }
   const reversed = reversedIds(rows);
   const active = activeRows(rows);
-  const current = rows.length ? stateFromRow(rows[rows.length - 1]!) : opening;
+  // A full reversal leaves only the reversing row. The boxes on the waterfall page are the opening, not that row.
+  const current = active.length ? stateFromRow(active[active.length - 1]!) : opening;
   return {
     ready,
     entityId: record.entityId,
