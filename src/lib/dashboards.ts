@@ -45,6 +45,7 @@ import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
 import { loadBrokerT12Overlay, type BrokerT12OverlaySummary } from "./t12-overlay";
 import { ledgerCapitalByEntity } from "./distribution-read";
+import { isOwnedSpe } from "./deal-status";
 import { loadLiveSpeWaterfalls, rollupWaterfallPools, europeanPromoteOpen, applyWaterfallToPools, loadSpeWaterfall } from "./waterfall";
 
 export type LiveRatio = {
@@ -574,7 +575,7 @@ export async function buildOpCoDashboard(opts: {
     where: { id: opts.opcoId },
     include: { children: true },
   });
-  const spes = opco.children.filter((c) => c.type === "SPE" && c.lifecycleStatus !== "ARCHIVED").sort((a, b) => a.code.localeCompare(b.code));
+  const spes = opco.children.filter((c) => isOwnedSpe(c)).sort((a, b) => a.code.localeCompare(b.code));
   const spePacks = (
     await Promise.all(
       spes.map(async (spe) => {
@@ -665,7 +666,8 @@ export async function buildOpCoDashboard(opts: {
       unitCount: p.unitCount,
     })),
   );
-  const loans = await loadPortfolioDebt(opts.year, opts.month);
+  const ownedCodes = new Set(spes.map((spe) => spe.code));
+  const loans = (await loadPortfolioDebt(opts.year, opts.month)).filter((loan) => ownedCodes.has(loan.entityCode));
   const lookThroughUpb = loans.reduce((acc, l) => acc + l.currentUpbCents, 0n);
   const lookThroughDs = loans.reduce((acc, l) => acc + l.interestCents + l.principalCents, 0n);
   const lookThroughCapex = spePacks.reduce((acc, row) => {

@@ -20,6 +20,7 @@ import {
   type WaterfallTemplateId,
   type WaterfallTier,
 } from "@rcp/ledger";
+import { ownedSpeWhere } from "./deal-status";
 import { prisma } from "./prisma";
 import { DealValidationError } from "./deals/create-spe";
 import { ledgerCapitalByEntity, type LedgerCapitalRow } from "./distribution-read";
@@ -316,7 +317,7 @@ export async function loadSpeWaterfallByCode(code: string): Promise<SpeWaterfall
 
 export async function loadLiveSpeWaterfalls(parentOpCoId: string): Promise<SpeWaterfallRecord[]> {
   const spes = await prisma.entity.findMany({
-    where: { parentId: parentOpCoId, type: "SPE", lifecycleStatus: "LIVE" },
+    where: { parentId: parentOpCoId, ...ownedSpeWhere() },
     include: { waterfall: true },
     orderBy: { code: "asc" },
   });

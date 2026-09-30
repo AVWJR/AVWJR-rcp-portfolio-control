@@ -36,6 +36,7 @@ import {
 } from "@rcp/reporting";
 import { loadDistributionBoard, type DistributionBoard } from "./distribution-ledger";
 import { loadCapexProjects } from "./capex";
+import { isOwnedSpe } from "./deal-status";
 import { buildOpCoDashboard, buildPropertyDashboard } from "./dashboards";
 import { loadPortfolioDebt } from "./debt-view";
 import { buildOperatingPackage } from "./operating";
@@ -559,7 +560,7 @@ async function loadOpCoSnapshot(opts: {
     where: { id: opts.entityId },
     include: { children: true },
   });
-  const spes = opco.children.filter((c) => c.type === "SPE" && c.lifecycleStatus !== "ARCHIVED").sort((a, b) => a.code.localeCompare(b.code));
+  const spes = opco.children.filter((c) => isOwnedSpe(c)).sort((a, b) => a.code.localeCompare(b.code));
   const spePacks = await Promise.all(
     spes.map((spe) =>
       buildOperatingPackage({ entityId: spe.id, year: opts.year, month: opts.month, consolidated: false }).then((pack) => ({

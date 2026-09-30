@@ -1,3 +1,4 @@
+import { isOwnedSpe, ownedSpeWhere } from "@/lib/owned-spe";
 import { prisma } from "@/lib/prisma";
 
 export const ARCHIVE_ACTOR_PRINCIPAL = "principal";
@@ -48,12 +49,15 @@ export function isLiveSpe(entity: { type: string; lifecycleStatus?: string | nul
   return entity.type === "SPE" && entity.lifecycleStatus !== "ARCHIVED";
 }
 
+/** Owned SPEs only. Pipeline, Screened, Test, and Archived stay out of the live lists and the roll-up. */
 export function liveSpeWhere() {
-  return { type: "SPE" as const, lifecycleStatus: "LIVE" as const };
+  return ownedSpeWhere();
 }
 
-export function liveSpeChildren<T extends { type: string; lifecycleStatus?: string | null }>(children: T[]): T[] {
-  return children.filter((child) => child.type !== "SPE" || child.lifecycleStatus !== "ARCHIVED");
+export function liveSpeChildren<T extends { type: string; lifecycleStatus?: string | null; dealStatus?: string | null }>(
+  children: T[],
+): T[] {
+  return children.filter((child) => child.type !== "SPE" || isOwnedSpe(child));
 }
 
 export function confirmCodesMatch(provided: string, expected: string): boolean {

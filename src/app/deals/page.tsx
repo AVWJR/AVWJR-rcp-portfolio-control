@@ -58,11 +58,10 @@ async function DealIndex({
           <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{subtitle}</p>
           <h1 className="font-display text-4xl text-navy-900">Deals</h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-700">
-            Live property SPEs under OpCo only. Deleted deals are not listed here — study and restore
-            them from gold nav <strong>Deal Archive</strong>. Add a new deal when you are onboarding a
-            new SPE, not a new HoldCo or a second OpCo. Set the deal LP/GP waterfall (and optional Co-GP)
-            from each SPE card — default is 100% look-through until you pick a template. Deal / OpCo
-            proformas use that same waterfall.
+            Owned property SPEs under OpCo. Pipeline, Screened, and Test deals are on gold nav{" "}
+            <strong>Library</strong>, not in this list and not in the OpCo roll-up. Deleted deals are
+            studied from <strong>Deal Archive</strong>. Add a new deal when you are onboarding a new SPE.
+            The status defaults to Owned. Set the LP/GP waterfall from each SPE card.
           </p>
         </div>
         {role === "principal" ? (
@@ -111,6 +110,9 @@ async function DealIndex({
               {spe.strategy?.replaceAll("_", " ") ?? "strategy TBD"}
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Link href={`/deals/${spe.code}?period=${period}`} className="text-sm text-navy-800 underline">
+                Library fields
+              </Link>
               <Link
                 href={`/dashboard/${spe.code}?entity=${spe.code}&period=${period}`}
                 className="text-sm text-navy-800 underline"

@@ -1,4 +1,5 @@
 import { ArchiveValidationError } from "@/lib/archive";
+import { DealStatusError } from "@/lib/deal-status";
 import { DealValidationError } from "./create-spe";
 import { FileStoreError } from "@/lib/file-store";
 import { ReplaceRequiresConfirmError } from "@/lib/import-guard";
@@ -31,6 +32,9 @@ export function dealErrorResponse(error: unknown) {
   }
   if (error instanceof ArchiveValidationError) {
     return NextResponse.json({ error: error.message, field: error.field }, { status: error.status });
+  }
+  if (error instanceof DealStatusError) {
+    return NextResponse.json({ error: error.message }, { status: error.status });
   }
   const message = error instanceof Error ? error.message : "Request failed";
   if (/file too large/i.test(message)) {

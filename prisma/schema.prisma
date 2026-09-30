@@ -95,6 +95,19 @@ enum EntityLifecycle {
   ARCHIVED
 }
 
+/// Library lifecycle. Separate from EntityLifecycle. Only OWNED SPEs feed the
+/// real OpCo books. prisma db push adds this column with @default(OWNED), so
+/// existing production rows become OWNED without a data migration. Read-time
+/// effectiveDealStatus() still treats lifecycleStatus ARCHIVED as Archived
+/// (the column stays OWNED on those rows) and treats a missing value as OWNED.
+enum DealStatus {
+  PIPELINE
+  SCREENED
+  OWNED
+  ARCHIVED
+  TEST
+}
+
 enum UnitStatus {
   OCCUPIED
   VACANT
@@ -120,6 +133,29 @@ model Entity {
   archivedBy       String?
   restoredAt       DateTime?
   restoredBy       String?
+  /// See DealStatus. Default OWNED fills existing rows on db push.
+  dealStatus            DealStatus @default(OWNED)
+  streetAddress         String?
+  city                  String?
+  state                 String?
+  metro                 String?
+  msa                   String?
+  submarket             String?
+  propertyType          String?
+  vintageYear           Int?
+  assetClass            String?
+  unitCountOverride     Int?
+  purchasePriceCents    BigInt?
+  appraisedValueCents   BigInt?
+  businessPlan          String?
+  renovationBudgetCents BigInt?
+  holdPeriodYears       Int?
+  /// Blank until the owner types it. Never default a percent or a dollar amount.
+  amFeeBps              Int?
+  otherLpFeeCents       BigInt?
+  otherLpFeeNote        String?
+  /// OpCo G&A budget only. Blank until set. Not a deal-level assumption.
+  gaBudgetCents         BigInt?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -144,6 +180,10 @@ model Entity {
   tieOutTolerances TieOutTolerance[]
   distributionEvents DistributionEvent[]
   distributionAudits DistributionAudit[]
+  analysisSnapshots  DealAnalysisSnapshot[]
+  statusEvents       DealStatusEvent[]
+
+  @@index([dealStatus])
 }
 
 /// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
@@ -582,6 +622,8 @@ model DealIntake {
   loanMaturity          DateTime?
   dscrThresholdBps      Int?
   debtYieldThresholdBps Int?
+  /// Null means Owned at create (today's Add Deal behavior).
+  requestedDealStatus   DealStatus?
   lastError             String?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
@@ -800,4 +842,81 @@ model DistributionAudit {
   createdAt DateTime            @default(now())
 
   @@index([entityId, createdAt])
+}
+
+/// Dated underwriting ratios for one deal. New rows only — old snapshots stay.
+/// LP net IRR and LP cash yield columns are Phase 2 placeholders and stay null.
+model DealAnalysisSnapshot {
+  id                  String   @id @default(cuid())
+  entityId            String
+  entity              Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  asOfDate            DateTime
+  periodLabel         String
+  recordedAt          DateTime @default(now())
+  recordedBy          String   @default("principal")
+  basisLabel          String
+  noiBasisLabel       String
+  sourceFiles         String   @default("[]")
+  dscrBps             Int?
+  debtYieldBps        Int?
+  cashOnCashBps       Int?
+  occupancyBps        Int?
+  expenseRatioBps     Int?
+  noiCents            BigInt?
+  annualizedNoiCents  BigInt?
+  capRateBps          Int?
+  ltvBps              Int?
+  pricePerUnitCents   BigInt?
+  prefRateBps         Int?
+  catchUpBps          Int?
+  promoteSplitLabel   String?
+  coGpOfPromoteBps    Int?
+  gpCoInvestBps       Int?
+  equityRequiredCents BigInt?
+  lpEquityCents       BigInt?
+  rcpShareBps         Int?
+  unitCount           Int?
+  /// Phase 2. Always null. Never a computed stand-in.
+  lpNetIrrBps         Int?
+  lpAvgCashYieldBps   Int?
+  lpYear1CashYieldBps Int?
+  rcpIrrBps           Int?
+
+  @@index([entityId, recordedAt])
+}
+
+/// Who changed a deal's Library status, when, and why.
+model DealStatusEvent {
+  id         String   @id @default(cuid())
+  entityId   String
+  entity     Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  fromStatus String
+  toStatus   String
+  reason     String
+  actor      String   @default("principal")
+  createdAt  DateTime @default(now())
+
+  @@index([entityId, createdAt])
+}
+
+/// Saved sentence-builder sets. Library search now; Models and the optimizer later.
+model CriteriaPreset {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  criteriaJson String   @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Editable Library lists. Seeded states and property types are inserted if missing.
+/// Metros are added when a deal saves one. Rows are never removed because of age.
+model LibraryPickItem {
+  id        String   @id @default(cuid())
+  kind      String
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([kind, label])
+  @@index([kind, sortOrder])
 }

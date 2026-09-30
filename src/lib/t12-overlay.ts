@@ -2,6 +2,7 @@ import { incomeStatementFromBudget, type BudgetByCode } from "@rcp/reporting";
 import type { T12WorkbookParse } from "@rcp/properties";
 import type { JournalDraftLine } from "@rcp/ledger";
 import { prisma } from "./prisma";
+import { isOwnedSpe } from "./owned-spe";
 import { postJournal } from "./post-journal";
 import { openPeriod } from "./deals/periods";
 
@@ -136,6 +137,11 @@ export async function postBrokerT12OverlayJournals(opts: {
   parsed: T12WorkbookParse;
   filename: string;
 }): Promise<number> {
+  const owner = await prisma.entity.findUnique({
+    where: { id: opts.entityId },
+    select: { type: true, lifecycleStatus: true, dealStatus: true },
+  });
+  if (owner && !isOwnedSpe(owner)) return 0;
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   const existing = await prisma.journal.findMany({
     where: { entityId: opts.entityId, periodId: period.id, source: BROKER_T12_JOURNAL_SOURCE },
