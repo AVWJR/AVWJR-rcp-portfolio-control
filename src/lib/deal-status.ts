@@ -164,25 +164,45 @@ export async function changeDealStatus(opts: {
     await assertBrokerT12PeriodOpen(entity.id, entity.code);
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.entity.update({
-      where: { id: entity.id },
-      data: { dealStatus: toStatus },
-    });
-    await tx.dealStatusEvent.create({
-      data: {
-        entityId: entity.id,
-        fromStatus,
-        toStatus,
-        reason,
-        actor: opts.actor ?? "principal",
-      },
-    });
-  });
-
+  const movingToOwned = toStatus === "OWNED" && fromStatus !== "OWNED";
   let postedT12Lines = 0;
-  if (toStatus === "OWNED" && fromStatus !== "OWNED") {
-    postedT12Lines = await postStoredBrokerT12Journals(entity.id);
+  try {
+    postedT12Lines = await prisma.$transaction(async (tx) => {
+      await tx.entity.update({
+        where: { id: entity.id },
+        data: { dealStatus: toStatus },
+      });
+      await tx.dealStatusEvent.create({
+        data: {
+          entityId: entity.id,
+          fromStatus,
+          toStatus,
+          reason,
+          actor: opts.actor ?? "principal",
+        },
+      });
+      if (!movingToOwned) return 0;
+      return postStoredBrokerT12Journals(entity.id, tx);
+    });
+  } catch (error) {
+    if (error instanceof DealStatusError) throw error;
+    if (movingToOwned) {
+      const label = await brokerT12PeriodLabel(entity.id);
+      throw new DealStatusError(
+        `${entity.code} could not be marked Owned because its broker T12 for ${label} failed to post. The status was not changed.`,
+      );
+    }
+    throw error;
   }
   return { code: entity.code, name: entity.name, fromStatus, toStatus, postedT12Lines };
+}
+
+async function brokerT12PeriodLabel(entityId: string): Promise<string> {
+  const stored = await prisma.budgetLine.findFirst({
+    where: { entityId, source: BROKER_T12_SOURCE },
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+    select: { year: true, month: true },
+  });
+  if (!stored) return "the saved month";
+  return `${stored.year}-${String(stored.month).padStart(2, "0")}`;
 }

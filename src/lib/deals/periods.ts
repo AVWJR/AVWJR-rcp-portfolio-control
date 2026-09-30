@@ -1,5 +1,5 @@
 import { ensureChecklist } from "@/lib/period-close";
-import { prisma } from "@/lib/prisma";
+import { prisma, type Db } from "@/lib/prisma";
 import { formatPeriodLabel, parsePeriodLabel } from "@/lib/expert/period";
 
 function ny(year: number, month: number, day: number) {
@@ -10,16 +10,16 @@ function lastDayOfMonth(year: number, month: number) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
-export async function openPeriod(entityId: string, year: number, month: number) {
+export async function openPeriod(entityId: string, year: number, month: number, db: Db = prisma) {
   const label = formatPeriodLabel(year, month);
   const startDate = ny(year, month, 1);
   const endDate = ny(year, month, lastDayOfMonth(year, month));
-  const period = await prisma.period.upsert({
+  const period = await db.period.upsert({
     where: { entityId_year_month: { entityId, year, month } },
     update: {},
     create: { entityId, year, month, label, startDate, endDate, status: "OPEN" },
   });
-  await ensureChecklist(period.id);
+  await ensureChecklist(period.id, db);
   return period;
 }
 

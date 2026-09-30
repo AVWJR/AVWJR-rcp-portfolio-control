@@ -4,7 +4,7 @@ import { effectiveDealStatus, isOwnedSpe } from "@/lib/owned-spe";
 import { ensureMasterCoaCurrent } from "@/lib/entities";
 import { openPeriod } from "@/lib/deals/periods";
 import { parseRentRollSource } from "@/lib/deals/workbook";
-import { hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
+import { assertOwnedDealMayClose, hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
 import { assertTieOutsAllowLock } from "@/lib/close/guards";
 import { putStoredFile } from "@/lib/file-store";
 import { postJournal } from "@/lib/post-journal";
@@ -1144,28 +1144,6 @@ export async function reverseOperatingJournals(opts: {
   };
 }
 
-const DEAL_STATUS_WORD: Record<string, string> = {
-  PIPELINE: "Pipeline",
-  SCREENED: "Screened",
-  OWNED: "Owned",
-  ARCHIVED: "Archived",
-  TEST: "Test",
-};
-
-async function assertSpeMayClose(entityId: string, action: "soft" | "hard" | "reopen") {
-  if (action === "reopen") return;
-  const entity = await prisma.entity.findUnique({
-    where: { id: entityId },
-    select: { type: true, code: true, lifecycleStatus: true, dealStatus: true },
-  });
-  if (!entity || entity.type !== "SPE" || isOwnedSpe(entity)) return;
-  const status = effectiveDealStatus(entity);
-  const word = DEAL_STATUS_WORD[status] ?? status;
-  throw new Error(
-    `${entity.code} is ${word}, not Owned. Soft close and hard close are only for Owned deals. This month was not closed.`,
-  );
-}
-
 export async function transitionClose(opts: {
   entityId: string;
   year: number;
@@ -1174,7 +1152,9 @@ export async function transitionClose(opts: {
   reason?: string;
   ticket?: string;
 }) {
-  await assertSpeMayClose(opts.entityId, opts.action);
+  if (opts.action !== "reopen") {
+    await assertOwnedDealMayClose(opts.entityId);
+  }
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (opts.action === "soft") {
     await softClosePeriod(period.id);

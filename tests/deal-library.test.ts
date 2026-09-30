@@ -12,7 +12,7 @@ import { openPeriod } from "@/lib/deals/periods";
 import { buildOpCoDashboard } from "@/lib/dashboards";
 import { consolidationEntityIds } from "@/lib/queries";
 import { prisma } from "@/lib/prisma";
-import { postBrokerT12OverlayJournals } from "@/lib/t12-overlay";
+import { postBrokerT12OverlayJournals, setBrokerT12PostFailure } from "@/lib/t12-overlay";
 import {
   LIBRARY_COLUMNS,
   defaultColumnLayout,
@@ -750,6 +750,53 @@ describe("CSV, Test deals, broker T12 snapshots, and posting on Owned", () => {
       reason: "leave the books",
       confirmRollup: true,
     });
+    await cleanupSpe(entity.id);
+  });
+
+  it("rolls back Owned when the broker T12 post fails", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-F${suffix}`.slice(0, 12);
+    const entity = await createEntityWithCoa({
+      code,
+      name: `Fail T12 ${suffix} LLC`,
+      type: "SPE",
+      parentId: opco.id,
+      dealStatus: "PIPELINE",
+    });
+    idsToDelete.push(entity.id);
+    await prisma.budgetLine.create({
+      data: {
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        accountCode: "4010",
+        amount: 10_000_000n,
+        source: "broker_t12",
+      },
+    });
+    setBrokerT12PostFailure("disk full");
+    try {
+      await expect(
+        changeDealStatus({ code, toStatus: "OWNED", reason: "closed", confirmOwned: true }),
+      ).rejects.toBeInstanceOf(DealStatusError);
+      await expect(
+        changeDealStatus({ code, toStatus: "OWNED", reason: "closed", confirmOwned: true }),
+      ).rejects.toThrow(
+        `${code} could not be marked Owned because its broker T12 for 2026-08 failed to post. The status was not changed.`,
+      );
+    } finally {
+      setBrokerT12PostFailure(null);
+    }
+    const row = await prisma.entity.findUniqueOrThrow({ where: { id: entity.id } });
+    expect(row.dealStatus).toBe("PIPELINE");
+    expect(await prisma.journal.count({ where: { entityId: entity.id } })).toBe(0);
+    expect(await prisma.dealStatusEvent.count({ where: { entityId: entity.id } })).toBe(0);
+    const ids = await consolidationEntityIds(opco.id);
+    expect(ids).not.toContain(entity.id);
+    const rollup = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
+    expect(rollup.properties.map((property) => property.entityCode)).not.toContain(code);
     await cleanupSpe(entity.id);
   });
 

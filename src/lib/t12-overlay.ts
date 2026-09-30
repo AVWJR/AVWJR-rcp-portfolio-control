@@ -1,10 +1,17 @@
 import { incomeStatementFromBudget, type BudgetByCode } from "@rcp/reporting";
 import type { T12WorkbookParse } from "@rcp/properties";
 import type { JournalDraftLine } from "@rcp/ledger";
-import { prisma } from "./prisma";
+import { prisma, type Db } from "./prisma";
 import { isOwnedSpe } from "./owned-spe";
 import { postJournal } from "./post-journal";
 import { openPeriod } from "./deals/periods";
+
+/** Test seam. When set, posting a stored broker T12 throws this message and writes nothing. */
+let brokerT12PostFailure: string | null = null;
+
+export function setBrokerT12PostFailure(message: string | null): void {
+  brokerT12PostFailure = message;
+}
 
 export const BROKER_T12_SOURCE = "broker_t12";
 export const BROKER_T12_JOURNAL_SOURCE = "broker_t12_overlay";
@@ -81,8 +88,8 @@ export function parseOverlayNote(notes: string | null | undefined): BrokerT12Ove
   }
 }
 
-export async function loadBrokerT12Overlay(entityId: string): Promise<BrokerT12OverlaySummary | null> {
-  const docs = await prisma.vaultDocument.findMany({
+export async function loadBrokerT12Overlay(entityId: string, db: Db = prisma): Promise<BrokerT12OverlaySummary | null> {
+  const docs = await db.vaultDocument.findMany({
     where: { entityId },
     orderBy: { uploadedAt: "desc" },
   });
@@ -90,7 +97,7 @@ export async function loadBrokerT12Overlay(entityId: string): Promise<BrokerT12O
     const parsed = parseOverlayNote(doc.notes);
     if (parsed) return parsed;
   }
-  const budget = await prisma.budgetLine.findMany({
+  const budget = await db.budgetLine.findMany({
     where: { entityId, source: BROKER_T12_SOURCE },
     take: 24,
   });
@@ -101,7 +108,7 @@ export async function loadBrokerT12Overlay(entityId: string): Promise<BrokerT12O
   }
   const stmt = incomeStatementFromBudget(map);
   const period = `${budget[0]!.year}-${String(budget[0]!.month).padStart(2, "0")}`;
-  const journals = await prisma.journal.count({
+  const journals = await db.journal.count({
     where: { entityId, source: BROKER_T12_JOURNAL_SOURCE },
   });
   return {
@@ -136,21 +143,23 @@ export async function postBrokerT12OverlayJournals(opts: {
   month: number;
   parsed: T12WorkbookParse;
   filename: string;
+  db?: Db;
 }): Promise<number> {
-  const owner = await prisma.entity.findUnique({
+  const db = opts.db ?? prisma;
+  const owner = await db.entity.findUnique({
     where: { id: opts.entityId },
     select: { type: true, lifecycleStatus: true, dealStatus: true },
   });
   if (owner && !isOwnedSpe(owner)) return 0;
-  const period = await openPeriod(opts.entityId, opts.year, opts.month);
-  const existing = await prisma.journal.findMany({
+  const period = await openPeriod(opts.entityId, opts.year, opts.month, db);
+  const existing = await db.journal.findMany({
     where: { entityId: opts.entityId, periodId: period.id, source: BROKER_T12_JOURNAL_SOURCE },
     select: { id: true },
   });
   if (existing.length) {
     const ids = existing.map((row) => row.id);
-    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-    await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+    await db.journalLine.deleteMany({ where: { journalId: { in: ids } } });
+    await db.journal.deleteMany({ where: { id: { in: ids } } });
   }
 
   const monthCount = BigInt(Math.max(opts.parsed.monthCount, 1));
@@ -190,6 +199,7 @@ export async function postBrokerT12OverlayJournals(opts: {
     memo,
     source: BROKER_T12_JOURNAL_SOURCE,
     lines,
+    db,
   });
   return lines.length;
 }
@@ -199,8 +209,11 @@ export async function postBrokerT12OverlayJournals(opts: {
  * Replaces an overlay journal for that month instead of adding a second one.
  * Returns 0 when the deal is not Owned or no broker T12 is stored.
  */
-export async function postStoredBrokerT12Journals(entityId: string): Promise<number> {
-  const stored = await prisma.budgetLine.findMany({
+export async function postStoredBrokerT12Journals(entityId: string, db: Db = prisma): Promise<number> {
+  if (brokerT12PostFailure) {
+    throw new Error(brokerT12PostFailure);
+  }
+  const stored = await db.budgetLine.findMany({
     where: { entityId, source: BROKER_T12_SOURCE },
     orderBy: [{ year: "desc" }, { month: "desc" }],
   });
@@ -225,7 +238,7 @@ export async function postStoredBrokerT12Journals(entityId: string): Promise<num
   const opex = monthLines
     .filter((row) => (OPEX_CODES as readonly string[]).includes(row.accountCode))
     .reduce((sum, row) => sum + row.amount, 0n);
-  const overlay = await loadBrokerT12Overlay(entityId);
+  const overlay = await loadBrokerT12Overlay(entityId, db);
   const parsed: T12WorkbookParse = {
     sheet: overlay?.sheet || "broker T12",
     monthCount: 12,
@@ -246,5 +259,6 @@ export async function postStoredBrokerT12Journals(entityId: string): Promise<num
     month,
     parsed,
     filename: overlay?.filename || "broker T12",
+    db,
   });
 }
