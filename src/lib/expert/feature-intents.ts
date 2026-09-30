@@ -15,6 +15,7 @@ export function isPrefOwedQuery(q: string): boolean {
 
 export function isDeleteDealQuery(q: string): boolean {
   if (/without deleting|stop counting|get it back|archived the wrong/.test(q)) return false;
+  if (/delete that row|wrong deal/.test(q) && /posted|distribution|\$\d/.test(q)) return false;
   return /(delete|remove|undo|get rid of|kill|archive|hide|restore)\b.{0,40}\b(deal|spe|propert|intake|draft)\b|\b(deal|spe|propert)\b.{0,20}\b(delete|remove|archive|hide|restore)\b|deal archive|archived deals?/i.test(
     q,
   );

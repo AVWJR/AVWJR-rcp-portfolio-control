@@ -252,6 +252,41 @@ describe("Expert offline eval set", () => {
     expect(criteriaAnswer).not.toMatch(/Live KPIs|cannot read KPIs|Month-end close/);
   });
 
+  it("routes the third-pass phrasing to the matching how-to", () => {
+    const ctx = readExpertContext("/", new URLSearchParams("entity=RCP-OPCO&period=2026-08"));
+    const routed = (question: string) => {
+      const best = findHowTos(question, "/", 8).find((entry) => entry.keywords.some((keyword) => keyword.test(question)));
+      return { id: best?.id, answer: answerOffline(question, ctx, emptyBundle).content };
+    };
+
+    const july = routed("A July distribution when August already has one");
+    expect(july.id).toBe("distributions.ledger");
+    expect(july.answer).toMatch(/forward only/i);
+    expect(july.answer).toMatch(/already has one/i);
+    expect(july.answer).not.toMatch(/Open \*\*Distribution ledger\*\*/);
+
+    const wrongDeal = routed("Someone posted $50k to the wrong deal, can I just delete that row?");
+    expect(wrongDeal.id).toBe("distributions.ledger");
+    expect(wrongDeal.answer).toMatch(/Reverse on the latest/i);
+    expect(wrongDeal.answer).not.toMatch(/Open \*\*Deals\*\*/);
+
+    const overhead = routed("Our fee income doesn't cover overhead, where would I see that ratio?");
+    expect(overhead.id).toBe("dashboard.tiles");
+    expect(overhead.answer).toMatch(/G&A as a percentage of AM fee income/i);
+    expect(overhead.answer).toMatch(/If G&A is more than AM fee income, the G&A ratio shows over 100%, meaning fees don't cover overhead/);
+    expect(overhead.answer).not.toMatch(/cannot read KPIs|Live KPIs/);
+
+    const memorandum = routed("Can I upload a 20 MB offering memorandum?");
+    expect(memorandum.id).toBe("add-deal.intake");
+    expect(memorandum.answer).toMatch(/Blob|32 MB/);
+    expect(memorandum.answer).not.toMatch(/IC Memo/);
+
+    const om = routed("Can I upload a 20 MB OM?");
+    expect(om.id).toBe("add-deal.intake");
+    expect(om.answer).toMatch(/Blob|32 MB/);
+    expect(om.answer).not.toMatch(/IC Memo|Open \*\*Month-end close\*\*/);
+  });
+
   it("keeps how-to answers and the system reference inside a sentence boundary", () => {
     const question = "Hard close is blocked: RR-1 Rent roll is missing. Reopen requires a non-empty reason and ticket.";
     const answer = answerFromHowTos(question, "/deals/SPE-WBG/close");

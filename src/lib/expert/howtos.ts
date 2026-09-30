@@ -336,6 +336,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /record a distribution/i,
       /wrong amount|download csv|distribution history|as csv/i,
       /before the latest distribution|preview this amount before confirming|dated before|before an existing month|forward only/i,
+      /(?:distribution|posted).{0,80}already has one|wrong deal|delete that row/i,
       /where we are in the waterfall|which waterfall tier/i,
       /soft-archived|distributions are not posted/i,
       /another distribution was just recorded/i,
@@ -351,7 +352,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       "Preview, then confirm. Confirm posts only the same amount and date you previewed. The amount must be greater than zero.",
       "Corrections use Reverse on the latest active row only. There is no opposite-amount posting and no delete of a posted row.",
       "The page has Download CSV, History, and the Where we are in the waterfall gauge. Those figures also feed the monthly investor pack.",
-      "The ledger posts forward only. A distribution dated before an existing month, or before the latest posted distribution, is refused.",
+      "The ledger posts forward only. A distribution is refused when a later month already has one, or when the date is before the latest posted distribution.",
       "A soft-archived SPE must be restored from Deal Archive before a distribution. A deal that is not Owned cannot post one either.",
     ],
     troubleshooting: [
@@ -607,7 +608,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     keywords: [
       /add a new deal/i,
       /pipeline instead of owned|mark it as pipeline|create the spe|step 5/i,
-      /413|6 mb|blob/i,
+      /413|6 mb|blob|offering memorandum|\bom\b|\d+\s*mb/i,
       /broker package|just to screen|in the opco numbers/i,
     ],
     steps: [
@@ -759,7 +760,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       /percentage of am fee income|g&a % of am fee income|of am fee income/i,
       /g&a as a percentage|where do i see opco g&a/i,
       /am fee coverage/i,
-      /g&a ratio|over 100%/i,
+      /g&a ratio|over 100%|fee income.{0,60}cover overhead|cover overhead/i,
       /not on the opco dashboard|pipeline.{0,40}dashboard/i,
       /which accounts.{0,80}g&a|g&a.{0,40}accounts/i,
       /7010|5110/i,
@@ -771,7 +772,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     facts: [
       "G&A as a percentage of AM fee income is (5110 + 5610 + 5990) ÷ 7010 on the OpCo dashboard.",
-      "Over 100% means AM fees don't cover OpCo overhead. That overhead coverage gap is the G&A ratio above 100%.",
+      "If G&A is more than AM fee income, the G&A ratio shows over 100%, meaning fees don't cover overhead.",
       "AM fee coverage is 7010 ÷ posted OpCo G&A (5110 + 5610 + 5990), shown as a multiple (x). The tile reads those posted accounts and stays blank until OpCo G&A expenses are posted in the books. A zero denominator has no multiple.",
       "Library → Fees → Save G&A budget does not feed the AM fee coverage tile. That budget is used only by the Library.",
       "A Pipeline deal is not on the OpCo dashboard or the Deals page. It is in the Library. Only Owned deals roll up.",

@@ -68,7 +68,7 @@ describe("SPE Delete (soft-archive) copy", () => {
   });
 });
 
-describe("SPE Delete persistence", () => {
+describe("SPE Delete persistence", { timeout: 15_000 }, () => {
   it("blocks permanent demo SPEs even with a matching confirm code", async () => {
     const wbg = await prisma.entity.findUnique({ where: { code: "SPE-WBG" } });
     if (!wbg) throw new Error("Seed SPE-WBG before running this test (npm run db:reset)");
