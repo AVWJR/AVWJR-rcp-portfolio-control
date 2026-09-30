@@ -1,4 +1,5 @@
 import type { ExpertClientContext, OfflineBundle } from "./types";
+import { buildHowToReference } from "./howtos";
 import { EXPERT_SYSTEM_PROMPT } from "./system-prompt";
 
 function isErr(value: unknown): value is { ok: false; error: string } {
@@ -90,7 +91,11 @@ export function summarizeExpertSnapshot(ctx: ExpertClientContext, bundle: Offlin
   };
 }
 
-export function buildSystemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle): string {
+export function buildSystemForTurn(
+  ctx: ExpertClientContext,
+  bundle: OfflineBundle,
+  lastUserMessage = "",
+): string {
   return `${EXPERT_SYSTEM_PROMPT}
 
 Current page (authoritative for where they are):
@@ -104,5 +109,7 @@ ${JSON.stringify({
   })}
 
 Preloaded tool snapshot (summary — call tools if you need full rows):
-${JSON.stringify(summarizeExpertSnapshot(ctx, bundle))}`;
+${JSON.stringify(summarizeExpertSnapshot(ctx, bundle))}
+
+${buildHowToReference(ctx.pathname, lastUserMessage)}`;
 }

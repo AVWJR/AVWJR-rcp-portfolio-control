@@ -1,0 +1,692 @@
+[
+  {
+    "id": "MEC-1",
+    "feature": "Month-end close",
+    "route": "/",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "Where do I upload this month's financials and rent roll for Willow Bend, and how do I get them posted into the SPE books?",
+    "must_include": [
+      "month-end close",
+      "rent roll",
+      "post this period into the spe books"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "MEC-2",
+    "feature": "Month-end close",
+    "route": "/deals/SPE-WBG/close",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "I posted the P&L and balance sheet and clicked Hard lock, but it says \"Hard close is blocked: RR-1 Rent roll is missing.\" Why can't I lock the month?",
+    "must_include": [
+      "rent roll",
+      "rr-1",
+      "soft close|soft-closed",
+      "checklist",
+      "rr-11|unit count",
+      "rr-12|as-of"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "MEC-3",
+    "feature": "Month-end close",
+    "route": "/deals/SPE-WBG/close",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "What's the difference between Soft close and Hard lock? After I soft closed, Post is refused. How do I make a correction in a soft-closed month?",
+    "must_include": [
+      "controller",
+      "reason",
+      "reason and a ticket|reason and ticket"
+    ],
+    "must_not_include": [
+      "(can|may) (still )?reopen .{0,30}without a ticket",
+      "no ticket (is )?(needed|required)"
+    ]
+  },
+  {
+    "id": "MEC-4",
+    "feature": "Month-end close",
+    "route": "/deals/SPE-WBG/close",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "The manager sent a corrected P&L after I already posted August. How do I repost it, and what happens to the journals that are already in the month?",
+    "must_include": [
+      "controller",
+      "reason",
+      "replac|revers"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "MEC-5",
+    "feature": "Month-end close",
+    "route": "/deals/SPE-MPL/close",
+    "entity": "SPE-MPL",
+    "period": "2026-08",
+    "question": "I tried to post a close for a new deal and got \"SPE-MPL is Pipeline, not Owned. Month-end close does not post journals for this deal.\" What do I do?",
+    "must_include": [
+      "library",
+      "deal status|status",
+      "owned",
+      "broker t12|t12"
+    ],
+    "must_not_include": [
+      "deals → spe-mpl|deals -> spe-mpl"
+    ]
+  },
+  {
+    "id": "WF-1",
+    "feature": "Deal waterfall",
+    "route": "/",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Where do I set the LP/GP waterfall for a deal?",
+    "must_include": [
+      "lp/gp waterfall",
+      "deals",
+      "save"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "WF-2",
+    "feature": "Deal waterfall",
+    "route": "/deals/SPE-WBG/waterfall",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "What waterfall templates are available, can I build a custom structure, and how do I add a Co-GP partner?",
+    "must_include": [
+      "simple pref",
+      "institutional",
+      "multi-hurdle",
+      "american",
+      "european",
+      "look-through",
+      "tiers|edit",
+      "co-gp"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "WF-3",
+    "feature": "Deal waterfall",
+    "route": "/deals/SPE-WBG/waterfall",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "On the waterfall I typed 0 for unpaid pref, but my colleague left it blank on another deal. Do those behave the same?",
+    "must_include": [
+      "blank",
+      "typed 0|typed zero",
+      "unreturned capital|lp contributed"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "WF-4",
+    "feature": "Deal waterfall",
+    "route": "/deals/SPE-WBG/waterfall",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "Why is the 'if SPE cash were distributed today' number on the waterfall page different from period CFADS?",
+    "must_include": [
+      "operating cash",
+      "reserves",
+      "escrow|tenant deposits",
+      "cfads"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "WF-5",
+    "feature": "Deal waterfall",
+    "route": "/deals/SPE-WBG/waterfall",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "I set Catch-up % to 50 but the catch-up row in the tiers table doesn't show a 50/50 LP/GP split. Is catch-up broken?",
+    "must_include": [
+      "share of each catch-up dollar|each catch-up dollar",
+      "residual"
+    ],
+    "must_not_include": [
+      "catch-up % is the gp.{0,20}target"
+    ]
+  },
+  {
+    "id": "PF-1",
+    "feature": "OpCo & deal proformas",
+    "route": "/",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Where is the OpCo proforma, and how is it different from the deal proforma?",
+    "must_include": [
+      "/opco/proforma|opco proforma",
+      "deal proforma",
+      "historical|forward"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "PF-2",
+    "feature": "OpCo & deal proformas",
+    "route": "/deals/SPE-WBG/proforma",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "How do I change the hold years and exit assumptions on the deal proforma? Does it change the books?",
+    "must_include": [
+      "hold",
+      "cfads growth",
+      "exit proceeds",
+      "not .{0,20}books|does not post"
+    ],
+    "must_not_include": [
+      "exit cap rate",
+      "(edit|change) .{0,30}exit cap"
+    ]
+  },
+  {
+    "id": "PF-3",
+    "feature": "OpCo & deal proformas",
+    "route": "/opco/proforma",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "I added a Pipeline deal last week with a waterfall, but it doesn't show up in the OpCo proforma By SPE table. Why?",
+    "must_include": [
+      "owned",
+      "pipeline",
+      "library"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "PF-4",
+    "feature": "OpCo & deal proformas",
+    "route": "/opco/proforma",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Does the Co-GP's share show up in the OpCo GP line on the OpCo proforma?",
+    "must_include": [
+      "rcp",
+      "co-gp stays at the deal|co-gp .{0,30}deal"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "DL-1",
+    "feature": "Distribution ledger",
+    "route": "/deals/SPE-WBG/distributions",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "Where can I see the distribution history, download it as CSV, and see which waterfall tier we're in? Does that show up in the investor pack?",
+    "must_include": [
+      "download csv|csv",
+      "history",
+      "where we are in the waterfall|gauge",
+      "monthly investor pack"
+    ],
+    "must_not_include": [
+      "isn.t a csv|no csv"
+    ]
+  },
+  {
+    "id": "DL-2",
+    "feature": "Distribution ledger",
+    "route": "/",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "How do I record a distribution, and if I post the wrong amount how do I fix or delete it?",
+    "must_include": [
+      "preview",
+      "confirm",
+      "reverse",
+      "latest"
+    ],
+    "must_not_include": [
+      "post (an? )?(opposite|negative) amount"
+    ]
+  },
+  {
+    "id": "DL-3",
+    "feature": "Distribution ledger",
+    "route": "/deals/SPE-WBG/distributions",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "I tried to post a June distribution and it says \"That period is before the latest distribution (2026-08). Pick that month or a later one.\" Why?",
+    "must_include": [
+      "before the latest|forward",
+      "2026-08",
+      "reverse"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "DL-4",
+    "feature": "Distribution ledger",
+    "route": "/deals/SPE-WBG/distributions",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "When I click Confirm it says \"Preview this amount before confirming.\" I already previewed. What's wrong?",
+    "must_include": [
+      "preview",
+      "same amount|exact amount|amount you previewed",
+      "another distribution was just recorded|refresh"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "DL-5",
+    "feature": "Distribution ledger",
+    "route": "/deals/SPE-HRP3/distributions",
+    "entity": "SPE-HRP3",
+    "period": "2026-08",
+    "question": "Why can't I record a distribution on this deal? The form is locked and says the SPE is soft-archived.",
+    "must_include": [
+      "deal archive|/archive",
+      "restore"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "LIB-1",
+    "feature": "Deal Library: statuses & roll-up",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "What do the deal statuses Pipeline, Screened, Owned, Archived and Test mean, and which ones are in the OpCo numbers?",
+    "must_include": [
+      "pipeline",
+      "screened",
+      "owned",
+      "archived",
+      "test",
+      "only owned"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "LIB-2",
+    "feature": "Deal Library: statuses & roll-up",
+    "route": "/dashboard/RCP-OPCO",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "I added a new deal as Pipeline but it's not on the OpCo dashboard or on the Deals page. Where did it go?",
+    "must_include": [
+      "owned",
+      "library",
+      "pipeline"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "LIB-3",
+    "feature": "Deal Library: statuses & roll-up",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "We just closed on a Screened deal. How do I move it to Owned, and what happens to the broker T12 I uploaded?",
+    "must_include": [
+      "deal status|status",
+      "reason",
+      "confirm",
+      "broker t12.{0,80}(posted|post)"
+    ],
+    "must_not_include": [
+      "not posted to the gl",
+      "take it live with .{0,20}add deal",
+      "(use|through|via) .{0,10}add deal"
+    ]
+  },
+  {
+    "id": "LIB-4",
+    "feature": "Deal Library: statuses & roll-up",
+    "route": "/deals/SPE-WBG",
+    "entity": "SPE-WBG",
+    "period": "2026-08",
+    "question": "I tried to change Willow Bend (SPE-WBG) to Test and it refused. Why?",
+    "must_include": [
+      "permanent demo",
+      "owned",
+      "phase 4|purge",
+      "roll-up|rollup"
+    ],
+    "must_not_include": [
+      "rename"
+    ]
+  },
+  {
+    "id": "LIB-5",
+    "feature": "Deal Library: statuses & roll-up",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "How do I archive a Pipeline deal we passed on? It's not on the Deals list so I can't find a Delete button.",
+    "must_include": [
+      "delete",
+      "library|deal profile|archive this deal",
+      "deal archive"
+    ],
+    "must_not_include": [
+      "only .{0,20}owned.{0,40}archiv"
+    ]
+  },
+  {
+    "id": "CRT-1",
+    "feature": "Deal Library: criteria, fields, snapshots",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "How do I filter the Library to deals with DSCR of at least 1.25x in Georgia, and save that as a preset? What's the difference between a hard limit and a preference?",
+    "must_include": [
+      "add criterion",
+      "dscr",
+      "1.25",
+      "georgia|ga",
+      "hard limit",
+      "preference",
+      "save preset|preset",
+      "phase 3|optimizer"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "CRT-2",
+    "feature": "Deal Library: criteria, fields, snapshots",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Why is the cap rate blank for one of my pipeline deals in the Library?",
+    "must_include": [
+      "purchase price",
+      "noi",
+      "save analysis snapshot|backfill"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "CRT-3",
+    "feature": "Deal Library: criteria, fields, snapshots",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "LP net IRR says 'Phase 2 · fee needed'. And when I added an LP net IRR hard limit every deal got excluded. What's going on?",
+    "must_include": [
+      "phase 2",
+      "fee needed",
+      "am fee",
+      "every deal|all deals|excluded"
+    ],
+    "must_not_include": [
+      "lp/gp waterfall.{0,60}fee"
+    ]
+  },
+  {
+    "id": "CRT-4",
+    "feature": "Deal Library: criteria, fields, snapshots",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Where do I enter a deal's purchase price, metro, and AM fee, and where do I set the OpCo G&A budget?",
+    "must_include": [
+      "/deals/\\{?|deal profile|library fields",
+      "purchase price",
+      "metro",
+      "am fee",
+      "fees",
+      "save g&a|g&a"
+    ],
+    "must_not_include": [
+      "set.{0,30}(on|in) (the )?opco proforma",
+      "g&a is platform overhead: .{0,30}opco proforma"
+    ]
+  },
+  {
+    "id": "CRT-5",
+    "feature": "Deal Library: criteria, fields, snapshots",
+    "route": "/library",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Some rows say 'Stale · 180 days' or 'No snapshot', and my Test deals aren't in the list. How do I refresh snapshots for everything, show the Test deals, and export the list to CSV?",
+    "must_include": [
+      "backfill analysis snapshots",
+      "export csv",
+      "show test deals",
+      "90",
+      "180"
+    ],
+    "must_not_include": [
+      "(not|no) .{0,10}(have )?.{0,40}csv export",
+      "no (bulk )?refresh",
+      "does not have a bulk"
+    ]
+  },
+  {
+    "id": "AD-1",
+    "feature": "Add Deal intake",
+    "route": "/",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "How do I add a new deal?",
+    "must_include": [
+      "add deal",
+      "/deals/new"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "AD-2",
+    "feature": "Add Deal intake",
+    "route": "/deals/new",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "When I add a deal, how do I mark it as Pipeline instead of Owned?",
+    "must_include": [
+      "deal status",
+      "create the spe|step 5",
+      "owned.{0,40}default|default.{0,40}owned",
+      "pipeline"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "AD-3",
+    "feature": "Add Deal intake",
+    "route": "/deals/new",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "My OM is 6 MB and the upload fails with a 413 error. What should I do?",
+    "must_include": [
+      "blob",
+      "4.5|3.5",
+      "32 mb"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "AD-4",
+    "feature": "Add Deal intake",
+    "route": "/deals",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "I dropped a broker package on Add Deal just to screen it, and now the deal is in the OpCo numbers. I didn't want that. How do I fix it?",
+    "must_include": [
+      "deal status|status",
+      "pipeline|screened",
+      "deal profile|library"
+    ],
+    "must_not_include": [
+      "always (post|owned)",
+      "add deal puts that spe on the live owned list"
+    ]
+  },
+  {
+    "id": "ARC-1",
+    "feature": "Delete / Archive / Restore",
+    "route": "/deals",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "How do I delete a deal?",
+    "must_include": [
+      "delete",
+      "type the spe code|spe code",
+      "deal archive"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "ARC-2",
+    "feature": "Delete / Archive / Restore",
+    "route": "/deals",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Where do deleted deals go, and how do I bring one back?",
+    "must_include": [
+      "deal archive",
+      "/archive",
+      "restore"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "ARC-3",
+    "feature": "Delete / Archive / Restore",
+    "route": "/deals",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Why can't I delete Crestview Commons (SPE-CVC)?",
+    "must_include": [
+      "permanent demo",
+      "wbg",
+      "hcr"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "ARC-4",
+    "feature": "Delete / Archive / Restore",
+    "route": "/deals/SPE-HMTOS",
+    "entity": "SPE-HMTOS",
+    "period": "2026-08",
+    "question": "I want to move an Owned deal back to Pipeline, but it says it has a posted distribution or a closed month and this screen will not remove it. What now?",
+    "must_include": [
+      "posted distribution",
+      "closed month",
+      "archive|delete"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "PK-1",
+    "feature": "Investor packs (PDF/PPTX)",
+    "route": "/",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Where do I export the monthly investor pack as a PDF or PowerPoint?",
+    "must_include": [
+      "monthly investor pack",
+      "pdf",
+      "pptx|powerpoint"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "PK-2",
+    "feature": "Investor packs (PDF/PPTX)",
+    "route": "/narratives",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Does the LP investor pack include the distributions we've actually recorded, or just the waterfall estimate?",
+    "must_include": [
+      "distribution-ledger|ledger",
+      "illustrative"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "PK-3",
+    "feature": "Investor packs (PDF/PPTX)",
+    "route": "/narratives/packs/monthly_investor",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Why isn't my new Pipeline deal in the monthly investor pack?",
+    "must_include": [
+      "owned",
+      "pipeline"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "PK-4",
+    "feature": "Investor packs (PDF/PPTX)",
+    "route": "/scheduler",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Can the app email the quarterly lender pack to the bank automatically?",
+    "must_include": [
+      "does not email|doesn.t email|not email",
+      "writes"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "OT-1",
+    "feature": "OpCo dashboard tiles",
+    "route": "/",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Where do I see OpCo G&A as a percentage of AM fee income?",
+    "must_include": [
+      "dashboard",
+      "rcp-opco|opco",
+      "g&a",
+      "am fee income|7010"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "OT-2",
+    "feature": "OpCo dashboard tiles",
+    "route": "/dashboard/RCP-OPCO",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "What does the AM fee coverage tile mean and how is it calculated?",
+    "must_include": [
+      "7010",
+      "5110",
+      "5610",
+      "5990",
+      "multiple|x"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "OT-3",
+    "feature": "OpCo dashboard tiles",
+    "route": "/dashboard/RCP-OPCO",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "The G&A ratio tile shows over 100%. Is that bad?",
+    "must_include": [
+      "100%",
+      "don.t cover|not cover|doesn.t cover"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "OT-4",
+    "feature": "OpCo dashboard tiles",
+    "route": "/dashboard/RCP-OPCO",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "The AM fee coverage tile is blank. Why?",
+    "must_include": [
+      "g&a",
+      "zero|0"
+    ],
+    "must_not_include": [
+      "combined.{0,40}eliminat"
+    ]
+  }
+]

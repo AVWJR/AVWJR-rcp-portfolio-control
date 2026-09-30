@@ -1,6 +1,9 @@
 import { currentAccessRole } from "@/lib/access-server";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import {
+  DISTRIBUTION_DATE,
+  DISTRIBUTION_PERIOD,
+  DISTRIBUTION_SOURCE,
   DistributionLedgerError,
   assertPreviewGrossMatches,
   distributionCsv,
@@ -68,12 +71,12 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       previewGrossCents?: string | number;
     };
     if (!body.source || !isDistributionSource(body.source)) {
-      return NextResponse.json({ error: "Source must be operating cash or a capital event." }, { status: 400 });
+      return NextResponse.json({ error: DISTRIBUTION_SOURCE }, { status: 400 });
     }
     const gross = parseWholeCents(body.grossCents);
     if (body.confirm) assertPreviewGrossMatches(gross, body.previewGrossCents);
     const period = /^\d{4}-\d{2}$/.test(body.period ?? "") ? body.period! : null;
-    if (!period) return NextResponse.json({ error: "Pick a period such as 2026-08." }, { status: 400 });
+    if (!period) return NextResponse.json({ error: DISTRIBUTION_PERIOD }, { status: 400 });
     const [yearText, monthText] = period.split("-");
     const year = Number(yearText);
     const month = Number(monthText);
@@ -93,7 +96,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     }
     const eventDate = body.eventDate ? new Date(body.eventDate) : new Date();
     if (Number.isNaN(eventDate.getTime())) {
-      return NextResponse.json({ error: "Distribution date is not valid." }, { status: 400 });
+      return NextResponse.json({ error: DISTRIBUTION_DATE }, { status: 400 });
     }
     const board = await postDistribution({
       entityId: entity.id,

@@ -9,6 +9,7 @@ import { buildAllStatements } from "@/lib/reports-server";
 import { isJournalBalanced } from "@rcp/ledger";
 import { formatMultipleBps, formatPercentBps } from "@rcp/debt";
 import { formatRatioBps } from "@rcp/reporting";
+import { findHowTos, howToById, publicHowTo } from "./howtos";
 import { listNavTargets, withContext } from "./nav";
 import { parsePeriodLabel } from "./period";
 import type {
@@ -636,6 +637,19 @@ export async function getDealIntakeStatus(intakeId: string) {
 }
 
 export { listNavTargets };
+
+export function getHowTo(input: { query?: string; id?: string } = {}) {
+  if (input.id?.trim()) {
+    const entry = howToById(input.id.trim());
+    return entry
+      ? { ok: true as const, entries: [publicHowTo(entry)] }
+      : { ok: false as const, error: `Unknown how-to ${input.id}`, entries: [] };
+  }
+  return {
+    ok: true as const,
+    entries: findHowTos(input.query ?? "", undefined, 3).map(publicHowTo),
+  };
+}
 
 export async function runExpertTools(entityCode: string, periodLabel: string) {
   const [entity, period, completeness, anomalies, kpis, nav] = await Promise.all([

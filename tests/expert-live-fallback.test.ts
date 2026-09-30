@@ -31,6 +31,7 @@ vi.mock("@/lib/expert/tools", () => {
     getKpiSnapshot: async () => skip,
     getPeriodStatus: async () => skip,
     listNavTargets: async () => [],
+    getHowTo: async () => ({ ok: true as const, entries: [] }),
   };
 });
 
