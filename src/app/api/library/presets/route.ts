@@ -1,6 +1,6 @@
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { parseCriteria } from "@/lib/library/criteria";
-import { listCriteriaPresets, loadCriteriaPreset, saveCriteriaPreset } from "@/lib/library/presets";
+import { deleteCriteriaPreset, listCriteriaPresets, loadCriteriaPreset, saveCriteriaPreset } from "@/lib/library/presets";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -26,6 +26,18 @@ export async function POST(request: Request) {
     }
     const saved = await saveCriteriaPreset(body.name ?? "", parseCriteria(body.criteria));
     return NextResponse.json({ id: saved.id, name: saved.name });
+  } catch (error) {
+    return dealErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  const limited = rateLimitDeals(request);
+  if (limited) return limited;
+  try {
+    const body = (await request.json().catch(() => ({}))) as { id?: string };
+    const removed = await deleteCriteriaPreset(body.id ?? "");
+    return NextResponse.json({ deleted: true, id: removed.id, name: removed.name });
   } catch (error) {
     return dealErrorResponse(error);
   }

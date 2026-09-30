@@ -30,6 +30,7 @@ export function CriteriaBuilder({
   presets,
   onSavePreset,
   onLoadPreset,
+  onDeletePreset,
 }: {
   criteria: Criterion[];
   onChange: (next: Criterion[]) => void;
@@ -39,11 +40,14 @@ export function CriteriaBuilder({
   presets?: Preset[];
   onSavePreset?: (name: string) => void;
   onLoadPreset?: (id: string) => void;
+  onDeletePreset?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [presetName, setPresetName] = useState("");
+  const [presetId, setPresetId] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
@@ -212,10 +216,12 @@ export function CriteriaBuilder({
                 Saved
                 <select
                   className="mt-1 block border border-cream-300 bg-white px-3 py-2 text-sm text-navy-900"
-                  defaultValue=""
+                  value={presetId}
                   onChange={(event) => {
-                    if (event.target.value) onLoadPreset(event.target.value);
-                    event.target.value = "";
+                    const id = event.target.value;
+                    setPresetId(id);
+                    setConfirmDelete(false);
+                    if (id) onLoadPreset(id);
                   }}
                 >
                   <option value="">Load a preset</option>
@@ -226,6 +232,39 @@ export function CriteriaBuilder({
                   ))}
                 </select>
               </label>
+            ) : null}
+            {onDeletePreset && presets?.length ? (
+              <button
+                type="button"
+                className="border border-navy-900 px-3 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900 disabled:opacity-40"
+                disabled={!presetId}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete preset
+              </button>
+            ) : null}
+            {confirmDelete && presetId ? (
+              <p className="flex flex-wrap items-center gap-2 text-sm text-ink-800">
+                Delete this preset? Deals and documents stay.
+                <button
+                  type="button"
+                  className="bg-navy-900 px-3 py-2 text-[12px] uppercase tracking-[0.14em] text-cream-50"
+                  onClick={() => {
+                    onDeletePreset?.(presetId);
+                    setPresetId("");
+                    setConfirmDelete(false);
+                  }}
+                >
+                  Delete preset
+                </button>
+                <button
+                  type="button"
+                  className="border border-navy-900 px-3 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900"
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  Cancel
+                </button>
+              </p>
             ) : null}
           </div>
         ) : null}

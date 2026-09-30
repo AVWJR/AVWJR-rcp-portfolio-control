@@ -1,3 +1,4 @@
+import { ArchiveDealButton } from "@/components/deals/archive-deal-button";
 import { DealLibraryForm } from "@/components/deals/deal-library-form";
 import { DealStatusControl } from "@/components/deals/deal-status-control";
 import { SaveSnapshotButton } from "@/components/deals/save-snapshot-button";
@@ -51,6 +52,17 @@ export default async function DealProfilePage({
             )}
           </div>
           <DealStatusControl profile={profile} />
+          {profile.dealStatus !== "OWNED" && profile.lifecycleStatus !== "ARCHIVED" ? (
+            <section className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
+              <h2 className="font-display text-2xl text-navy-900">Archive this deal</h2>
+              <p className="mt-1 max-w-2xl text-sm text-ink-700">
+                Delete asks for this SPE code, then archives the deal. Books and files stay. Nothing is removed because of age.
+              </p>
+              <div className="mt-3">
+                <ArchiveDealButton code={profile.code} name={profile.name} afterHref="/library" />
+              </div>
+            </section>
+          ) : null}
           <DealLibraryForm
             profile={profile}
             states={picks.filter((row) => row.kind === PICK_STATE).map((row) => row.label)}

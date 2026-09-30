@@ -16,6 +16,14 @@ export async function saveCriteriaPreset(name: string, criteria: Criterion[]) {
   });
 }
 
+/** Removes one saved search. Does not delete deals, snapshots, or documents. */
+export async function deleteCriteriaPreset(id: string) {
+  const row = await prisma.criteriaPreset.findUnique({ where: { id } });
+  if (!row) throw new Error("That preset is not on file.");
+  await prisma.criteriaPreset.delete({ where: { id } });
+  return { id: row.id, name: row.name };
+}
+
 export async function loadCriteriaPreset(id: string): Promise<Criterion[]> {
   const row = await prisma.criteriaPreset.findUnique({ where: { id } });
   if (!row) throw new Error("That preset is not on file.");

@@ -31,10 +31,20 @@ function money(cents: number | null): string {
   return (cents / 100).toFixed(2);
 }
 
-function escape(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+/** Excel treats a leading = + - @ tab or CR as a formula. A leading quote keeps free text as text. */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+export function shieldCsvText(value: string): string {
+  if (FORMULA_START.test(value)) return `'${value}`;
   return value;
 }
+
+function escape(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+const TEXT_COLUMNS = new Set<ColumnLayoutItem["id"]>(["metro", "lpNetIrr", "lpCashYield", "rcpIrr"]);
 
 /** CSV of the current view. Does not delete anything. */
 export function libraryCsv(rows: LibraryRow[], layout: ColumnLayoutItem[]): string {
@@ -43,8 +53,15 @@ export function libraryCsv(rows: LibraryRow[], layout: ColumnLayoutItem[]): stri
   const lines = [header.join(",")];
   for (const row of rows) {
     const stale = staleFlagLabel(row.stale) ?? "Current";
+    const values = [row.name, row.code, row.statusLabel, stale, ...visible.map((column) => cell(row, column.id))];
     lines.push(
-      [row.name, row.code, row.statusLabel, stale, ...visible.map((column) => cell(row, column.id))].map(escape).join(","),
+      values
+        .map((value, index) => {
+          const column = visible[index - 4];
+          const text = index < 4 || (column != null && TEXT_COLUMNS.has(column.id));
+          return escape(text ? shieldCsvText(value) : value);
+        })
+        .join(","),
     );
   }
   return lines.join("\n");

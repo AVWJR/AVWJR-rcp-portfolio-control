@@ -18,6 +18,7 @@ export function DealStatusControl({ profile }: { profile: DealProfile }) {
   const [reason, setReason] = useState("");
   const [dialog, setDialog] = useState<null | "exit" | "enter" | "locked">(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (profile.lifecycleStatus === "ARCHIVED") {
@@ -39,6 +40,8 @@ export function DealStatusControl({ profile }: { profile: DealProfile }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not change status.");
+      const posted = Number(json.deal?.postedT12Lines ?? 0);
+      setNotice(posted > 0 ? `Posted ${posted} broker T12 lines into the books.` : null);
       setDialog(null);
       setReason("");
       router.refresh();
@@ -79,7 +82,7 @@ export function DealStatusControl({ profile }: { profile: DealProfile }) {
     <section className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
       <h2 className="font-display text-2xl text-navy-900">Deal status</h2>
       <p className="mt-1 max-w-2xl text-sm text-ink-700">
-        Only Owned deals feed the OpCo roll-up, month-end close, and the distribution ledger. Pipeline, Screened, and Test keep their analysis off the books. Archive is still Delete on the Deals list.
+        Only Owned deals feed the OpCo roll-up, month-end close, and the distribution ledger. Pipeline, Screened, and Test keep their analysis off the books. Marking one Owned posts its saved broker T12 into the books. Archive a deal that is not Owned with Delete on this page.
       </p>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="text-sm text-ink-700">
@@ -102,6 +105,7 @@ export function DealStatusControl({ profile }: { profile: DealProfile }) {
           Update status
         </button>
       </div>
+      {notice ? <p className="mt-2 text-sm text-navy-900">{notice}</p> : null}
       {error ? <p className="mt-2 text-sm text-red-800">{error}</p> : null}
       {dialog ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/50 px-4" role="dialog" aria-modal="true">

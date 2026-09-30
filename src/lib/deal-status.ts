@@ -10,6 +10,7 @@
 
 import { isPermanentDemoSpe, permanentDemoDeleteMessage } from "@/lib/archive";
 import { prisma } from "@/lib/prisma";
+import { postStoredBrokerT12Journals } from "@/lib/t12-overlay";
 import { effectiveDealStatus, isDealStatus, type DealStatusValue } from "@/lib/owned-spe";
 
 export {
@@ -42,6 +43,7 @@ export function ownedExitCopy(code: string, name: string): string {
 export function ownedEntryCopy(code: string, name: string): string {
   return (
     `Marking ${name} (${code}) Owned puts it into the real OpCo books, month-end close, and the distribution ledger. ` +
+    `The saved broker T12 will be posted into the books. ` +
     `Confirm that RCP has closed on this deal.`
   );
 }
@@ -75,7 +77,13 @@ export async function changeDealStatus(opts: {
   confirmRollup?: boolean;
   confirmOwned?: boolean;
   actor?: string;
-}): Promise<{ code: string; name: string; fromStatus: DealStatusValue; toStatus: DealStatusValue }> {
+}): Promise<{
+  code: string;
+  name: string;
+  fromStatus: DealStatusValue;
+  toStatus: DealStatusValue;
+  postedT12Lines: number;
+}> {
   const code = opts.code.trim().toUpperCase();
   if (!isDealStatus(opts.toStatus)) {
     throw new DealStatusError("Choose Pipeline, Screened, Owned, or Test.");
@@ -103,7 +111,7 @@ export async function changeDealStatus(opts: {
 
   const fromStatus = effectiveDealStatus(entity);
   if (fromStatus === toStatus) {
-    return { code: entity.code, name: entity.name, fromStatus, toStatus };
+    return { code: entity.code, name: entity.name, fromStatus, toStatus, postedT12Lines: 0 };
   }
 
   if (fromStatus === "OWNED" && isPermanentDemoSpe(entity.code)) {
@@ -125,18 +133,25 @@ export async function changeDealStatus(opts: {
     }
   }
 
-  await prisma.entity.update({
-    where: { id: entity.id },
-    data: { dealStatus: toStatus },
+  await prisma.$transaction(async (tx) => {
+    await tx.entity.update({
+      where: { id: entity.id },
+      data: { dealStatus: toStatus },
+    });
+    await tx.dealStatusEvent.create({
+      data: {
+        entityId: entity.id,
+        fromStatus,
+        toStatus,
+        reason,
+        actor: opts.actor ?? "principal",
+      },
+    });
   });
-  await prisma.dealStatusEvent.create({
-    data: {
-      entityId: entity.id,
-      fromStatus,
-      toStatus,
-      reason,
-      actor: opts.actor ?? "principal",
-    },
-  });
-  return { code: entity.code, name: entity.name, fromStatus, toStatus };
+
+  let postedT12Lines = 0;
+  if (toStatus === "OWNED" && fromStatus !== "OWNED") {
+    postedT12Lines = await postStoredBrokerT12Journals(entity.id);
+  }
+  return { code: entity.code, name: entity.name, fromStatus, toStatus, postedT12Lines };
 }

@@ -258,6 +258,8 @@ export function evaluateCriterion(fact: LibraryFact, criterion: Criterion): Excl
     if (!selected.length) return null;
     const actual = factText(fact, criterion.field);
     if (!actual) {
+      // A blank value is not the excluded one, so "is not" passes. "Is" still excludes it.
+      if (criterion.operator === "not_in") return null;
       return { field: criterion.field, label: def.label, reason: `${def.label} is not on file` };
     }
     const hit = selected.some((row) => row.toLowerCase() === actual.toLowerCase());

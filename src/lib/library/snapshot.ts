@@ -6,7 +6,10 @@
 
 import { opexRatioBps, trailingNoi } from "@rcp/analytics";
 import { buildIncomeStatement, isLookThroughTemplate, residualPromoteSplit } from "@rcp/ledger";
+import { incomeStatementFromBudget, type BudgetByCode } from "@rcp/reporting";
 import { prisma } from "@/lib/prisma";
+import { BROKER_T12_SOURCE } from "@/lib/t12-overlay";
+import { isOwnedSpe } from "@/lib/owned-spe";
 import { buildOperatingPackage } from "@/lib/operating";
 import { loadLoans } from "@/lib/loans";
 import { loadPostedLines, listPeriods } from "@/lib/queries";
@@ -15,6 +18,23 @@ import { loadSpeWaterfall } from "@/lib/waterfall";
 function bps(numerator: bigint, denominator: bigint): number | null {
   if (denominator <= 0n) return null;
   return Number((numerator * 10_000n) / denominator);
+}
+
+async function monthlyBrokerT12(entityId: string): Promise<{ monthlyNoi: bigint; opex: bigint; egi: bigint } | null> {
+  const stored = await prisma.budgetLine.findMany({
+    where: { entityId, source: BROKER_T12_SOURCE },
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+  });
+  if (!stored.length) return null;
+  const year = stored[0]!.year;
+  const month = stored[0]!.month;
+  const map: BudgetByCode = new Map();
+  for (const row of stored) {
+    if (row.year !== year || row.month !== month) continue;
+    map.set(row.accountCode, (map.get(row.accountCode) ?? 0n) + row.amount);
+  }
+  const stmt = incomeStatementFromBudget(map);
+  return { monthlyNoi: stmt.noi, opex: stmt.opex, egi: stmt.egi };
 }
 
 async function monthlyNoi(entityId: string, throughYear: number, throughMonth: number): Promise<bigint[]> {
@@ -44,20 +64,62 @@ export async function captureDealSnapshot(opts: {
   }
 
   const periodLabel = `${opts.year}-${String(opts.month).padStart(2, "0")}`;
-  const pack = await buildOperatingPackage({
-    entityId: entity.id,
-    year: opts.year,
-    month: opts.month,
-    consolidated: false,
-  });
-  const actual = pack.operating.actual;
-  const t12 = trailingNoi(await monthlyNoi(entity.id, opts.year, opts.month));
-  const annualizedNoi = t12.definition === "t12" ? t12.noiCents : actual.noi * 12n;
-  const basisLabel = t12.definition === "t12" ? "T12" : "period NOI × 12";
-  const noiBasisLabel =
-    t12.definition === "t12"
-      ? "T12 NOI"
-      : `T12 incomplete (${t12.monthsAvailable}/12). Annualized figures use period NOI × 12. DSCR uses this month's NOI and debt service.`;
+  const owned = isOwnedSpe(entity);
+  const broker = owned ? null : await monthlyBrokerT12(entity.id);
+  const postedJournals = owned
+    ? 1
+    : await prisma.journal.count({ where: { entityId: entity.id, status: "POSTED" } });
+  const useBroker = broker != null && broker.monthlyNoi !== 0n;
+  const useBooks = !useBroker && (owned || postedJournals > 0);
+
+  let periodNoi: bigint | null = null;
+  let annualizedNoi: bigint | null = null;
+  let opex = 0n;
+  let egi = 0n;
+  let basisLabel = "No NOI on file";
+  let noiBasisLabel = "No NOI on file. Ratios stay blank. Nothing was invented from empty books.";
+  let occupancyBps: number | null = null;
+  let units = entity.unitCountOverride ?? entity.unitCount;
+
+  if (useBroker && broker) {
+    periodNoi = broker.monthlyNoi;
+    annualizedNoi = broker.monthlyNoi * 12n;
+    opex = broker.opex;
+    egi = broker.egi;
+    basisLabel = "Broker T12 (not in the books)";
+    noiBasisLabel = "Broker T12 (not in the books). Annualized figures use the stored monthly broker T12 × 12.";
+  } else if (useBooks) {
+    const pack = await buildOperatingPackage({
+      entityId: entity.id,
+      year: opts.year,
+      month: opts.month,
+      consolidated: false,
+    });
+    const actual = pack.operating.actual;
+    const t12 = trailingNoi(await monthlyNoi(entity.id, opts.year, opts.month));
+    const annual = t12.definition === "t12" ? t12.noiCents : actual.noi * 12n;
+    periodNoi = actual.noi;
+    annualizedNoi = annual;
+    opex = actual.opex;
+    egi = actual.egi;
+    occupancyBps = pack.kpis.rentRoll?.physicalOccupancyBps ?? null;
+    units = entity.unitCountOverride ?? entity.unitCount ?? pack.kpis.rentRoll?.unitCount ?? null;
+    if (t12.definition === "t12") {
+      basisLabel = "T12";
+      noiBasisLabel = "T12 NOI";
+    } else {
+      basisLabel = "period NOI × 12";
+      noiBasisLabel = `T12 incomplete (${t12.monthsAvailable}/12). Annualized figures use period NOI × 12. DSCR uses this month's NOI and debt service.`;
+    }
+    if (!owned && annual === 0n) {
+      periodNoi = null;
+      annualizedNoi = null;
+      basisLabel = "No NOI on file";
+      noiBasisLabel = "No NOI on file. Ratios stay blank. Nothing was invented from empty books.";
+    }
+  }
+
+  const noiReady = periodNoi != null && annualizedNoi != null && annualizedNoi !== 0n;
 
   const loans = await loadLoans([entity.id]);
   const loan = loans[0];
@@ -71,15 +133,14 @@ export async function captureDealSnapshot(opts: {
     upb = loan.currentUpbCents;
   }
   const debtService = interest + principal;
-  const dscrBps = debtService > 0n ? bps(actual.noi, debtService) : null;
-  const debtYieldBps = upb > 0n ? bps(annualizedNoi, upb) : null;
+  const dscrBps = noiReady && debtService > 0n ? bps(periodNoi!, debtService) : null;
+  const debtYieldBps = noiReady && upb > 0n ? bps(annualizedNoi!, upb) : null;
 
   const price = entity.purchasePriceCents;
   const value = entity.appraisedValueCents ?? entity.purchasePriceCents;
-  const capRateBps = price != null && price > 0n ? bps(annualizedNoi, price) : null;
+  const capRateBps = noiReady && price != null && price > 0n ? bps(annualizedNoi!, price) : null;
   const ltvBps = value != null && value > 0n && upb > 0n ? bps(upb, value) : null;
 
-  const units = entity.unitCountOverride ?? entity.unitCount ?? pack.kpis.rentRoll?.unitCount ?? null;
   const pricePerUnitCents = price != null && units != null && units > 0 ? price / BigInt(units) : null;
 
   const waterfall = await loadSpeWaterfall(entity.id);
@@ -89,8 +150,11 @@ export async function captureDealSnapshot(opts: {
   if (lpEquity > 0n && gpBps < 10_000) {
     equityRequired = (lpEquity * 10_000n) / BigInt(10_000 - gpBps);
   }
-  const cashAfterDebt = annualizedNoi - debtService * 12n;
-  const cashOnCashBps = equityRequired != null && equityRequired > 0n ? bps(cashAfterDebt, equityRequired) : null;
+  const cashAfterDebt = noiReady ? annualizedNoi! - debtService * 12n : null;
+  const cashOnCashBps =
+    noiReady && cashAfterDebt != null && equityRequired != null && equityRequired > 0n
+      ? bps(cashAfterDebt, equityRequired)
+      : null;
 
   const residual = waterfall ? residualPromoteSplit(waterfall.config.tiers) : null;
   const promoteSplitLabel = residual ? `LP ${residual.lpSplitBps / 100}% / GP ${residual.gpSplitBps / 100}%` : null;
@@ -101,8 +165,7 @@ export async function captureDealSnapshot(opts: {
       ? Math.round((residual.gpSplitBps * (10_000 - coGp)) / 10_000)
       : null;
 
-  const occupancyBps = pack.kpis.rentRoll?.physicalOccupancyBps ?? null;
-  const expenseRatioBps = opexRatioBps(actual.opex, actual.egi);
+  const expenseRatioBps = noiReady ? opexRatioBps(opex, egi) : null;
   const asOfDate = new Date(Date.UTC(opts.year, opts.month - 1, 1, 16, 0, 0));
   const sourceFiles = JSON.stringify(
     entity.vaultDocuments.map((file) => ({ filename: file.filename, kind: file.kind })),
@@ -122,8 +185,8 @@ export async function captureDealSnapshot(opts: {
       cashOnCashBps,
       occupancyBps,
       expenseRatioBps,
-      noiCents: actual.noi,
-      annualizedNoiCents: annualizedNoi,
+      noiCents: noiReady ? periodNoi : null,
+      annualizedNoiCents: noiReady ? annualizedNoi : null,
       capRateBps,
       ltvBps,
       pricePerUnitCents,

@@ -3,7 +3,8 @@ import { answerOffline, type OfflineBundle } from "@/lib/expert/offline-coach";
 import { listNavTargets, readExpertContext } from "@/lib/expert/nav";
 import { EXPERT_SYSTEM_PROMPT } from "@/lib/expert/system-prompt";
 import { archiveSpe } from "@/lib/archive";
-import { changeDealStatus, effectiveDealStatus } from "@/lib/deal-status";
+import { changeDealStatus, effectiveDealStatus, ownedEntryCopy } from "@/lib/deal-status";
+import { getDataCompleteness, getEntitySummary } from "@/lib/expert/tools";
 import { createEntityWithCoa } from "@/lib/entities";
 import { postJournal } from "@/lib/post-journal";
 import { openPeriod } from "@/lib/deals/periods";
@@ -25,6 +26,10 @@ import {
   passCount,
   type LibraryFact,
 } from "@/lib/library/criteria";
+import { libraryCsv } from "@/lib/library/csv";
+import type { LibraryRow } from "@/lib/library/facts";
+import { deleteCriteriaPreset } from "@/lib/library/presets";
+import { visibleLibraryRows } from "@/lib/library/view";
 import { FEE_NEEDED, dealFeeNeededLabel, opcoFeeNeededLabel } from "@/lib/library/fees";
 import {
   PICK_METRO,
@@ -91,6 +96,28 @@ function fact(over: Partial<LibraryFact> = {}): LibraryFact {
   };
 }
 
+async function cleanupSpe(id: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.dealStatusEvent.deleteMany({ where: { entityId: id } });
+    await tx.dealAnalysisSnapshot.deleteMany({ where: { entityId: id } });
+    await tx.distributionAllocation.deleteMany({ where: { event: { entityId: id } } });
+    await tx.distributionAudit.deleteMany({ where: { entityId: id } });
+    await tx.distributionEvent.deleteMany({ where: { entityId: id } });
+    await tx.budgetLine.deleteMany({ where: { entityId: id } });
+    await tx.journalLine.deleteMany({
+      where: { OR: [{ journal: { entityId: id } }, { account: { entityId: id } }] },
+    });
+    await tx.journal.deleteMany({ where: { entityId: id } });
+    await tx.closeChecklistItem.deleteMany({ where: { period: { entityId: id } } });
+    await tx.period.deleteMany({ where: { entityId: id } });
+    await tx.vaultDocument.deleteMany({ where: { entityId: id } });
+    await tx.account.deleteMany({ where: { entityId: id } });
+    await tx.entity.deleteMany({ where: { id } });
+  });
+  const index = idsToDelete.indexOf(id);
+  if (index >= 0) idsToDelete.splice(index, 1);
+}
+
 function hard(field: Parameters<typeof blankCriterion>[0], operator: "gte" | "gt" | "lte" | "lt" | "eq" | "in" | "not_in", value: number | string[]) {
   const row = blankCriterion(field, `c_${field}`);
   return { ...row, operator, value, role: "HARD_LIMIT" as const };
@@ -112,7 +139,12 @@ afterAll(async () => {
     await prisma.distributionAllocation.deleteMany({ where: { event: { entityId: { in: idsToDelete } } } });
     await prisma.distributionAudit.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.distributionEvent.deleteMany({ where: { entityId: { in: idsToDelete } } });
-    await prisma.journalLine.deleteMany({ where: { journal: { entityId: { in: idsToDelete } } } });
+    await prisma.budgetLine.deleteMany({ where: { entityId: { in: idsToDelete } } });
+    await prisma.journalLine.deleteMany({
+      where: {
+        OR: [{ journal: { entityId: { in: idsToDelete } } }, { account: { entityId: { in: idsToDelete } } }],
+      },
+    });
     await prisma.journal.deleteMany({ where: { entityId: { in: idsToDelete } } });
     await prisma.closeChecklistItem.deleteMany({ where: { period: { entityId: { in: idsToDelete } } } });
     await prisma.period.deleteMany({ where: { entityId: { in: idsToDelete } } });
@@ -383,6 +415,9 @@ describe("criteria, presets, columns, stale flags, fees, and pick lists", () => 
     expect(evaluateCriterion(row, hard("state", "not_in", ["GA"]))?.reason).toMatch(/is GA/);
     expect(evaluateCriterion(row, hard("state", "in", []))).toBeNull();
     expect(evaluateCriterion(row, hard("metro", "not_in", ["Savannah"]))).toBeNull();
+    expect(evaluateCriterion(fact({ state: null }), hard("state", "not_in", ["GA"]))).toBeNull();
+    expect(evaluateCriterion(fact({ state: "" }), hard("state", "not_in", ["TX"]))).toBeNull();
+    expect(evaluateCriterion(fact({ state: null }), hard("state", "in", ["GA"]))?.reason).toMatch(/not on file/);
     const preference = { ...hard("dscr", "gt", 9), role: "PREFERENCE" as const };
     expect(evaluateCriterion(row, preference)).toBeNull();
     const phase = evaluateCriterion(row, hard("lpNetIrr", "gte", 15));
@@ -404,6 +439,11 @@ describe("criteria, presets, columns, stale flags, fees, and pick lists", () => 
     expect(loaded[0]?.operator).toBe("gte");
     expect(loaded[0]?.value).toBe(1.25);
     expect(loaded[0]?.role).toBe("HARD_LIMIT");
+    const dealsBefore = await prisma.entity.count();
+    await deleteCriteriaPreset(saved.id);
+    expect(await prisma.criteriaPreset.findUnique({ where: { id: saved.id } })).toBeNull();
+    expect(await prisma.entity.count()).toBe(dealsBefore);
+    presetIds.splice(presetIds.indexOf(saved.id), 1);
   });
 
   it("keeps the owner column order and can hide or reorder without dropping a column", () => {
@@ -539,5 +579,174 @@ describe("Expert Library how-to", () => {
     expect(reply.content).toMatch(/never deletes/i);
     const chips = rankChips(ctx, emptyBundle, "How do I find deals that meet my criteria?");
     expect(chips.some((chip) => /criteria/i.test(chip.prompt))).toBe(true);
+  });
+
+  it("leaves a pipeline SPE out of the OpCo completeness list and entity summary", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-E${suffix}`.slice(0, 12);
+    const entity = await createEntityWithCoa({
+      code,
+      name: `Expert ${suffix} LLC`,
+      type: "SPE",
+      parentId: opco.id,
+      dealStatus: "PIPELINE",
+    });
+    idsToDelete.push(entity.id);
+
+    const summary = await getEntitySummary("RCP-OPCO");
+    if ("ok" in summary) throw new Error(summary.error);
+    expect(summary.children.map((child) => child.code)).not.toContain(code);
+    expect(summary.children.map((child) => child.code)).toContain("SPE-WBG");
+
+    const complete = await getDataCompleteness("RCP-OPCO", "2026-08");
+    if ("ok" in complete) throw new Error(complete.error);
+    expect(complete.items.some((item) => item.id === `spe_${code}`)).toBe(false);
+    expect(complete.items.some((item) => item.id === "spe_SPE-WBG")).toBe(true);
+    await cleanupSpe(entity.id);
+  });
+});
+
+describe("CSV, Test deals, broker T12 snapshots, and posting on Owned", () => {
+  it("prefixes formula text and leaves generated numbers alone", () => {
+    const row = {
+      code: "SPE-X",
+      name: "=cmd|' /C calc'!A0",
+      dealStatus: "PIPELINE",
+      statusLabel: "Pipeline",
+      stale: "fresh",
+      metro: "=HYPERLINK(...)",
+      pricePerUnitCents: -100,
+      unitCount: 12,
+      dscrBps: 12500,
+      feeNeeded: true,
+    } as LibraryRow;
+    const csv = libraryCsv([row], defaultColumnLayout());
+    expect(csv).toContain("'=cmd|' /C calc'!A0");
+    expect(csv).toContain("'=HYPERLINK(...)");
+    expect(csv).toContain("-1.00");
+    expect(csv).not.toContain("'-1.00");
+    expect(csv).toContain("1.25");
+    const hidden = visibleLibraryRows(
+      [
+        { dealStatus: "TEST", code: "SPE-T" },
+        { dealStatus: "OWNED", code: "SPE-WBG" },
+        { dealStatus: "PIPELINE", code: "SPE-P" },
+      ],
+      false,
+    );
+    expect(hidden.map((item) => item.code)).toEqual(["SPE-WBG", "SPE-P"]);
+    expect(visibleLibraryRows(hidden, true)).toHaveLength(2);
+    const withTest = visibleLibraryRows(
+      [
+        { dealStatus: "TEST", code: "SPE-T" },
+        { dealStatus: "OWNED", code: "SPE-WBG" },
+      ],
+      true,
+    );
+    expect(withTest).toHaveLength(2);
+  });
+
+  it("stores a null cap rate without a T12 and a broker-T12 cap rate when one is saved", async () => {
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-N${suffix}`.slice(0, 12);
+    const entity = await createEntityWithCoa({
+      code,
+      name: `No Books ${suffix} LLC`,
+      type: "SPE",
+      dealStatus: "PIPELINE",
+      unitCount: 40,
+    });
+    idsToDelete.push(entity.id);
+    await prisma.entity.update({
+      where: { id: entity.id },
+      data: { purchasePriceCents: 1_200_000_000n },
+    });
+
+    const empty = await captureDealSnapshot({ entityId: entity.id, year: 2026, month: 8, actor: "library-test" });
+    expect(empty.capRateBps).toBeNull();
+    expect(empty.debtYieldBps).toBeNull();
+    expect(empty.cashOnCashBps).toBeNull();
+    expect(empty.dscrBps).toBeNull();
+    expect(empty.noiCents).toBeNull();
+    expect(empty.annualizedNoiCents).toBeNull();
+
+    await prisma.budgetLine.create({
+      data: {
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        accountCode: "4010",
+        amount: 10_000_000n,
+        source: "broker_t12",
+      },
+    });
+    const priced = await captureDealSnapshot({ entityId: entity.id, year: 2026, month: 8, actor: "library-test" });
+    expect(priced.basisLabel).toBe("Broker T12 (not in the books)");
+    expect(priced.capRateBps).toBe(1000);
+    expect(priced.noiCents).toBe(10_000_000n);
+    expect(priced.annualizedNoiCents).toBe(120_000_000n);
+    await cleanupSpe(entity.id);
+  });
+
+  it("posts a saved broker T12 once when the deal becomes Owned", async () => {
+    const suffix = Date.now().toString(36).toUpperCase().slice(-5);
+    const code = `SPE-B${suffix}`.slice(0, 12);
+    const name = `Broker ${suffix} LLC`;
+    const entity = await createEntityWithCoa({
+      code,
+      name,
+      type: "SPE",
+      dealStatus: "PIPELINE",
+    });
+    idsToDelete.push(entity.id);
+    expect(ownedEntryCopy(code, name)).toMatch(/saved broker T12 will be posted into the books/i);
+    await prisma.budgetLine.create({
+      data: {
+        entityId: entity.id,
+        year: 2026,
+        month: 8,
+        accountCode: "4010",
+        amount: 10_000_000n,
+        source: "broker_t12",
+      },
+    });
+
+    const first = await changeDealStatus({
+      code,
+      toStatus: "OWNED",
+      reason: "closed",
+      confirmOwned: true,
+    });
+    expect(first.postedT12Lines).toBeGreaterThan(0);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "broker_t12_overlay" } })).toBe(1);
+
+    await changeDealStatus({
+      code,
+      toStatus: "SCREENED",
+      reason: "step out",
+      confirmRollup: true,
+    });
+    const second = await changeDealStatus({
+      code,
+      toStatus: "OWNED",
+      reason: "closed again",
+      confirmOwned: true,
+    });
+    expect(second.postedT12Lines).toBeGreaterThan(0);
+    expect(await prisma.journal.count({ where: { entityId: entity.id, source: "broker_t12_overlay" } })).toBe(1);
+    const credits = await prisma.journalLine.findMany({
+      where: { journal: { entityId: entity.id, source: "broker_t12_overlay" }, account: { code: "4010" } },
+    });
+    expect(credits.reduce((sum, line) => sum + line.credit, 0n)).toBe(10_000_000n);
+
+    await changeDealStatus({
+      code,
+      toStatus: "TEST",
+      reason: "leave the books",
+      confirmRollup: true,
+    });
+    await cleanupSpe(entity.id);
   });
 });

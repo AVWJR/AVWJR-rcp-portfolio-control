@@ -1,5 +1,6 @@
 "use client";
 
+import { ArchiveDealButton } from "@/components/deals/archive-deal-button";
 import { CriteriaBuilder } from "@/components/library/criteria-builder";
 import { columnMeta, defaultColumnLayout, moveColumn, normalizeColumnLayout, type ColumnLayoutItem, type LibraryColumnId } from "@/lib/library/columns";
 import { evaluateDeal, passCount, type Criterion, type CriterionField } from "@/lib/library/criteria";
@@ -7,6 +8,7 @@ import { libraryCsv } from "@/lib/library/csv";
 import { FEE_NEEDED } from "@/lib/library/fees";
 import type { LibraryRow } from "@/lib/library/facts";
 import { staleFlagLabel } from "@/lib/library/staleness";
+import { visibleLibraryRows } from "@/lib/library/view";
 import { formatUsd } from "@rcp/ledger";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -78,15 +80,19 @@ export function LibraryWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [ga, setGa] = useState(gaBudgetCents == null ? "" : (gaBudgetCents / 100).toFixed(2));
   const [busy, setBusy] = useState(false);
+  const [showTest, setShowTest] = useState(false);
 
   function persist(next: ColumnLayoutItem[]) {
     setLayout(next);
     window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
   }
 
+  const listed = useMemo(() => visibleLibraryRows(rows, showTest), [rows, showTest]);
+  const hiddenTest = rows.filter((row) => row.dealStatus === "TEST").length;
+
   const choices = useMemo(() => {
     const fromDeals = (field: CriterionField, read: (row: LibraryRow) => string | null) =>
-      Array.from(new Set(rows.map(read).filter((value): value is string => Boolean(value))));
+      Array.from(new Set(listed.map(read).filter((value): value is string => Boolean(value))));
     const labels = (kind: string) => picks.filter((item) => item.kind === kind).map((item) => item.label);
     return {
       state: labels("state"),
@@ -99,17 +105,17 @@ export function LibraryWorkspace({
       businessPlan: Array.from(new Set(["Value-add", "Stabilized", "Light rehab", ...fromDeals("businessPlan", (row) => row.businessPlan)])),
       dealStatus: ["Pipeline", "Screened", "Owned", "Archived", "Test"],
     } satisfies Partial<Record<CriterionField, string[]>>;
-  }, [picks, rows]);
+  }, [picks, listed]);
 
   const evaluated = useMemo(
     () =>
-      rows.map((row) => ({
+      listed.map((row) => ({
         row,
         excluded: evaluateDeal(row, criteria),
       })),
-    [rows, criteria],
+    [listed, criteria],
   );
-  const counts = passCount(rows, criteria);
+  const counts = passCount(listed, criteria);
   const visible = layout.filter((column) => column.visible);
 
   const sorted = [...evaluated].sort((a, b) => {
@@ -170,6 +176,21 @@ export function LibraryWorkspace({
     router.refresh();
   }
 
+  async function deletePreset(id: string) {
+    const res = await fetch("/api/library/presets", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setMessage(json.error ?? "Could not delete the preset.");
+      return;
+    }
+    setMessage(`Deleted preset “${json.name}”. Deals were not touched.`);
+    router.refresh();
+  }
+
   async function loadPreset(id: string) {
     const res = await fetch("/api/library/presets", {
       method: "POST",
@@ -214,6 +235,7 @@ export function LibraryWorkspace({
         presets={presets}
         onSavePreset={(name) => void savePreset(name)}
         onLoadPreset={(id) => void loadPreset(id)}
+        onDeletePreset={(id) => void deletePreset(id)}
       />
 
       <section className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
@@ -257,7 +279,16 @@ export function LibraryWorkspace({
         <button type="button" onClick={() => persist(defaultColumnLayout())} className="text-[12px] uppercase tracking-[0.14em] text-navy-800 underline">
           Reset columns
         </button>
+        <label className="ml-1 flex items-center gap-2 text-sm text-navy-900">
+          <input type="checkbox" checked={showTest} onChange={(event) => setShowTest(event.target.checked)} />
+          Show Test deals
+        </label>
       </div>
+      {!showTest && hiddenTest > 0 ? (
+        <p className="text-sm text-ink-700">
+          {hiddenTest} Test {hiddenTest === 1 ? "deal is" : "deals are"} hidden. Turn on Show Test deals to include {hiddenTest === 1 ? "it" : "them"} in the table, the pass count, and the CSV.
+        </p>
+      ) : null}
       {columnsOpen ? (
         <ul className="max-w-md border border-cream-300 bg-white">
           {layout.map((column) => (
@@ -311,6 +342,11 @@ export function LibraryWorkspace({
                     {row.name}
                   </Link>
                   <p className="text-xs text-ink-500">{row.code}</p>
+                  {row.dealStatus !== "OWNED" && row.dealStatus !== "ARCHIVED" ? (
+                    <div className="mt-2">
+                      <ArchiveDealButton code={row.code} name={row.name} afterHref="/library" />
+                    </div>
+                  ) : null}
                   {excluded.length ? (
                     <p className="mt-1 flex flex-wrap gap-1">
                       {excluded.map((item) => (
