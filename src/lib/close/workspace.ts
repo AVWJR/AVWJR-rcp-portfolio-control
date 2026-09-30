@@ -1144,6 +1144,28 @@ export async function reverseOperatingJournals(opts: {
   };
 }
 
+const DEAL_STATUS_WORD: Record<string, string> = {
+  PIPELINE: "Pipeline",
+  SCREENED: "Screened",
+  OWNED: "Owned",
+  ARCHIVED: "Archived",
+  TEST: "Test",
+};
+
+async function assertSpeMayClose(entityId: string, action: "soft" | "hard" | "reopen") {
+  if (action === "reopen") return;
+  const entity = await prisma.entity.findUnique({
+    where: { id: entityId },
+    select: { type: true, code: true, lifecycleStatus: true, dealStatus: true },
+  });
+  if (!entity || entity.type !== "SPE" || isOwnedSpe(entity)) return;
+  const status = effectiveDealStatus(entity);
+  const word = DEAL_STATUS_WORD[status] ?? status;
+  throw new Error(
+    `${entity.code} is ${word}, not Owned. Soft close and hard close are only for Owned deals. This month was not closed.`,
+  );
+}
+
 export async function transitionClose(opts: {
   entityId: string;
   year: number;
@@ -1152,6 +1174,7 @@ export async function transitionClose(opts: {
   reason?: string;
   ticket?: string;
 }) {
+  await assertSpeMayClose(opts.entityId, opts.action);
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (opts.action === "soft") {
     await softClosePeriod(period.id);

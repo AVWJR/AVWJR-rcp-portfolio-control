@@ -6,6 +6,7 @@
 
 import { opexRatioBps, trailingNoi } from "@rcp/analytics";
 import { buildIncomeStatement, isLookThroughTemplate, residualPromoteSplit } from "@rcp/ledger";
+import { summarizeRentRoll } from "@rcp/properties";
 import { incomeStatementFromBudget, type BudgetByCode } from "@rcp/reporting";
 import { prisma } from "@/lib/prisma";
 import { BROKER_T12_SOURCE } from "@/lib/t12-overlay";
@@ -13,6 +14,7 @@ import { isOwnedSpe } from "@/lib/owned-spe";
 import { buildOperatingPackage } from "@/lib/operating";
 import { loadLoans } from "@/lib/loans";
 import { loadPostedLines, listPeriods } from "@/lib/queries";
+import { loadUnits } from "@/lib/rent-roll";
 import { loadSpeWaterfall } from "@/lib/waterfall";
 
 function bps(numerator: bigint, denominator: bigint): number | null {
@@ -116,6 +118,13 @@ export async function captureDealSnapshot(opts: {
       annualizedNoi = null;
       basisLabel = "No NOI on file";
       noiBasisLabel = "No NOI on file. Ratios stay blank. Nothing was invented from empty books.";
+    }
+  }
+
+  if (!owned && !useBooks) {
+    const roll = await loadUnits([entity.id]);
+    if (roll.length > 0) {
+      occupancyBps = summarizeRentRoll(roll).physicalOccupancyBps;
     }
   }
 
