@@ -23,6 +23,8 @@ export type CreateSpeInput = {
   strategy?: "VALUE_ADD_GARDEN" | "STABILIZED" | "LIGHT_REHAB" | null;
   goal?: DealGoal | null;
   targetPeriod?: string | null;
+  /** Defaults to Owned, which is today's Add Deal behavior. */
+  dealStatus?: "PIPELINE" | "SCREENED" | "OWNED" | "TEST" | null;
 };
 
 export async function validateCreateSpe(input: CreateSpeInput) {
@@ -67,7 +69,12 @@ export async function validateCreateSpe(input: CreateSpeInput) {
     input.strategy ??
     (input.goal && isDealGoal(input.goal) ? goalToStrategy(input.goal) : null);
 
-  return { name, code, parent, unitCount: input.unitCount ?? null, strategy, targetPeriod: input.targetPeriod ?? "2026-08" };
+  const dealStatus: "PIPELINE" | "SCREENED" | "OWNED" | "TEST" =
+    input.dealStatus === "PIPELINE" || input.dealStatus === "SCREENED" || input.dealStatus === "TEST"
+      ? input.dealStatus
+      : "OWNED";
+
+  return { name, code, parent, unitCount: input.unitCount ?? null, strategy, targetPeriod: input.targetPeriod ?? "2026-08", dealStatus };
 }
 
 export async function createSpeDeal(input: CreateSpeInput) {
@@ -80,6 +87,7 @@ export async function createSpeDeal(input: CreateSpeInput) {
     ownershipBps: 10_000,
     unitCount: valid.unitCount ?? undefined,
     strategy: valid.strategy ?? undefined,
+    dealStatus: valid.dealStatus,
   });
   await openDealPeriods(entity.id, valid.targetPeriod);
   return { entity, parent: valid.parent };
@@ -106,7 +114,7 @@ export async function findReusableSpe(speName: string) {
   const want = dealNameMatchKey(speName);
   if (want.length < 4) return null;
   const spes = await prisma.entity.findMany({
-    where: liveSpeWhere(),
+    where: { type: "SPE" },
     select: { id: true, code: true, name: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });

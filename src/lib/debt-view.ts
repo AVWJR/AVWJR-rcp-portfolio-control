@@ -1,5 +1,6 @@
 import { computeCovenants, monthsToMaturity, type CovenantResult } from "@rcp/debt";
 import { buildIncomeStatement } from "@rcp/ledger";
+import { isOwnedSpe } from "./deal-status";
 import { loadLoans, mortgageGlBalances } from "./loans";
 import { loadPostedLines } from "./queries";
 import { prisma } from "./prisma";
@@ -33,6 +34,7 @@ export async function loadPortfolioDebt(year = 2026, month = 8): Promise<Portfol
   const asOf = new Date(Date.UTC(year, month - 1, 28, 16, 0, 0));
 
   for (const loan of loans) {
+    if (!isOwnedSpe(loan.entity)) continue;
     const period = await prisma.period.findUnique({
       where: { entityId_year_month: { entityId: loan.entityId, year, month } },
     });

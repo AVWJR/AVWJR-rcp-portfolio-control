@@ -139,6 +139,23 @@ const PAGE_CATALOG: { test: RegExp; title: string; hints: string[] }[] = [
     ],
   },
   {
+    test: /^\/library$/,
+    title: "Deal Library",
+    hints: [
+      "Every deal, every status. + Add criterion, then a sentence row. Hard limits filter. Preference waits for the optimizer.",
+      "How do I find deals that meet my criteria? Gold nav Library. X of Y pass, why-excluded tags, save a preset.",
+      "Stale is amber at 90 days and red at 180. Age never deletes a deal or a file.",
+    ],
+  },
+  {
+    test: /^\/deals\/SPE-[A-Z0-9]+$/,
+    title: "Deal profile",
+    hints: [
+      "Library fields, fees, and deal status. Only Owned feeds the OpCo roll-up.",
+      "Save analysis snapshot keeps the prior one. LP net IRR is Phase 2.",
+    ],
+  },
+  {
     test: /^\/deals$/,
     title: "Deals",
     hints: [
@@ -230,7 +247,8 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "is", href: "/reports/income-statement", label: "Income Statement", hint: "Book P/L" },
   { id: "bs", href: "/reports/balance-sheet", label: "Balance Sheet", hint: "A = L + E" },
   { id: "cf", href: "/reports/cash-flow", label: "Cash Flow", hint: "Indirect; ties to BS" },
-  { id: "deals", href: "/deals", label: "Deals", hint: "Live SPE list and Add Deal drafts" },
+  { id: "deals", href: "/deals", label: "Deals", hint: "Live Owned SPE list and Add Deal drafts" },
+  { id: "library", href: "/library", label: "Library", hint: "How do I find deals that meet my criteria? Sentence builder, hard limits, presets, why excluded." },
   { id: "waterfall", href: "/deals", label: "Deal waterfall", hint: "LP/GP waterfall and Co-GP on a live SPE card — how do I set the deal waterfall?" },
   { id: "distributions", href: "/deals", label: "Distribution ledger", hint: "Record a distribution and see how much pref is still owed on /deals/{SPE}/distributions" },
   { id: "deal_proforma", href: "/deals", label: "Deal proforma", hint: "Forward-looking Deal LP / Deal GP (RCP + Co-GP) on a live SPE" },
@@ -284,6 +302,8 @@ export function entityFromPathname(pathname: string): string | null {
   const pf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/proforma$/);
   if (pf) return pf[1];
   if (pathname === "/opco/proforma") return "RCP-OPCO";
+  const profile = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)$/);
+  if (profile) return profile[1];
   const prop = pathname.match(/^\/properties\/(SPE-[A-Z0-9]+)$/);
   return prop?.[1] ?? null;
 }

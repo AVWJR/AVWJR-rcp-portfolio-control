@@ -75,6 +75,7 @@ export function isViewerBlockedPath(pathname: string): boolean {
   if (pathname === "/deals/new" || pathname.startsWith("/deals/new/")) return true;
   if (pathname === "/admin/seed" || pathname.startsWith("/admin/")) return true;
   if (pathname === "/archive" || pathname.startsWith("/archive/")) return true;
+  if (pathname === "/library" || pathname.startsWith("/library/")) return true;
   return false;
 }
 
@@ -84,6 +85,7 @@ export function isViewerAllowedMutation(pathname: string): boolean {
 
 export function viewerForbiddenApi(pathname: string, method: string): boolean {
   if (isArchiveApi(pathname)) return true;
+  if (pathname === "/api/library" || pathname.startsWith("/api/library/")) return true;
   if (!isMutatingMethod(method)) return false;
   if (isViewerAllowedMutation(pathname)) return false;
   return true;

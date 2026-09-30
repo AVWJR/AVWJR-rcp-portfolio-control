@@ -30,8 +30,13 @@ export function isMonthEndUploadQuery(q: string): boolean {
   return /upload|drop|package/.test(q) && /close|month-end|month end|p&l|income statement|balance sheet/.test(q);
 }
 
+export function isLibraryCriteriaQuery(q: string): boolean {
+  return /deal library|criteria builder|find deals that meet|meet my criteria|why excluded|saved preset/.test(q);
+}
+
 export function isClearHowToQuery(q: string): boolean {
   if (isVagueQuery(q)) return false;
+  if (isLibraryCriteriaQuery(q)) return true;
   if (isDeleteDealQuery(q)) return true;
   if (isDistributionRecordQuery(q) || isPrefOwedQuery(q)) return true;
   if (isWaterfallQuery(q)) return true;

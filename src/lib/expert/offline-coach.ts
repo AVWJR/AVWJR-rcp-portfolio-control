@@ -3,6 +3,7 @@ import {
   isClearHowToQuery,
   isDeleteDealQuery,
   isDistributionRecordQuery,
+  isLibraryCriteriaQuery,
   isMonthEndUploadQuery,
   isPrefOwedQuery,
   isVagueQuery,
@@ -481,6 +482,21 @@ function unlockCopy(): string {
   return `Partner / viewer links are read-only. Unlock writes at **/unlock** with \`PRINCIPAL_PASSWORD\`, or \`/?unlock=\`. Share an LP link with \`/?share=\` plus the partner token. This is not multi-tenant auth.`;
 }
 
+function libraryCriteriaCopy(ctx: ExpertClientContext): string {
+  const library = link("/library", ctx, "Library");
+  return `Gold nav **Library** — ${library} — lists every analyzed deal, whatever its status.
+
+Click **+ Add criterion**. Type to search. The list is grouped by Ratios, LP returns, Geography, Property, Waterfall, and Status. Each row reads as a sentence. Click the operator and type the number, or tick the states and metros.
+
+**Hard limit** filters the list. **Preference** is on the row and stays off until the optimizer (Phase 3).
+
+Read **X of Y deals pass**. A deal that fails shows **why excluded** tags. **Save preset** keeps the set.
+
+LP net IRR, LP cash yield, and RCP IRR say **Phase 2**. If the AM fee or other LP fees are blank, the cell also says **fee needed**. No percent is assumed.
+
+A snapshot turns amber at 90 days and red at 180. That flag never deletes a deal, a file, or a snapshot. Only Owned deals feed the OpCo roll-up.`;
+}
+
 function featureHowTo(q: string, ctx: ExpertClientContext): string {
   const targets = listNavTargets().filter((t) => {
     const hay = `${t.id.replace(/_/g, " ")} ${t.label} ${t.hint}`.toLowerCase();
@@ -490,7 +506,7 @@ function featureHowTo(q: string, ctx: ExpertClientContext): string {
     const t = targets[0];
     return `Open **${t.label}** — ${t.hint}. Gold nav or ${link(t.href, ctx, t.label)}. I will not invent a screen that is not in this app.`;
   }
-  return `I can walk every real screen in this app. Gold nav: Overview, Dashboard, Deals, Deal Archive, Properties, Debt, CapEx, Close, Tax, Vault, Narratives, Scheduler.
+  return `I can walk every real screen in this app. Gold nav: Overview, Dashboard, Deals, Library, Deal Archive, Properties, Debt, CapEx, Close, Tax, Vault, Narratives, Scheduler.
 
 Name the screen or the job (delete a deal, add deal, vault a file, export a pack, close the period) and I will give the click path.`;
 }
@@ -526,6 +542,8 @@ export function answerOffline(
     content = prefOwedCopy(ctx);
   } else if (isWaterfallQuery(q) || /how do i set the deal waterfall/.test(q)) {
     content = waterfallCopy(ctx);
+  } else if (isLibraryCriteriaQuery(q)) {
+    content = libraryCriteriaCopy(ctx);
   } else if (isDeleteDealQuery(q)) {
     content = deleteDealCopy(ctx);
   } else if (/tour|this page|controls|lost|where am i/.test(q) && !/wrong/.test(q)) {

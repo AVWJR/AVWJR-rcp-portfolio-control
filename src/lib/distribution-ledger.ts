@@ -16,6 +16,7 @@ import {
   type WaterfallPosition,
 } from "@rcp/ledger";
 import { isArchivedSpe } from "@/lib/archive";
+import { effectiveDealStatus, isOwnedSpe } from "@/lib/owned-spe";
 import { prisma } from "@/lib/prisma";
 import { dealsVisibleToLp, lpCanSeeDeal } from "@/lib/lp-scope";
 import { isMissingDistributionTable, ledgerCapitalByEntity } from "@/lib/distribution-read";
@@ -230,12 +231,18 @@ function assertPeriodNotBefore(anchor: { year: number; month: number } | null, y
 async function assertSpeOpen(entityId: string): Promise<void> {
   const entity = await prisma.entity.findUnique({
     where: { id: entityId },
-    select: { type: true, lifecycleStatus: true },
+    select: { type: true, code: true, lifecycleStatus: true, dealStatus: true },
   });
   if (!entity || entity.type !== "SPE") throw new DistributionLedgerError("Unknown SPE.", 404);
   if (isArchivedSpe(entity)) {
     throw new DistributionLedgerError(
       "This SPE is soft-archived. Restore it from Deal Archive before recording a distribution.",
+      409,
+    );
+  }
+  if (!isOwnedSpe(entity)) {
+    throw new DistributionLedgerError(
+      `${entity.code} is ${effectiveDealStatus(entity)}, not Owned. Distributions are not posted for this deal.`,
       409,
     );
   }

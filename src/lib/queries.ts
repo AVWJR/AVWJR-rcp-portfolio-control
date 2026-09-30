@@ -1,5 +1,6 @@
 import type { PostedLine } from "@rcp/ledger";
 import { isArchivedSpe, liveSpeChildren } from "./archive";
+import { isOwnedSpe } from "./deal-status";
 import { prisma } from "./prisma";
 
 export async function listEntities(opts?: { includeArchived?: boolean }) {
@@ -69,8 +70,8 @@ export async function loadPostedLines(opts: {
 export async function consolidationEntityIds(entityId: string): Promise<string[]> {
   const kids = await prisma.entity.findMany({
     where: { parentId: entityId },
-    select: { id: true, type: true, lifecycleStatus: true },
+    select: { id: true, type: true, lifecycleStatus: true, dealStatus: true },
   });
-  const speIds = kids.filter((k) => k.type === "SPE" && k.lifecycleStatus !== "ARCHIVED").map((k) => k.id);
+  const speIds = kids.filter((k) => isOwnedSpe(k)).map((k) => k.id);
   return [entityId, ...speIds];
 }

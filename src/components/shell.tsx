@@ -10,6 +10,7 @@ const NAV = [
   { href: "/", label: "Overview" },
   { href: "/reports/operating-statement", label: "Operating Statement" },
   { href: "/deals", label: "Deals" },
+  { href: "/library", label: "Library" },
   { href: "/archive", label: "Deal Archive" },
   { href: "/properties", label: "Properties" },
   { href: "/debt", label: "Debt" },
@@ -94,6 +95,8 @@ export function Shell({
                       ? pathname.startsWith("/tax")
                     : item.href === "/deals"
                       ? pathname.startsWith("/deals")
+                    : item.href === "/library"
+                      ? pathname.startsWith("/library")
                     : item.href === "/archive"
                       ? pathname.startsWith("/archive")
                     : pathname === item.href;

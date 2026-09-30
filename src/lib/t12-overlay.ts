@@ -2,6 +2,7 @@ import { incomeStatementFromBudget, type BudgetByCode } from "@rcp/reporting";
 import type { T12WorkbookParse } from "@rcp/properties";
 import type { JournalDraftLine } from "@rcp/ledger";
 import { prisma } from "./prisma";
+import { isOwnedSpe } from "./owned-spe";
 import { postJournal } from "./post-journal";
 import { openPeriod } from "./deals/periods";
 
@@ -136,13 +137,20 @@ export async function postBrokerT12OverlayJournals(opts: {
   parsed: T12WorkbookParse;
   filename: string;
 }): Promise<number> {
+  const owner = await prisma.entity.findUnique({
+    where: { id: opts.entityId },
+    select: { type: true, lifecycleStatus: true, dealStatus: true },
+  });
+  if (owner && !isOwnedSpe(owner)) return 0;
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   const existing = await prisma.journal.findMany({
     where: { entityId: opts.entityId, periodId: period.id, source: BROKER_T12_JOURNAL_SOURCE },
     select: { id: true },
   });
   if (existing.length) {
-    await prisma.journal.deleteMany({ where: { id: { in: existing.map((row) => row.id) } } });
+    const ids = existing.map((row) => row.id);
+    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
+    await prisma.journal.deleteMany({ where: { id: { in: ids } } });
   }
 
   const monthCount = BigInt(Math.max(opts.parsed.monthCount, 1));
@@ -184,4 +192,59 @@ export async function postBrokerT12OverlayJournals(opts: {
     lines,
   });
   return lines.length;
+}
+
+/**
+ * Posts the saved broker T12 budget into the books.
+ * Replaces an overlay journal for that month instead of adding a second one.
+ * Returns 0 when the deal is not Owned or no broker T12 is stored.
+ */
+export async function postStoredBrokerT12Journals(entityId: string): Promise<number> {
+  const stored = await prisma.budgetLine.findMany({
+    where: { entityId, source: BROKER_T12_SOURCE },
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+  });
+  if (!stored.length) return 0;
+  const year = stored[0]!.year;
+  const month = stored[0]!.month;
+  const monthLines = stored.filter((row) => row.year === year && row.month === month);
+  const amount = (code: string) => monthLines.find((row) => row.accountCode === code)?.amount ?? 0n;
+  const lines = monthLines.map((row) => ({
+    label: row.accountCode,
+    accountCode: row.accountCode,
+    t12Cents: row.amount * 12n,
+    monthlyAverageCents: row.amount,
+  }));
+  const gpr = amount("4010");
+  const vacancy = amount("4020");
+  const concessions = amount("4030");
+  const otherIncome = ["4100", "4110", "4120", "4130", "4140", "4150", "4160", "4170", "4180", "4190"].reduce(
+    (sum, code) => sum + amount(code),
+    0n,
+  );
+  const opex = monthLines
+    .filter((row) => (OPEX_CODES as readonly string[]).includes(row.accountCode))
+    .reduce((sum, row) => sum + row.amount, 0n);
+  const overlay = await loadBrokerT12Overlay(entityId);
+  const parsed: T12WorkbookParse = {
+    sheet: overlay?.sheet || "broker T12",
+    monthCount: 12,
+    detectedHeaders: [],
+    lines,
+    gpr: gpr * 12n,
+    vacancy: vacancy * 12n,
+    concessions: concessions * 12n,
+    otherIncome: otherIncome * 12n,
+    egi: (gpr - vacancy - concessions + otherIncome) * 12n,
+    opex: opex * 12n,
+    noi: (gpr - vacancy - concessions + otherIncome - opex) * 12n,
+    unmapped: [],
+  };
+  return postBrokerT12OverlayJournals({
+    entityId,
+    year,
+    month,
+    parsed,
+    filename: overlay?.filename || "broker T12",
+  });
 }

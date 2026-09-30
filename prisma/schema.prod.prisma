@@ -94,6 +94,19 @@ enum EntityLifecycle {
   ARCHIVED
 }
 
+/// Library lifecycle. Separate from EntityLifecycle. Only OWNED SPEs feed the
+/// real OpCo books. prisma db push adds this column with @default(OWNED), so
+/// existing production rows become OWNED without a data migration. Read-time
+/// effectiveDealStatus() still treats lifecycleStatus ARCHIVED as Archived
+/// (the column stays OWNED on those rows) and treats a missing value as OWNED.
+enum DealStatus {
+  PIPELINE
+  SCREENED
+  OWNED
+  ARCHIVED
+  TEST
+}
+
 enum UnitStatus {
   OCCUPIED
   VACANT
@@ -119,6 +132,29 @@ model Entity {
   archivedBy       String?
   restoredAt       DateTime?
   restoredBy       String?
+  /// See DealStatus. Default OWNED fills existing rows on db push.
+  dealStatus            DealStatus @default(OWNED)
+  streetAddress         String?
+  city                  String?
+  state                 String?
+  metro                 String?
+  msa                   String?
+  submarket             String?
+  propertyType          String?
+  vintageYear           Int?
+  assetClass            String?
+  unitCountOverride     Int?
+  purchasePriceCents    BigInt?
+  appraisedValueCents   BigInt?
+  businessPlan          String?
+  renovationBudgetCents BigInt?
+  holdPeriodYears       Int?
+  /// Blank until the owner types it. Never default a percent or a dollar amount.
+  amFeeBps              Int?
+  otherLpFeeCents       BigInt?
+  otherLpFeeNote        String?
+  /// OpCo G&A budget only. Blank until set. Not a deal-level assumption.
+  gaBudgetCents         BigInt?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -135,6 +171,49 @@ model Entity {
   vaultDocuments   VaultDocument[]
   reportJobs       ReportJob[]
   dealIntakes      DealIntake[]
+  waterfall        SpeWaterfall?
+  vendorAccountMaps VendorAccountMap[]
+  monthEndUploads  MonthEndUpload[]
+  leaseSnapshots   LeasePeriodSnapshot[]
+  monthEndEvents   MonthEndEvent[]
+  tieOutTolerances TieOutTolerance[]
+  distributionEvents DistributionEvent[]
+  distributionAudits DistributionAudit[]
+  analysisSnapshots  DealAnalysisSnapshot[]
+  statusEvents       DealStatusEvent[]
+
+  @@index([dealStatus])
+}
+
+/// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
+/// (legacy OpCo stack). Saving a template is an explicit Principal choice.
+model SpeWaterfall {
+  id                     String   @id @default(cuid())
+  entityId               String   @unique
+  entity                 Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  templateId             String   @default("look_through_100")
+  prefRateBps            Int      @default(800)
+  compounding            String   @default("NONE")
+  catchUpEnabled         Boolean  @default(false)
+  catchUpBps             Int      @default(10000)
+  gpCoInvestBps          Int      @default(0)
+  coGpName               String?
+  coGpOfPromoteBps       Int      @default(0)
+  coGpCoInvestShareBps   Int      @default(0)
+  promoteBase            String   @default("DISTRIBUTABLE_CASH")
+  lookbackClawback       Boolean  @default(false)
+  lpContributedCents     BigInt   @default(0)
+  /// Required. Blank vs a typed 0 is stored in tiersJson.capital (null vs "0"). Preview builds must not alter this column.
+  unreturnedCapitalCents BigInt   @default(0)
+  /// Required. Blank vs a typed 0 is stored in tiersJson.capital (null vs "0").
+  unpaidPrefCents        BigInt   @default(0)
+  prefPaidToDateCents    BigInt   @default(0)
+  notes                  String?
+  tiersJson              String   @default("[]")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([templateId])
 }
 
 /// Master template rows use entityId = null. Entity CoA is cloned from the template.
@@ -176,6 +255,11 @@ model Period {
   reopenedAt     DateTime?
   reopenReason   String?
   reopenTicket   String?
+  basis          String       @default("ACCRUAL")
+  /// Explicit income-file choice for this SPE and period. Null keeps the newest income statement.
+  incomeSourceUploadId  String?
+  /// Explicit balance-sheet choice for this SPE and period. Null keeps the newest balance sheet.
+  balanceSourceUploadId String?
   createdAt      DateTime     @default(now())
 
   journals  Journal[]
@@ -195,12 +279,16 @@ model Journal {
   memo        String
   source      String        @default("manual")
   status      JournalStatus @default(DRAFT)
-  postedAt    DateTime?
-  createdAt   DateTime      @default(now())
+  postedAt          DateTime?
+  reversesJournalId String?
+  reversesJournal   Journal?  @relation("JournalReversal", fields: [reversesJournalId], references: [id], onDelete: SetNull)
+  reversedBy        Journal[] @relation("JournalReversal")
+  createdAt         DateTime  @default(now())
 
   lines JournalLine[]
 
   @@index([entityId, periodId, status])
+  @@index([reversesJournalId])
 }
 
 model JournalLine {
@@ -228,6 +316,8 @@ model Unit {
   bathsTenths     Int // 10 = 1.0 bath, 15 = 1.5
   sqft            Int
   status          UnitStatus
+  /// MODEL, EMPLOYEE, ADMIN, or DOWN. Null on ordinary occupied and vacant units.
+  substatus       String?
   marketRent      BigInt
   inPlaceRent     BigInt     @default(0)
   leaseStart      DateTime?
@@ -531,6 +621,8 @@ model DealIntake {
   loanMaturity          DateTime?
   dscrThresholdBps      Int?
   debtYieldThresholdBps Int?
+  /// Null means Owned at create (today's Add Deal behavior).
+  requestedDealStatus   DealStatus?
   lastError             String?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
@@ -596,4 +688,234 @@ model ReportJobRun {
   periodLabel String
 
   @@index([jobId, startedAt])
+}
+
+/// Remembered vendor-line → RCP account map for one SPE. Additive. Never deletes history.
+model VendorAccountMap {
+  id              String   @id @default(cuid())
+  entityId        String
+  entity          Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sourceSystem    String   @default("")
+  sourceAccountNo String   @default("")
+  normalizedLabel String
+  accountCode     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([entityId, sourceSystem, sourceAccountNo, normalizedLabel])
+  @@index([entityId])
+}
+
+/// Original month-end file. Rows are insert-only — closed months are not overwritten by deleting these.
+model MonthEndUpload {
+  id             String   @id @default(cuid())
+  entityId       String
+  entity         Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  filename       String
+  mimeType       String   @default("application/octet-stream")
+  classification String
+  byteSize       Int
+  sha256         String
+  storagePath    String
+  parsedJson     String   @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@index([entityId, year, month])
+}
+
+/// Period snapshot of the tenant/lease master. The live Unit table stays the current rent roll.
+model LeasePeriodSnapshot {
+  id          String   @id @default(cuid())
+  entityId    String
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year        Int
+  month       Int
+  unitCode    String
+  payloadJson String
+  createdAt   DateTime @default(now())
+
+  @@unique([entityId, year, month, unitCode])
+  @@index([entityId, year, month])
+}
+
+/// Per-SPE tie-out tolerance. No row means no threshold. Do not seed defaults.
+model TieOutTolerance {
+  id        String   @id @default(cuid())
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  key       String
+  cents     BigInt?
+  bps       Int?
+  days      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entityId, key])
+  @@index([entityId])
+}
+
+model MonthEndEvent {
+  id        String   @id @default(cuid())
+  entityId  String
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  year      Int
+  month     Int
+  action    String
+  detail    String
+  createdAt DateTime @default(now())
+
+  @@index([entityId, year, month])
+}
+
+/// Posted distribution. Rows are insert-only. A correction is a new row
+/// whose reversesEventId points at the original. Amounts are USD cents.
+model DistributionEvent {
+  id                    String   @id @default(cuid())
+  entityId              String
+  entity                Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  eventDate             DateTime
+  year                  Int
+  month                 Int
+  periodLabel           String
+  grossCents            BigInt
+  /// OPERATING_CASH or CAPITAL_EVENT
+  source                String
+  memo                  String?
+  waterfallSnapshotJson String
+  actor                 String?
+  /// Monotonic per deal. The unique pair is the lock for concurrent posts.
+  sequence              Int
+  /// Set only on a reversing row. Unique so an event is reversed at most once.
+  reversesEventId       String?  @unique
+  reversesEvent         DistributionEvent?  @relation("DistributionReversal", fields: [reversesEventId], references: [id], onDelete: SetNull)
+  reversedBy            DistributionEvent?  @relation("DistributionReversal")
+  monthsAccrued         Int      @default(0)
+  capitalContributedCents BigInt
+  capitalReturnedCents    BigInt
+  unreturnedCapitalCents  BigInt
+  prefAccruedCents        BigInt
+  prefPaidCents           BigInt
+  prefUnpaidCents         BigInt
+  catchUpPaidCents        BigInt
+  catchUpTargetCents      BigInt
+  promoteEarnedCents      BigInt
+  cumulativeLpCents       BigInt
+  cumulativeRcpCents      BigInt
+  cumulativeCoGpCents     BigInt
+  tierTotalsJson          String   @default("{}")
+  createdAt               DateTime @default(now())
+
+  lines  DistributionAllocation[]
+  audits DistributionAudit[]
+
+  @@unique([entityId, sequence])
+  @@index([entityId, createdAt])
+}
+
+model DistributionAllocation {
+  id        String             @id @default(cuid())
+  eventId   String
+  event     DistributionEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tierKind  String
+  tierLabel String
+  lpCents   BigInt
+  rcpCents  BigInt
+  coGpCents BigInt
+  sortOrder Int
+
+  @@index([eventId])
+}
+
+/// Append-only log of each post and reversal. Not an edit of the event.
+model DistributionAudit {
+  id        String              @id @default(cuid())
+  entityId  String
+  entity    Entity              @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  eventId   String?
+  event     DistributionEvent?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  action    String
+  actor     String?
+  detail    String
+  createdAt DateTime            @default(now())
+
+  @@index([entityId, createdAt])
+}
+
+/// Dated underwriting ratios for one deal. New rows only — old snapshots stay.
+/// LP net IRR and LP cash yield columns are Phase 2 placeholders and stay null.
+model DealAnalysisSnapshot {
+  id                  String   @id @default(cuid())
+  entityId            String
+  entity              Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  asOfDate            DateTime
+  periodLabel         String
+  recordedAt          DateTime @default(now())
+  recordedBy          String   @default("principal")
+  basisLabel          String
+  noiBasisLabel       String
+  sourceFiles         String   @default("[]")
+  dscrBps             Int?
+  debtYieldBps        Int?
+  cashOnCashBps       Int?
+  occupancyBps        Int?
+  expenseRatioBps     Int?
+  noiCents            BigInt?
+  annualizedNoiCents  BigInt?
+  capRateBps          Int?
+  ltvBps              Int?
+  pricePerUnitCents   BigInt?
+  prefRateBps         Int?
+  catchUpBps          Int?
+  promoteSplitLabel   String?
+  coGpOfPromoteBps    Int?
+  gpCoInvestBps       Int?
+  equityRequiredCents BigInt?
+  lpEquityCents       BigInt?
+  rcpShareBps         Int?
+  unitCount           Int?
+  /// Phase 2. Always null. Never a computed stand-in.
+  lpNetIrrBps         Int?
+  lpAvgCashYieldBps   Int?
+  lpYear1CashYieldBps Int?
+  rcpIrrBps           Int?
+
+  @@index([entityId, recordedAt])
+}
+
+/// Who changed a deal's Library status, when, and why.
+model DealStatusEvent {
+  id         String   @id @default(cuid())
+  entityId   String
+  entity     Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  fromStatus String
+  toStatus   String
+  reason     String
+  actor      String   @default("principal")
+  createdAt  DateTime @default(now())
+
+  @@index([entityId, createdAt])
+}
+
+/// Saved sentence-builder sets. Library search now; Models and the optimizer later.
+model CriteriaPreset {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  criteriaJson String   @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Editable Library lists. Seeded states and property types are inserted if missing.
+/// Metros are added when a deal saves one. Rows are never removed because of age.
+model LibraryPickItem {
+  id        String   @id @default(cuid())
+  kind      String
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([kind, label])
+  @@index([kind, sortOrder])
 }

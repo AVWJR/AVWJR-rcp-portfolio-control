@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isArchivedSpe } from "@/lib/archive";
+import { effectiveDealStatus, isOwnedSpe } from "@/lib/owned-spe";
 import { ensureMasterCoaCurrent } from "@/lib/entities";
 import { openPeriod } from "@/lib/deals/periods";
 import { parseRentRollSource } from "@/lib/deals/workbook";
@@ -436,6 +437,18 @@ export async function postCloseToBooks(opts: {
   reason?: string;
 }) {
   await ensureMasterCoaCurrent();
+  const booksEntity = await prisma.entity.findUnique({
+    where: { id: opts.entityId },
+    select: { type: true, code: true, lifecycleStatus: true, dealStatus: true },
+  });
+  if (booksEntity?.type === "SPE" && isArchivedSpe(booksEntity)) {
+    throw new Error("This SPE is soft-archived. Restore it from Deal Archive before posting to the books.");
+  }
+  if (booksEntity?.type === "SPE" && !isOwnedSpe(booksEntity)) {
+    throw new Error(
+      `${booksEntity.code} is ${effectiveDealStatus(booksEntity)}, not Owned. Month-end close does not post journals for this deal.`,
+    );
+  }
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (period.status === "CLOSED") {
     throw new PeriodLockedError("Closed months are not overwritten. Reopen with a reason and a ticket.");

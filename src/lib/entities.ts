@@ -120,6 +120,7 @@ export async function createEntityWithCoa(input: {
   ownershipBps?: number;
   unitCount?: number;
   strategy?: SpeStrategy;
+  dealStatus?: "PIPELINE" | "SCREENED" | "OWNED" | "ARCHIVED" | "TEST";
 }) {
   const entity = await prisma.entity.create({
     data: {
@@ -133,6 +134,7 @@ export async function createEntityWithCoa(input: {
       currency: "USD",
       locale: "en-US",
       timezone: "America/New_York",
+      ...(input.dealStatus ? { dealStatus: input.dealStatus } : {}),
     },
   });
   await cloneCoaToEntity(entity.id);

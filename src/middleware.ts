@@ -57,8 +57,12 @@ export function middleware(request: NextRequest) {
 
   if (isViewerBlockedPath(pathname)) {
     const dest = request.nextUrl.clone();
-    dest.pathname = pathname.startsWith("/archive") ? "/" : "/deals";
-    dest.searchParams.set("denied", pathname.startsWith("/archive") ? "archive" : "add_deal");
+    const library = pathname.startsWith("/library");
+    dest.pathname = pathname.startsWith("/archive") || library ? "/" : "/deals";
+    dest.searchParams.set(
+      "denied",
+      pathname.startsWith("/archive") ? "archive" : library ? "library" : "add_deal",
+    );
     if (pathname.startsWith("/admin")) dest.pathname = "/";
     return NextResponse.redirect(dest);
   }

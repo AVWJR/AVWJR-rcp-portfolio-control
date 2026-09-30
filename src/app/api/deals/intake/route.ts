@@ -73,6 +73,15 @@ function patchFromBody(body: Record<string, unknown>): DealIntakePatch {
         : typeof body.debtYieldThresholdBps === "number" || body.debtYieldThresholdBps === null
           ? (body.debtYieldThresholdBps as number | null)
           : undefined,
+    requestedDealStatus:
+      body.requestedDealStatus === "PIPELINE" ||
+      body.requestedDealStatus === "SCREENED" ||
+      body.requestedDealStatus === "OWNED" ||
+      body.requestedDealStatus === "TEST"
+        ? body.requestedDealStatus
+        : body.requestedDealStatus === null
+          ? null
+          : undefined,
   };
 }
 

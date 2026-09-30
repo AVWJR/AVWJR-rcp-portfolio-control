@@ -1,9 +1,15 @@
+import {
+  PERMANENT_DEMO_SPE_CODES,
+  deleteImpactCopy,
+  isPermanentDemoSpe,
+  permanentDemoDeleteMessage,
+} from "@/lib/archive-copy";
+import { isOwnedSpe, ownedSpeWhere } from "@/lib/owned-spe";
 import { prisma } from "@/lib/prisma";
 
 export const ARCHIVE_ACTOR_PRINCIPAL = "principal";
 
-/** Seeded property SPEs that stay on the live Deals list. */
-export const PERMANENT_DEMO_SPE_CODES = ["SPE-WBG", "SPE-CVC", "SPE-HCR"] as const;
+export { PERMANENT_DEMO_SPE_CODES, deleteImpactCopy, isPermanentDemoSpe, permanentDemoDeleteMessage };
 
 export class ArchiveValidationError extends Error {
   readonly field?: string;
@@ -31,15 +37,6 @@ export type SpeArchiveRow = {
   restoredBy: string | null;
 };
 
-export function isPermanentDemoSpe(code: string): boolean {
-  return (PERMANENT_DEMO_SPE_CODES as readonly string[]).includes(code.trim().toUpperCase());
-}
-
-export function permanentDemoDeleteMessage(code: string): string {
-  const spe = code.trim().toUpperCase();
-  return `${spe} is a permanent demo SPE. It cannot be deleted. It stays on the live Deals list and in the OpCo roll-up.`;
-}
-
 export function isArchivedSpe(entity: { type: string; lifecycleStatus?: string | null }): boolean {
   return entity.type === "SPE" && entity.lifecycleStatus === "ARCHIVED";
 }
@@ -48,24 +45,19 @@ export function isLiveSpe(entity: { type: string; lifecycleStatus?: string | nul
   return entity.type === "SPE" && entity.lifecycleStatus !== "ARCHIVED";
 }
 
+/** Owned SPEs only. Pipeline, Screened, Test, and Archived stay out of the live lists and the roll-up. */
 export function liveSpeWhere() {
-  return { type: "SPE" as const, lifecycleStatus: "LIVE" as const };
+  return ownedSpeWhere();
 }
 
-export function liveSpeChildren<T extends { type: string; lifecycleStatus?: string | null }>(children: T[]): T[] {
-  return children.filter((child) => child.type !== "SPE" || child.lifecycleStatus !== "ARCHIVED");
+export function liveSpeChildren<T extends { type: string; lifecycleStatus?: string | null; dealStatus?: string | null }>(
+  children: T[],
+): T[] {
+  return children.filter((child) => child.type !== "SPE" || isOwnedSpe(child));
 }
 
 export function confirmCodesMatch(provided: string, expected: string): boolean {
   return provided.trim().toUpperCase() === expected.trim().toUpperCase();
-}
-
-export function deleteImpactCopy(opts: { code: string; name: string }): string {
-  return (
-    `Deleting ${opts.name} (${opts.code}) takes it off the live Deals list and out of the OpCo combined roll-up. ` +
-    `It stays studyable under gold nav Deal Archive. Books, ledgers, and vault documents remain. ` +
-    `This is not a hard wipe. Restore later only from Deal Archive — not from Deals.`
-  );
 }
 
 /** @deprecated Use deleteImpactCopy — live UI says Delete; storage is still soft-archive. */

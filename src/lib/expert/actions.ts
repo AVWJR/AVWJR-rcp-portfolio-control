@@ -1,4 +1,4 @@
-import { isDeleteDealQuery, isDistributionRecordQuery, isPrefOwedQuery, isWaterfallQuery } from "./feature-intents";
+import { isDeleteDealQuery, isDistributionRecordQuery, isLibraryCriteriaQuery, isPrefOwedQuery, isWaterfallQuery } from "./feature-intents";
 import { describePage, withContext } from "./nav";
 import type {
   AnomalyFlag,
@@ -163,6 +163,15 @@ function queryChips(q: string): ExpertChip[] | null {
         id: "deal_proforma",
         label: "Open deal proforma",
         prompt: "Where do I open the deal proforma for SPE-HMTOS, and how do I set Co-GP?",
+      },
+    ];
+  }
+  if (isLibraryCriteriaQuery(q)) {
+    return [
+      {
+        id: "library",
+        label: "Open Deal Library",
+        prompt: "How do I find deals that meet my criteria?",
       },
     ];
   }
