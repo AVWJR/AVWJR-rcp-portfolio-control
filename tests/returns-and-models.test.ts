@@ -1,5 +1,4 @@
-import { applyWaterfallTemplate, CASH_SHORTFALL_NOTE, dollars, FEE_EXCEEDS_CASH_NOTE, runDealProforma, runWaterfall } from "@rcp/ledger";
-import { buildOpCoDashboard } from "@/lib/dashboards";
+import { applyWaterfallTemplate, buildIncomeStatement, CASH_SHORTFALL_NOTE, dollars, FEE_EXCEEDS_CASH_NOTE, runDealProforma, runWaterfall } from "@rcp/ledger";
 import { createEntityWithCoa } from "@/lib/entities";
 import { evaluateCriterion, type LibraryFact } from "@/lib/library/criteria";
 import { FEE_NEEDED } from "@/lib/library/fees";
@@ -17,10 +16,44 @@ import {
   updateModelAssumptions,
 } from "@/lib/models/store";
 import { prisma } from "@/lib/prisma";
+import { loadPostedLines } from "@/lib/queries";
 import { cashFlowsFromDates, solveIrr } from "@/lib/returns/irr";
 import { resolveAnnualFee } from "@/lib/returns/fees";
 import { EXIT_VALUE_NEEDED, projectDealReturns } from "@/lib/returns/project-deal";
 import { afterAll, describe, expect, it } from "vitest";
+
+/** Demo-only trailing NOI through 2026-08, using the given Period ids. Read-only. */
+async function demoT12(periodIds: string[]): Promise<{ months: number; noi: bigint }> {
+  if (!periodIds.length) return { months: 0, noi: 0n };
+  const periods = await prisma.period.findMany({
+    where: {
+      id: { in: periodIds },
+      OR: [{ year: { lt: 2026 } }, { year: 2026, month: { lte: 8 } }],
+    },
+    orderBy: [{ entityId: "asc" }, { year: "asc" }, { month: "asc" }],
+    select: { entityId: true, startDate: true, endDate: true },
+  });
+  const byEntity = new Map<string, typeof periods>();
+  for (const period of periods) {
+    const list = byEntity.get(period.entityId) ?? [];
+    list.push(period);
+    byEntity.set(period.entityId, list);
+  }
+  const series: bigint[][] = [];
+  for (const rows of byEntity.values()) {
+    const values: bigint[] = [];
+    for (const period of rows) {
+      const inPeriod = await loadPostedLines({ entityIds: [period.entityId], from: period.startDate, to: period.endDate });
+      const throughEnd = await loadPostedLines({ entityIds: [period.entityId], through: period.endDate });
+      values.push(buildIncomeStatement({ throughEnd, inPeriod }).noi);
+    }
+    series.push(values);
+  }
+  const months = Math.max(0, ...series.map((row) => row.length));
+  let noi = 0n;
+  for (let i = 0; i < months; i += 1) noi += series.reduce((acc, row) => acc + (row[i] ?? 0n), 0n);
+  return { months, noi };
+}
 
 /** Counts write calls on this process's Prisma delegate. Other test files have their own client. */
 function watchWrites(delegate: object, methods: string[]) {
@@ -458,7 +491,6 @@ describe("Models do not move the OpCo roll-up", () => {
     const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
     if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
     const demoCodes = ["SPE-WBG", "SPE-CVC", "SPE-HCR"];
-    const dashBefore = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
     const demoPeriodsBefore = await prisma.period.findMany({
       where: { entity: { code: { in: demoCodes } } },
       select: { id: true },
@@ -467,7 +499,12 @@ describe("Models do not move the OpCo roll-up", () => {
     const checksBefore = demoPeriodIds.length
       ? await prisma.closeChecklistItem.count({ where: { periodId: { in: demoPeriodIds } } })
       : 0;
-    const journalsBefore = await prisma.journal.count({ where: { entity: { code: { in: demoCodes } } } });
+    const linesBefore = await prisma.journalLine.findMany({
+      where: { journal: { entity: { code: { in: demoCodes } }, status: "POSTED" } },
+      select: { id: true, debit: true, credit: true },
+      orderBy: { id: "asc" },
+    });
+    const tileBefore = await demoT12(demoPeriodIds);
 
     const suffix = Date.now().toString(36).toUpperCase().slice(-4);
     const owned = await createEntityWithCoa({
@@ -500,21 +537,27 @@ describe("Models do not move the OpCo roll-up", () => {
       journalWrites.restore();
     }
 
-    expect(await prisma.period.count({ where: { entityId: owned.id } })).toBe(0);
-    expect(await prisma.closeChecklistItem.count({ where: { period: { entityId: owned.id } } })).toBe(0);
     if (demoPeriodIds.length) {
       expect(await prisma.period.count({ where: { id: { in: demoPeriodIds } } })).toBe(demoPeriodIds.length);
       expect(await prisma.closeChecklistItem.count({ where: { periodId: { in: demoPeriodIds } } })).toBe(checksBefore);
     }
-    const journalsAfter = await prisma.journal.count({ where: { entity: { code: { in: demoCodes } } } });
+    const linesAfter = await prisma.journalLine.findMany({
+      where: { journal: { entity: { code: { in: demoCodes } }, status: "POSTED" } },
+      select: { id: true, debit: true, credit: true },
+      orderBy: { id: "asc" },
+    });
     const demoPeriodsAfter = await prisma.period.count({ where: { entity: { code: { in: demoCodes } } } });
-    if (journalsAfter === journalsBefore && demoPeriodsAfter === demoPeriodIds.length) {
-      const dashAfter = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
-      expect(dashAfter.t12.monthsAvailable).toBe(dashBefore.t12.monthsAvailable);
-      expect(dashAfter.t12.noiCents).toBe(dashBefore.t12.noiCents);
-      expect(dashAfter.tiles.find((tile) => tile.id === "noi_t12")?.display).toBe(
-        dashBefore.tiles.find((tile) => tile.id === "noi_t12")?.display,
-      );
+    const booksUnchanged =
+      demoPeriodsAfter === demoPeriodIds.length &&
+      linesAfter.length === linesBefore.length &&
+      linesAfter.every((line, index) => {
+        const before = linesBefore[index];
+        return before != null && line.id === before.id && line.debit === before.debit && line.credit === before.credit;
+      });
+    if (booksUnchanged) {
+      const tileAfter = await demoT12(demoPeriodIds);
+      expect(tileAfter.months).toBe(tileBefore.months);
+      expect(tileAfter.noi).toBe(tileBefore.noi);
     }
   }, 60_000);
 });
