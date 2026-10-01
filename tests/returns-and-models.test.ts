@@ -374,15 +374,26 @@ async function rollupFingerprint(opcoId: string) {
   });
   const entityIds = demos.map((row) => row.id);
   const dash = await buildOpCoDashboard({ opcoId, year: 2026, month: 8 });
+  const demoCodes = new Set(["SPE-WBG", "SPE-CVC", "SPE-HCR"]);
+  const lines = await prisma.journalLine.aggregate({
+    where: { journal: { entityId: { in: entityIds } } },
+    _sum: { debit: true, credit: true },
+    _count: true,
+  });
   return {
     journals: await prisma.journal.count({ where: { entityId: { in: entityIds } } }),
+    lines: lines._count,
+    debits: (lines._sum.debit ?? 0n).toString(),
+    credits: (lines._sum.credit ?? 0n).toString(),
     distributions: await prisma.distributionEvent.count({ where: { entityId: { in: entityIds } } }),
-    cash: dash.cashAfterWaterfallCents.toString(),
-    cfads: dash.cfadsAfterWaterfallCents.toString(),
-    note: dash.combinedNote,
     properties: dash.properties
-      .map((row) => row.entityCode)
-      .filter((code) => code === "SPE-WBG" || code === "SPE-CVC" || code === "SPE-HCR")
-      .sort(),
+      .filter((row) => demoCodes.has(row.entityCode))
+      .map((row) => ({
+        code: row.entityCode,
+        noi: row.noiCents.toString(),
+        cfadsRcp: row.cfadsRcpCents.toString(),
+        cfadsLp: row.cfadsLpCents.toString(),
+      }))
+      .sort((a, b) => a.code.localeCompare(b.code)),
   };
 }

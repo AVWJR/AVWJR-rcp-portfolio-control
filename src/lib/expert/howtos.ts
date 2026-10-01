@@ -1304,7 +1304,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     routes: ["/models/[id]/assumptions"],
     apiRoutes: ["/api/models/[id]/assumptions"],
     navPath: "Models → Model name → Assumptions",
-    keywords: [/model assumptions|exit cap|hold years|opco pref/i],
+    keywords: [/model assumptions|exit cap|opco pref|hold years.{0,40}model|model.{0,40}hold years/i],
     steps: [
       "Open Assumptions. Set hold years and CFADS growth. Leave exit cap rate blank unless you mean a number.",
       "Optional OpCo pref needs both a rate and platform capital. Click Save assumptions.",
