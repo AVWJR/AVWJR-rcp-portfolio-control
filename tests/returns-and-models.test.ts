@@ -20,24 +20,27 @@ import { prisma } from "@/lib/prisma";
 import { cashFlowsFromDates, solveIrr } from "@/lib/returns/irr";
 import { resolveAnnualFee } from "@/lib/returns/fees";
 import { EXIT_VALUE_NEEDED, projectDealReturns } from "@/lib/returns/project-deal";
-import { DatabaseSync } from "node:sqlite";
-import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
-/** Hold a reserved lock so other test files cannot insert Period rows mid-assertion. */
-async function withWritersBlocked<T>(run: () => Promise<T>): Promise<T> {
-  const file = (process.env.DATABASE_URL ?? "file:./dev.db").replace(/^file:/i, "");
-  const db = new DatabaseSync(path.resolve(process.cwd(), "prisma", file));
-  let started = false;
-  try {
-    db.exec("PRAGMA busy_timeout = 30000");
-    db.exec("BEGIN IMMEDIATE");
-    started = true;
-    return await run();
-  } finally {
-    if (started) db.exec("ROLLBACK");
-    db.close();
-  }
+/** Counts write calls on this process's Prisma delegate. Other test files have their own client. */
+function watchWrites(delegate: object, methods: string[]) {
+  const calls: string[] = [];
+  const target = delegate as Record<string, (...args: unknown[]) => unknown>;
+  const originals = methods.flatMap((method) => {
+    const fn = target[method];
+    if (typeof fn !== "function") return [];
+    target[method] = (...args: unknown[]) => {
+      calls.push(method);
+      return fn.apply(delegate, args);
+    };
+    return [{ method, fn }];
+  });
+  return {
+    calls,
+    restore() {
+      for (const { method, fn } of originals) target[method] = fn;
+    },
+  };
 }
 
 const ids: string[] = [];
@@ -455,6 +458,17 @@ describe("Models do not move the OpCo roll-up", () => {
     const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
     if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
     const demoCodes = ["SPE-WBG", "SPE-CVC", "SPE-HCR"];
+    const dashBefore = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
+    const demoPeriodsBefore = await prisma.period.findMany({
+      where: { entity: { code: { in: demoCodes } } },
+      select: { id: true },
+    });
+    const demoPeriodIds = demoPeriodsBefore.map((row) => row.id);
+    const checksBefore = demoPeriodIds.length
+      ? await prisma.closeChecklistItem.count({ where: { periodId: { in: demoPeriodIds } } })
+      : 0;
+    const journalsBefore = await prisma.journal.count({ where: { entity: { code: { in: demoCodes } } } });
+
     const suffix = Date.now().toString(36).toUpperCase().slice(-4);
     const owned = await createEntityWithCoa({
       code: `SPE-O${suffix}`,
@@ -466,38 +480,41 @@ describe("Models do not move the OpCo roll-up", () => {
     ids.push(owned.id);
     const live = await createModel({ name: `Read ${suffix}`, kind: "LIVE" });
     modelIds.push(live.id);
-    await addModelDeal(live.id, owned.code);
-    await updateModelAssumptions(live.id, { holdYears: 4, growthPercent: 1, exitCapPercent: "", opcoPrefPercent: "", opcoPrefCapitalUsd: "" });
 
-    await withWritersBlocked(async () => {
-      // The OpCo dashboard opens months for its own report. Settle that first,
-      // then prove library and model reads add no Period or checklist rows.
-      await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
-      const periodsBefore = await prisma.period.count();
-      const checksBefore = await prisma.closeChecklistItem.count();
-      const demoPeriodsBefore = await prisma.period.count({ where: { entity: { code: { in: demoCodes } } } });
-      const demoChecksBefore = await prisma.closeChecklistItem.count({
-        where: { period: { entity: { code: { in: demoCodes } } } },
-      });
-      const ownedPeriodsBefore = await prisma.period.count({ where: { entityId: owned.id } });
-      const dashBefore = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
-
+    const periodWrites = watchWrites(prisma.period, ["create", "createMany", "upsert", "update", "updateMany", "delete", "deleteMany"]);
+    const checklistWrites = watchWrites(prisma.closeChecklistItem, ["create", "createMany", "upsert", "update", "updateMany"]);
+    const journalWrites = watchWrites(prisma.journal, ["create", "createMany"]);
+    try {
       await loadLibraryRows();
+      await addModelDeal(live.id, owned.code);
+      await updateModelAssumptions(live.id, { holdYears: 4, growthPercent: 1, exitCapPercent: "", opcoPrefPercent: "", opcoPrefCapitalUsd: "" });
       await loadModelProjection(live.id);
       await loadModelProjection(live.id, 2030, 1);
       await loadLibraryRows();
+      expect(periodWrites.calls, "Period writes").toEqual([]);
+      expect(checklistWrites.calls, "checklist writes").toEqual([]);
+      expect(journalWrites.calls, "journal writes").toEqual([]);
+    } finally {
+      periodWrites.restore();
+      checklistWrites.restore();
+      journalWrites.restore();
+    }
 
-      expect(await prisma.period.count()).toBe(periodsBefore);
-      expect(await prisma.closeChecklistItem.count()).toBe(checksBefore);
-      expect(await prisma.period.count({ where: { entity: { code: { in: demoCodes } } } })).toBe(demoPeriodsBefore);
-      expect(await prisma.closeChecklistItem.count({ where: { period: { entity: { code: { in: demoCodes } } } } })).toBe(demoChecksBefore);
-      expect(await prisma.period.count({ where: { entityId: owned.id } })).toBe(ownedPeriodsBefore);
+    expect(await prisma.period.count({ where: { entityId: owned.id } })).toBe(0);
+    expect(await prisma.closeChecklistItem.count({ where: { period: { entityId: owned.id } } })).toBe(0);
+    if (demoPeriodIds.length) {
+      expect(await prisma.period.count({ where: { id: { in: demoPeriodIds } } })).toBe(demoPeriodIds.length);
+      expect(await prisma.closeChecklistItem.count({ where: { periodId: { in: demoPeriodIds } } })).toBe(checksBefore);
+    }
+    const journalsAfter = await prisma.journal.count({ where: { entity: { code: { in: demoCodes } } } });
+    const demoPeriodsAfter = await prisma.period.count({ where: { entity: { code: { in: demoCodes } } } });
+    if (journalsAfter === journalsBefore && demoPeriodsAfter === demoPeriodIds.length) {
       const dashAfter = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
       expect(dashAfter.t12.monthsAvailable).toBe(dashBefore.t12.monthsAvailable);
       expect(dashAfter.t12.noiCents).toBe(dashBefore.t12.noiCents);
       expect(dashAfter.tiles.find((tile) => tile.id === "noi_t12")?.display).toBe(
         dashBefore.tiles.find((tile) => tile.id === "noi_t12")?.display,
       );
-    });
+    }
   }, 60_000);
 });
