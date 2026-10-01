@@ -15,6 +15,9 @@ export type IrrSolution = {
   reason: string | null;
 };
 
+/** Shown when a real series has no rate inside the solver range. Yield can still be a number. */
+export const IRR_NOT_AVAILABLE = "IRR not available";
+
 const SCAN_LOW = -0.9;
 const SCAN_HIGH = 10;
 const SCAN_STEP = 0.05;

@@ -24,10 +24,12 @@ export type ModelView = {
   rcpCashOnCashBps: number | null;
   rcpAvgCashOnCashBps: number | null;
   rcpIrrBps: number | null;
+  rcpIrrNote: string | null;
   rcpEquityMultipleBps: number | null;
   rcpGap: string | null;
   equityRequiredCents: number | null;
   lpNetIrrBps: number | null;
+  lpIrrNote: string | null;
   lpYear1YieldBps: number | null;
   lpAvgYieldBps: number | null;
   lpIrrMinBps: number | null;
@@ -47,6 +49,7 @@ export type ModelView = {
     exclusions: string[];
     gap: string | null;
     lpNetIrrBps: number | null;
+    lpIrrNote: string | null;
     lpYear1YieldBps: number | null;
     lpAvgYieldBps: number | null;
   }[];
@@ -94,10 +97,12 @@ export function toModelView(input: {
     rcpCashOnCashBps: projection.rcpCashOnCashBps,
     rcpAvgCashOnCashBps: projection.rcpAvgCashOnCashBps,
     rcpIrrBps: projection.rcpIrrBps,
+    rcpIrrNote: projection.rcpIrrNote,
     rcpEquityMultipleBps: projection.rcpEquityMultipleBps,
     rcpGap: projection.rcpGap,
     equityRequiredCents: num(projection.equityRequiredCents),
     lpNetIrrBps: projection.lpNetIrrBps,
+    lpIrrNote: projection.lpIrrNote,
     lpYear1YieldBps: projection.lpYear1YieldBps,
     lpAvgYieldBps: projection.lpAvgYieldBps,
     lpIrrMinBps: projection.lpIrrMinBps,
@@ -123,6 +128,7 @@ export function toModelView(input: {
       exclusions: deal.exclusions,
       gap: deal.gap,
       lpNetIrrBps: deal.metrics?.lpNetIrrBps ?? null,
+      lpIrrNote: deal.metrics?.lpIrrNote ?? null,
       lpYear1YieldBps: deal.metrics?.lpYear1CashYieldBps ?? null,
       lpAvgYieldBps: deal.metrics?.lpAvgCashYieldBps ?? null,
     })),

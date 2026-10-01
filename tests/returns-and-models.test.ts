@@ -14,7 +14,7 @@ import {
   updateModelAssumptions,
 } from "@/lib/models/store";
 import { prisma } from "@/lib/prisma";
-import { cashFlowsFromDates, solveIrr } from "@/lib/returns/irr";
+import { cashFlowsFromDates, IRR_NOT_AVAILABLE, solveIrr } from "@/lib/returns/irr";
 import { resolveAnnualFee } from "@/lib/returns/fees";
 import { projectDealReturns } from "@/lib/returns/project-deal";
 import type { LibraryFact } from "@/lib/library/criteria";
@@ -159,10 +159,21 @@ describe("LP cash yield and fees", () => {
     expect(missing.lpAvgCashYieldBps).toBeNull();
     expect(missing.rcpIrrBps).toBeNull();
 
-    const priced = projectDealReturns(baseInput());
+    const noExit = projectDealReturns(baseInput());
+    expect(noExit.gap).toBeNull();
+    expect(noExit.feeAnnualCents).toBe(dollars(100_000));
+    expect(noExit.lpNetIrrBps).toBeNull();
+    expect(noExit.lpIrrNote).toBe(IRR_NOT_AVAILABLE);
+    expect(noExit.rcpIrrNote).toBe(IRR_NOT_AVAILABLE);
+    expect(noExit.notes).toContain(IRR_NOT_AVAILABLE);
+    expect(noExit.notes.some((note) => note.includes("No IRR in range"))).toBe(false);
+    expect(noExit.lpYear1CashYieldBps).not.toBeNull();
+    expect(noExit.lpAvgCashYieldBps).not.toBeNull();
+
+    const priced = projectDealReturns(baseInput({ exitEquityProceedsCents: dollars(15_000_000) }));
     expect(priced.gap).toBeNull();
-    expect(priced.feeAnnualCents).toBe(dollars(100_000));
     expect(priced.lpNetIrrBps).not.toBeNull();
+    expect(priced.lpIrrNote).toBeNull();
 
     const gross = runWaterfall({
       config: applyWaterfallTemplate("simple_pref_promote"),

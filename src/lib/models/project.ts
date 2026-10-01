@@ -2,7 +2,7 @@ import { runOpCoProforma, type DealProformaInput, type OpCoPlatformPrefs } from 
 import { evaluateDeal, type Criterion, type LibraryFact } from "@/lib/library/criteria";
 import { FEE_NEEDED } from "@/lib/library/fees";
 import type { StaleLevel } from "@/lib/library/staleness";
-import { rateToBps, solveIrr, type IrrCashFlow } from "@/lib/returns/irr";
+import { IRR_NOT_AVAILABLE, rateToBps, solveIrr, type IrrCashFlow } from "@/lib/returns/irr";
 import { exitEquityFromCap, projectDealReturns, type DealReturnInput, type DealReturnMetrics } from "@/lib/returns/project-deal";
 import { PROJECTION_LABEL } from "./membership";
 
@@ -75,10 +75,12 @@ export type ModelProjection = {
   rcpCashOnCashBps: number | null;
   rcpAvgCashOnCashBps: number | null;
   rcpIrrBps: number | null;
+  rcpIrrNote: string | null;
   rcpEquityMultipleBps: number | null;
   rcpGap: string | null;
   equityRequiredCents: bigint | null;
   lpNetIrrBps: number | null;
+  lpIrrNote: string | null;
   lpYear1YieldBps: number | null;
   lpAvgYieldBps: number | null;
   lpIrrMinBps: number | null;
@@ -107,10 +109,12 @@ function blank(notes: string[], deals: ModelDealResult[]): ModelProjection {
     rcpCashOnCashBps: null,
     rcpAvgCashOnCashBps: null,
     rcpIrrBps: null,
+    rcpIrrNote: null,
     rcpEquityMultipleBps: null,
     rcpGap: null,
     equityRequiredCents: null,
     lpNetIrrBps: null,
+    lpIrrNote: null,
     lpYear1YieldBps: null,
     lpAvgYieldBps: null,
     lpIrrMinBps: null,
@@ -311,10 +315,12 @@ export function projectModel(opts: {
     rcpCashOnCashBps: null,
     rcpAvgCashOnCashBps: null,
     rcpIrrBps: null,
+    rcpIrrNote: null,
     rcpEquityMultipleBps: null,
     rcpGap: feeBlocked ? feeReason : null,
     equityRequiredCents: haveEquity ? equityRequired : null,
     lpNetIrrBps: null,
+    lpIrrNote: null,
     lpYear1YieldBps: null,
     lpAvgYieldBps: null,
     lpIrrMinBps: null,
@@ -339,7 +345,7 @@ export function projectModel(opts: {
     const flows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.lpCents), tYears: row.year }))];
     const irr = solveIrr(flows);
     projection.lpNetIrrBps = rateToBps(irr.rate);
-    if (irr.reason && projection.lpNetIrrBps == null) projection.notes.push(`LP net IRR: ${irr.reason}`);
+    if (irr.reason && projection.lpNetIrrBps == null) projection.lpIrrNote = IRR_NOT_AVAILABLE;
     const n = BigInt(years.length || 1);
     const ops = yearLpOps.reduce((sum, value) => sum + value, 0n);
     projection.lpYear1YieldBps = yieldBps(yearLpOps[0] ?? 0n, lpEquity);
@@ -361,7 +367,7 @@ export function projectModel(opts: {
     const flows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.rcpCents), tYears: row.year }))];
     const irr = solveIrr(flows);
     projection.rcpIrrBps = rateToBps(irr.rate);
-    if (irr.reason && projection.rcpIrrBps == null) projection.notes.push(`RCP IRR: ${irr.reason}`);
+    if (irr.reason && projection.rcpIrrBps == null) projection.rcpIrrNote = IRR_NOT_AVAILABLE;
     const n = BigInt(years.length || 1);
     const ops = yearRcpOps.reduce((sum, value) => sum + value, 0n);
     projection.rcpCashOnCashBps = yieldBps(yearRcpOps[0] ?? 0n, rcpEquity);
@@ -371,6 +377,8 @@ export function projectModel(opts: {
   } else {
     projection.rcpGap = "RCP equity is zero";
   }
+
+  if (projection.lpIrrNote || projection.rcpIrrNote) projection.notes.push(IRR_NOT_AVAILABLE);
 
   return projection;
 }

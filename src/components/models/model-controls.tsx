@@ -31,6 +31,12 @@ function show(bps: number | null, gap: string | null, format: (value: number | n
   return format(bps);
 }
 
+function showIrr(bps: number | null, gap: string | null, note: string | null): string {
+  if (gap) return gap;
+  if (bps == null && note) return note;
+  return percent(bps);
+}
+
 async function send(url: string, method: string, body?: unknown) {
   const res = await fetch(url, {
     method,
@@ -225,12 +231,12 @@ export function ModelDetail({
         <Link className="text-navy-800 underline" href={`/models?${periodQuery}`}>All Models</Link>
       </div>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="LP net IRR" value={show(view.lpNetIrrBps, view.lpGap, percent)} />
+        <Metric label="LP net IRR" value={showIrr(view.lpNetIrrBps, view.lpGap, view.lpIrrNote)} />
         <Metric label="LP cash yield Y1" value={show(view.lpYear1YieldBps, view.lpGap, percent)} />
         <Metric label="LP cash yield avg" value={show(view.lpAvgYieldBps, view.lpGap, percent)} />
         <Metric label="LP IRR range" value={view.lpIrrMinBps == null ? "—" : `${percent(view.lpIrrMinBps)} – ${percent(view.lpIrrMaxBps)}`} />
         <Metric label="RCP cash-on-cash Y1" value={show(view.rcpCashOnCashBps, view.rcpGap, percent)} />
-        <Metric label="RCP IRR" value={show(view.rcpIrrBps, view.rcpGap, percent)} />
+        <Metric label="RCP IRR" value={showIrr(view.rcpIrrBps, view.rcpGap, view.rcpIrrNote)} />
         <Metric label="RCP equity multiple" value={show(view.rcpEquityMultipleBps, view.rcpGap, multiple)} />
         <Metric label="Equity required" value={money(view.equityRequiredCents)} />
         <Metric label="Fee income / year" value={view.gaGap === FEE_NEEDED && view.feeIncomeCents == null ? FEE_NEEDED : money(view.feeIncomeCents)} />
@@ -292,7 +298,7 @@ export function ModelDetail({
                 {deal.gap ? <p className="text-sm text-gold-700">{deal.gap}</p> : null}
                 {deal.excluded ? <p className="text-sm text-navy-900">{deal.exclusions.join(" · ")}</p> : (
                   <p className="text-sm text-ink-700">
-                    LP net IRR {percent(deal.lpNetIrrBps)} · Y1 {percent(deal.lpYear1YieldBps)} · avg {percent(deal.lpAvgYieldBps)}
+                    LP net IRR {deal.lpNetIrrBps == null && deal.lpIrrNote ? deal.lpIrrNote : percent(deal.lpNetIrrBps)} · Y1 {percent(deal.lpYear1YieldBps)} · avg {percent(deal.lpAvgYieldBps)}
                   </p>
                 )}
               </div>
@@ -434,9 +440,9 @@ export function ModelCompare({ views }: { views: ModelView[] }) {
           <h2 className="font-display text-2xl text-navy-900">{view.name}</h2>
           <p className="text-xs uppercase tracking-[0.14em] text-gold-700">{view.label}</p>
           <dl className="mt-3 space-y-1 text-sm">
-            <div className="flex justify-between gap-3"><dt>LP net IRR</dt><dd>{show(view.lpNetIrrBps, view.lpGap, percent)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>LP net IRR</dt><dd>{showIrr(view.lpNetIrrBps, view.lpGap, view.lpIrrNote)}</dd></div>
             <div className="flex justify-between gap-3"><dt>LP yield Y1 / avg</dt><dd>{show(view.lpYear1YieldBps, view.lpGap, percent)} / {show(view.lpAvgYieldBps, view.lpGap, percent)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>RCP IRR</dt><dd>{show(view.rcpIrrBps, view.rcpGap, percent)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>RCP IRR</dt><dd>{showIrr(view.rcpIrrBps, view.rcpGap, view.rcpIrrNote)}</dd></div>
             <div className="flex justify-between gap-3"><dt>RCP multiple</dt><dd>{show(view.rcpEquityMultipleBps, view.rcpGap, multiple)}</dd></div>
             <div className="flex justify-between gap-3"><dt>G&amp;A coverage</dt><dd>{view.gaGap ?? multiple(view.gaCoverageBps)}</dd></div>
             <div className="flex justify-between gap-3"><dt>Equity required</dt><dd>{money(view.equityRequiredCents)}</dd></div>

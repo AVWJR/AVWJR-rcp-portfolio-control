@@ -1310,7 +1310,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       "Optional OpCo pref needs both a rate and platform capital. Click Save assumptions.",
     ],
     facts: [
-      "Blank exit value is not guessed. Sale proceeds stay out until an exit cap rate is typed.",
+      "Blank exit value is not guessed. Sale proceeds stay out until an exit cap rate is typed. Without sale proceeds the screen says IRR not available.",
       "Assumptions belong to the Model. They do not change the live OpCo proforma.",
     ],
     troubleshooting: [

@@ -30,6 +30,8 @@ export type LibraryRow = LibraryFact & {
   otherLpFeeCents: number | null;
   otherLpFeeNote: string | null;
   lpYear1CashYieldBps: number | null;
+  lpIrrNote: string | null;
+  rcpIrrNote: string | null;
   returnGap: string | null;
   purchasePriceCents: number | null;
   appraisedValueCents: number | null;
@@ -121,6 +123,8 @@ export async function loadLibraryRows(now = new Date(), period?: { year: number;
       otherLpFeeCents: num(spe.otherLpFeeCents),
       otherLpFeeNote: spe.otherLpFeeNote,
       lpYear1CashYieldBps: returns.lpYear1CashYieldBps,
+      lpIrrNote: returns.lpIrrNote,
+      rcpIrrNote: returns.rcpIrrNote,
       returnGap: returns.returnGap,
     });
   }
@@ -132,8 +136,16 @@ async function libraryReturns(
   annualizedNoi: bigint | null,
   year: number,
   month: number,
-): Promise<{ lpNetIrrBps: number | null; lpCashYieldBps: number | null; lpYear1CashYieldBps: number | null; rcpIrrBps: number | null; returnGap: string | null }> {
-  const blank = { lpNetIrrBps: null, lpCashYieldBps: null, lpYear1CashYieldBps: null, rcpIrrBps: null, returnGap: null as string | null };
+): Promise<{ lpNetIrrBps: number | null; lpCashYieldBps: number | null; lpYear1CashYieldBps: number | null; rcpIrrBps: number | null; lpIrrNote: string | null; rcpIrrNote: string | null; returnGap: string | null }> {
+  const blank = {
+    lpNetIrrBps: null,
+    lpCashYieldBps: null,
+    lpYear1CashYieldBps: null,
+    rcpIrrBps: null,
+    lpIrrNote: null as string | null,
+    rcpIrrNote: null as string | null,
+    returnGap: null as string | null,
+  };
   try {
     const waterfall = await loadSpeWaterfall(spe.id);
     if (!waterfall) return blank;
@@ -167,7 +179,9 @@ async function libraryReturns(
       lpCashYieldBps: metrics.lpAvgCashYieldBps,
       lpYear1CashYieldBps: metrics.lpYear1CashYieldBps,
       rcpIrrBps: metrics.rcpIrrBps,
-      returnGap: metrics.rcpIrrBps == null && metrics.lpNetIrrBps == null ? metrics.notes[0] ?? null : null,
+      lpIrrNote: metrics.lpIrrNote,
+      rcpIrrNote: metrics.rcpIrrNote,
+      returnGap: null,
     };
   } catch {
     return blank;

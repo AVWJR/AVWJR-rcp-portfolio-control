@@ -3,9 +3,13 @@ import type { LibraryRow } from "./facts";
 import { FEE_NEEDED } from "./fees";
 import { staleFlagLabel } from "./staleness";
 
-function returnCell(bps: number | null, row: LibraryRow): string {
-  if (bps == null) return row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "");
-  return ratio(bps, "%");
+function gapCell(row: LibraryRow): string {
+  return row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "");
+}
+
+function irrCell(bps: number | null, note: string | null, row: LibraryRow): string {
+  if (bps != null) return ratio(bps, "%");
+  return note ?? gapCell(row);
 }
 
 function cell(row: LibraryRow, id: ColumnLayoutItem["id"]): string {
@@ -14,14 +18,14 @@ function cell(row: LibraryRow, id: ColumnLayoutItem["id"]): string {
   if (id === "capRate") return ratio(row.capRateBps, "%");
   if (id === "ltv") return ratio(row.ltvBps, "%");
   if (id === "cashOnCash") return ratio(row.cashOnCashBps, "%");
-  if (id === "lpNetIrr") return returnCell(row.lpNetIrrBps, row);
+  if (id === "lpNetIrr") return irrCell(row.lpNetIrrBps, row.lpIrrNote, row);
   if (id === "lpCashYield") {
-    if (row.lpCashYieldBps == null && row.lpYear1CashYieldBps == null) return returnCell(null, row);
+    if (row.lpCashYieldBps == null && row.lpYear1CashYieldBps == null) return gapCell(row);
     const year1 = row.lpYear1CashYieldBps == null ? "" : `Y1 ${ratio(row.lpYear1CashYieldBps, "%")}`;
     const avg = row.lpCashYieldBps == null ? "" : `avg ${ratio(row.lpCashYieldBps, "%")}`;
     return [year1, avg].filter(Boolean).join("; ");
   }
-  if (id === "rcpIrr") return returnCell(row.rcpIrrBps, row);
+  if (id === "rcpIrr") return irrCell(row.rcpIrrBps, row.rcpIrrNote, row);
   if (id === "pricePerUnit") return money(row.pricePerUnitCents);
   if (id === "occupancy") return ratio(row.occupancyBps, "%");
   if (id === "metro") return row.metro ?? "";

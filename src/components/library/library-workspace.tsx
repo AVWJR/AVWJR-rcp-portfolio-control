@@ -43,7 +43,8 @@ function displayCell(row: LibraryRow, id: LibraryColumnId): string {
   }
   if (id === "lpNetIrr" || id === "rcpIrr") {
     const value = id === "lpNetIrr" ? row.lpNetIrrBps : row.rcpIrrBps;
-    if (value == null) return row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "—");
+    const note = id === "lpNetIrr" ? row.lpIrrNote : row.rcpIrrNote;
+    if (value == null) return note ?? row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "—");
     return percent(value);
   }
   if (id === "lpCashYield") {

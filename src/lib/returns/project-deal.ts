@@ -4,7 +4,7 @@ import {
   runDealProforma,
   type WaterfallConfig,
 } from "@rcp/ledger";
-import { rateToBps, solveIrr, type IrrCashFlow } from "./irr";
+import { IRR_NOT_AVAILABLE, rateToBps, solveIrr, type IrrCashFlow } from "./irr";
 import { resolveAnnualFee, type FeeInputs } from "./fees";
 
 /**
@@ -38,9 +38,11 @@ export type DealReturnMetrics = {
   lpEquityCents: bigint;
   rcpEquityCents: bigint;
   lpNetIrrBps: number | null;
+  lpIrrNote: string | null;
   lpYear1CashYieldBps: number | null;
   lpAvgCashYieldBps: number | null;
   rcpIrrBps: number | null;
+  rcpIrrNote: string | null;
   rcpYear1CashOnCashBps: number | null;
   rcpAvgCashOnCashBps: number | null;
   rcpEquityMultipleBps: number | null;
@@ -108,9 +110,11 @@ function emptyMetrics(gap: string, notes: string[] = []): DealReturnMetrics {
     lpEquityCents: 0n,
     rcpEquityCents: 0n,
     lpNetIrrBps: null,
+    lpIrrNote: null,
     lpYear1CashYieldBps: null,
     lpAvgCashYieldBps: null,
     rcpIrrBps: null,
+    rcpIrrNote: null,
     rcpYear1CashOnCashBps: null,
     rcpAvgCashOnCashBps: null,
     rcpEquityMultipleBps: null,
@@ -179,6 +183,7 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   const n = BigInt(years.length || 1);
   let gap: string | null = null;
   let lpNetIrrBps: number | null = null;
+  let lpIrrNote: string | null = null;
   let lpYear1: number | null = null;
   let lpAvg: number | null = null;
   if (lpEquity <= 0n) {
@@ -186,13 +191,14 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   } else {
     const irr = solveIrr(lpFlows);
     lpNetIrrBps = rateToBps(irr.rate);
-    if (irr.reason && lpNetIrrBps == null) notes.push(`LP net IRR: ${irr.reason}`);
+    if (irr.reason && lpNetIrrBps == null) lpIrrNote = IRR_NOT_AVAILABLE;
     const year1Ops = years[0]?.lpOperatingCents ?? 0n;
     lpYear1 = yieldBps(year1Ops, lpEquity);
     lpAvg = yieldBps(lpOps / n, lpEquity);
   }
 
   let rcpIrrBps: number | null = null;
+  let rcpIrrNote: string | null = null;
   let rcpYear1: number | null = null;
   let rcpAvg: number | null = null;
   let multiple: number | null = null;
@@ -201,12 +207,13 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   } else {
     const irr = solveIrr(rcpFlows);
     rcpIrrBps = rateToBps(irr.rate);
-    if (irr.reason && rcpIrrBps == null) notes.push(`RCP IRR: ${irr.reason}`);
+    if (irr.reason && rcpIrrBps == null) rcpIrrNote = IRR_NOT_AVAILABLE;
     const year1Ops = years[0]?.rcpOperatingCents ?? 0n;
     rcpYear1 = yieldBps(year1Ops, rcpEquity);
     rcpAvg = yieldBps(rcpOps / n, rcpEquity);
     multiple = yieldBps(rcpTotal, rcpEquity);
   }
+  if (lpIrrNote || rcpIrrNote) notes.push(IRR_NOT_AVAILABLE);
 
   return {
     gap,
@@ -215,9 +222,11 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     lpEquityCents: lpEquity,
     rcpEquityCents: rcpEquity,
     lpNetIrrBps,
+    lpIrrNote,
     lpYear1CashYieldBps: lpYear1,
     lpAvgCashYieldBps: lpAvg,
     rcpIrrBps,
+    rcpIrrNote,
     rcpYear1CashOnCashBps: rcpYear1,
     rcpAvgCashOnCashBps: rcpAvg,
     rcpEquityMultipleBps: multiple,
