@@ -2,9 +2,9 @@ import { DEAL_STATUS_LABEL, effectiveDealStatus, type DealStatusValue } from "@/
 import { dealFeeNeededLabel } from "@/lib/library/fees";
 import { analysisStaleLevel, type StaleLevel } from "@/lib/library/staleness";
 import { isOwnedSpe } from "@/lib/owned-spe";
-import { periodCfadsForEntity } from "@/lib/proforma-load";
 import { prisma } from "@/lib/prisma";
-import { projectDealReturns } from "@/lib/returns/project-deal";
+import { projectDealReturns, resolveEquityRequiredCents } from "@/lib/returns/project-deal";
+import { readAnnualCfadsCents, readAnnualDebtServiceCents } from "@/lib/returns/read-cash";
 import { loadSpeWaterfall } from "@/lib/waterfall";
 import type { LibraryFact } from "./criteria";
 
@@ -58,9 +58,9 @@ function files(json: string | null | undefined): { filename: string; kind: strin
   }
 }
 
-export async function loadLibraryRows(now = new Date(), period?: { year: number; month: number }): Promise<LibraryRow[]> {
-  const year = period?.year ?? now.getFullYear();
-  const month = period?.month ?? now.getMonth() + 1;
+export async function loadLibraryRows(now = new Date(), period?: { year: number; month: number } | null): Promise<LibraryRow[]> {
+  const year = period?.year;
+  const month = period?.month;
   const spes = await prisma.entity.findMany({
     where: { type: "SPE" },
     orderBy: { code: "asc" },
@@ -74,7 +74,7 @@ export async function loadLibraryRows(now = new Date(), period?: { year: number;
     const snap = spe.analysisSnapshots[0] ?? null;
     const status = effectiveDealStatus(spe);
     const feeNeeded = dealFeeNeededLabel(spe) != null;
-    const returns = await libraryReturns(spe, snap?.annualizedNoiCents ?? null, year, month);
+    const returns = await libraryReturns(spe, snap, year, month);
     rows.push({
       code: spe.code,
       name: spe.name,
@@ -126,6 +126,7 @@ export async function loadLibraryRows(now = new Date(), period?: { year: number;
       lpIrrNote: returns.lpIrrNote,
       rcpIrrNote: returns.rcpIrrNote,
       returnGap: returns.returnGap,
+      metricGaps: returns.metricGaps,
     });
   }
   return rows;
@@ -133,10 +134,19 @@ export async function loadLibraryRows(now = new Date(), period?: { year: number;
 
 async function libraryReturns(
   spe: { id: string; code: string; type: string; lifecycleStatus: string; dealStatus: string; holdPeriodYears: number | null; amFeeBps: number | null; otherLpFeeCents: bigint | null; purchasePriceCents: bigint | null },
-  annualizedNoi: bigint | null,
-  year: number,
-  month: number,
-): Promise<{ lpNetIrrBps: number | null; lpCashYieldBps: number | null; lpYear1CashYieldBps: number | null; rcpIrrBps: number | null; lpIrrNote: string | null; rcpIrrNote: string | null; returnGap: string | null }> {
+  snap: { annualizedNoiCents: bigint | null; equityRequiredCents: bigint | null; noiCents: bigint | null; dscrBps: number | null } | null,
+  year: number | undefined,
+  month: number | undefined,
+): Promise<{
+  lpNetIrrBps: number | null;
+  lpCashYieldBps: number | null;
+  lpYear1CashYieldBps: number | null;
+  rcpIrrBps: number | null;
+  lpIrrNote: string | null;
+  rcpIrrNote: string | null;
+  returnGap: string | null;
+  metricGaps: Partial<Record<"lpNetIrr" | "lpCashYield" | "rcpIrr", string>>;
+}> {
   const blank = {
     lpNetIrrBps: null,
     lpCashYieldBps: null,
@@ -145,19 +155,30 @@ async function libraryReturns(
     lpIrrNote: null as string | null,
     rcpIrrNote: null as string | null,
     returnGap: null as string | null,
+    metricGaps: {} as Partial<Record<"lpNetIrr" | "lpCashYield" | "rcpIrr", string>>,
   };
   try {
     const waterfall = await loadSpeWaterfall(spe.id);
     if (!waterfall) return blank;
+    const owned = isOwnedSpe(spe);
     let year1 = 0n;
-    if (isOwnedSpe(spe)) {
-      const monthly = await periodCfadsForEntity(spe.id, spe.code, year, month);
-      if (monthly > 0n) year1 = monthly * 12n;
-    }
+    if (owned) year1 = await readAnnualCfadsCents(spe.id, year, month);
+    const annualizedNoi = snap?.annualizedNoiCents ?? null;
     if (year1 <= 0n && annualizedNoi != null && annualizedNoi > 0n) year1 = annualizedNoi;
     const lpEquity = waterfall.lpContributedCents > 0n ? waterfall.lpContributedCents : 0n;
-    const gpBps = waterfall.config.gpCoInvestBps ?? 0;
-    const equityRequired = lpEquity > 0n && gpBps < 10_000 ? (lpEquity * 10_000n) / BigInt(10_000 - gpBps) : null;
+    const equityRequired = resolveEquityRequiredCents({
+      lpContributedCents: lpEquity,
+      gpCoInvestBps: waterfall.config.gpCoInvestBps ?? 0,
+      snapshotCents: snap?.equityRequiredCents ?? null,
+    });
+    const debt = await readAnnualDebtServiceCents({
+      entityId: spe.id,
+      owned,
+      year,
+      month,
+      snapshotNoiCents: snap?.noiCents ?? null,
+      snapshotDscrBps: snap?.dscrBps ?? null,
+    });
     const metrics = projectDealReturns({
       config: waterfall.config,
       lpContributedCents: waterfall.lpContributedCents,
@@ -172,8 +193,17 @@ async function libraryReturns(
       otherLpFeeCents: spe.otherLpFeeCents,
       purchasePriceCents: spe.purchasePriceCents,
       equityRequiredCents: equityRequired,
+      annualDebtServiceCents: debt,
     });
-    if (metrics.gap) return { ...blank, returnGap: metrics.gap };
+    const metricGaps: Partial<Record<"lpNetIrr" | "lpCashYield" | "rcpIrr", string>> = {};
+    if (metrics.gap) {
+      metricGaps.lpNetIrr = metrics.gap;
+      metricGaps.lpCashYield = metrics.gap;
+      metricGaps.rcpIrr = metrics.gap;
+      return { ...blank, returnGap: metrics.gap, metricGaps };
+    }
+    if (metrics.lpIrrNote) metricGaps.lpNetIrr = metrics.lpIrrNote;
+    if (metrics.rcpIrrNote) metricGaps.rcpIrr = metrics.rcpIrrNote;
     return {
       lpNetIrrBps: metrics.lpNetIrrBps,
       lpCashYieldBps: metrics.lpAvgCashYieldBps,
@@ -182,6 +212,7 @@ async function libraryReturns(
       lpIrrNote: metrics.lpIrrNote,
       rcpIrrNote: metrics.rcpIrrNote,
       returnGap: null,
+      metricGaps,
     };
   } catch {
     return blank;

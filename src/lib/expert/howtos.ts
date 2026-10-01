@@ -557,7 +557,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     facts: [
       "Hard limit filters the list. Preference is stored for the Phase 3 optimizer and does not exclude a deal yet.",
-      "LP net IRR, LP cash yield, and RCP IRR are calculated in Phase 2 after the AM fee. fee needed means the AM fee or the other LP fee is blank. A hard limit excludes every deal that is missing the number.",
+      "LP net IRR, LP cash yield, and RCP IRR are calculated in Phase 2 after debt service and fees. fee needed means the AM fee or the other LP fee is blank. A hard limit excludes every deal that is missing the number. exit value needed means no sale proceeds were set, so IRR does not pass.",
       "Cap rate is annualized NOI divided by purchase price. It stays blank without a price or NOI. Enter the price, then Save analysis snapshot or Backfill analysis snapshots.",
       "No snapshot means no analysis snapshot yet. Stale is amber at 90 days and red at 180 days. Age never deletes a deal or a file.",
       "Show Test deals is off until you tick it. Export CSV downloads the passing rows and the visible columns.",
@@ -1260,7 +1260,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     facts: [
       "Pipeline deals can be added and are flagged not yet screened. They are not optimizer eligible until Screened.",
       "Archived deals are view only and cannot be added. Test deals only go in a Test Model.",
-      "A missing fee shows fee needed. Dependent returns stay blank.",
+      "A missing fee shows fee needed. Dependent returns stay blank, including cash by year. Returns are after debt service and fees. A missing debt payment says debt service needed. No exit value says exit value needed, and cash yield can still show.",
     ],
     troubleshooting: [
       {
@@ -1310,7 +1310,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       "Optional OpCo pref needs both a rate and platform capital. Click Save assumptions.",
     ],
     facts: [
-      "Blank exit value is not guessed. Sale proceeds stay out until an exit cap rate is typed. Without sale proceeds the screen says IRR not available.",
+      "Blank exit value is not guessed. Sale proceeds stay out until an exit cap rate is typed. Without sale proceeds the screen says exit value needed.",
       "Assumptions belong to the Model. They do not change the live OpCo proforma.",
     ],
     troubleshooting: [

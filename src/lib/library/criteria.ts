@@ -144,6 +144,8 @@ export type LibraryFact = {
   equityRequiredCents: number | null;
   dealStatus: string;
   feeNeeded: boolean;
+  /** Shown when the number is missing. A hard limit does not pass. */
+  metricGaps?: Partial<Record<CriterionField, string>>;
 };
 
 export type Exclusion = { field: CriterionField; label: string; reason: string };
@@ -273,6 +275,10 @@ export function evaluateCriterion(fact: LibraryFact, criterion: Criterion): Excl
 
   const actual = factNumber(fact, criterion.field);
   if (actual == null) {
+    const specific = fact.metricGaps?.[criterion.field];
+    if (specific) {
+      return { field: criterion.field, label: def.label, reason: `${def.label}: ${specific}` };
+    }
     const fee = def.feeNeeded && fact.feeNeeded ? " · fee needed" : "";
     return { field: criterion.field, label: def.label, reason: `${def.label} is not on file${fee}` };
   }

@@ -1,5 +1,6 @@
 import { europeanPromoteOpen, loadSpeWaterfall, type SpeWaterfallRecord } from "@/lib/waterfall";
-import { periodCfadsForEntity } from "@/lib/proforma-load";
+import { readAnnualCfadsCents, readAnnualDebtServiceCents } from "@/lib/returns/read-cash";
+import { resolveEquityRequiredCents } from "@/lib/returns/project-deal";
 import { effectiveDealStatus, isOwnedSpe } from "@/lib/owned-spe";
 import { analysisStaleLevel, type StaleLevel } from "@/lib/library/staleness";
 import type { LibraryFact } from "@/lib/library/criteria";
@@ -16,8 +17,8 @@ function num(value: bigint | null | undefined): number | null {
 export async function loadModelDealInputs(opts: {
   entityIds: string[];
   modelKind: string;
-  year: number;
-  month: number;
+  year?: number | null;
+  month?: number | null;
   optimizerEligible: Map<string, boolean>;
 }): Promise<ModelDealInput[]> {
   if (!opts.entityIds.length) return [];
@@ -45,22 +46,26 @@ export async function loadModelDealInputs(opts: {
     const snap = entity.analysisSnapshots[0] ?? null;
     const owned = isOwnedSpe(entity);
     let year1 = 0n;
-    if (owned) {
-      const monthly = await periodCfadsForEntity(entity.id, entity.code, opts.year, opts.month);
-      if (monthly > 0n) year1 = monthly * 12n;
-    }
+    if (owned) year1 = await readAnnualCfadsCents(entity.id, opts.year, opts.month);
     if (year1 <= 0n && snap?.annualizedNoiCents != null && snap.annualizedNoiCents > 0n) {
       year1 = snap.annualizedNoiCents;
     }
     const lpEquity = record.lpContributedCents > 0n ? record.lpContributedCents : 0n;
-    const gpBps = record.config.gpCoInvestBps ?? 0;
-    let equityRequired = snap?.equityRequiredCents ?? null;
-    if (equityRequired == null && lpEquity > 0n && gpBps < 10_000) {
-      equityRequired = (lpEquity * 10_000n) / BigInt(10_000 - gpBps);
-    }
+    const equityRequired = resolveEquityRequiredCents({
+      lpContributedCents: lpEquity,
+      gpCoInvestBps: record.config.gpCoInvestBps ?? 0,
+      snapshotCents: snap?.equityRequiredCents ?? null,
+    });
+    const annualDebtServiceCents = await readAnnualDebtServiceCents({
+      entityId: entity.id,
+      owned,
+      year: opts.year,
+      month: opts.month,
+      snapshotNoiCents: snap?.noiCents ?? null,
+      snapshotDscrBps: snap?.dscrBps ?? null,
+    });
     const upb = entity.loans.reduce((sum, loan) => sum + loan.currentUpbCents, 0n);
     const flag = decision.ok ? decision.flag : status === "ARCHIVED" ? "view only" : null;
-    const storedEligible = opts.optimizerEligible.get(id) ?? false;
     const optimizerEligible = decision.ok ? decision.optimizerEligible : false;
     const fact: LibraryFact = {
       code: entity.code,
@@ -96,7 +101,7 @@ export async function loadModelDealInputs(opts: {
       code: entity.code,
       name: entity.name,
       dealStatus: status,
-      optimizerEligible: optimizerEligible && storedEligible ? true : optimizerEligible,
+      optimizerEligible,
       flag: status === "PIPELINE" ? NOT_YET_SCREENED : flag,
       stale: analysisStaleLevel(snap?.recordedAt ?? null) as StaleLevel,
       metro: entity.metro,
@@ -121,6 +126,7 @@ export async function loadModelDealInputs(opts: {
         otherLpFeeCents: entity.otherLpFeeCents,
         purchasePriceCents: entity.purchasePriceCents,
         equityRequiredCents: equityRequired,
+        annualDebtServiceCents,
       },
     });
   }

@@ -165,11 +165,27 @@ export function previewSchemaPushPlan(env = process.env) {
   };
 }
 
-/** Compare database URLs without trailing slashes so a preview cannot target production. */
+/**
+ * Same database when host (pooler suffix removed), database name, and nothing else match.
+ * User, password, port, and query parameters are ignored.
+ */
 export function sameDatabaseUrl(left, right) {
-  const norm = (value) => String(value ?? "").trim().replace(/\/+$/, "");
-  const a = norm(left);
-  const b = norm(right);
+  const identity = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    if (!isPostgresUrl(raw)) return raw.replace(/\/+$/, "");
+    try {
+      const url = new URL(deriveNeonUnpooledUrl(raw).replace(/^postgres(ql)?:/i, "http:"));
+      const host = url.hostname.toLowerCase();
+      const database = decodeURIComponent(url.pathname).replace(/^\/+/, "").replace(/\/+$/, "").split("/")[0]?.toLowerCase() ?? "";
+      if (!host || !database) return raw.replace(/\/+$/, "");
+      return `${host}|${database}`;
+    } catch {
+      return raw.replace(/\/+$/, "");
+    }
+  };
+  const a = identity(left);
+  const b = identity(right);
   return a.length > 0 && a === b;
 }
 

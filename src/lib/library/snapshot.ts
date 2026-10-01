@@ -16,8 +16,8 @@ import { loadLoans } from "@/lib/loans";
 import { loadPostedLines, listPeriods } from "@/lib/queries";
 import { loadUnits } from "@/lib/rent-roll";
 import { loadSpeWaterfall } from "@/lib/waterfall";
-import { projectDealReturns } from "@/lib/returns/project-deal";
-import { periodCfadsForEntity } from "@/lib/proforma-load";
+import { projectDealReturns, resolveEquityRequiredCents } from "@/lib/returns/project-deal";
+import { readAnnualCfadsCents, readAnnualDebtServiceCents } from "@/lib/returns/read-cash";
 import { dealFeesMissing } from "@/lib/library/fees";
 
 function bps(numerator: bigint, denominator: bigint): number | null {
@@ -158,10 +158,10 @@ export async function captureDealSnapshot(opts: {
   const waterfall = await loadSpeWaterfall(entity.id);
   const lpEquity = waterfall?.lpContributedCents ?? 0n;
   const gpBps = waterfall?.config.gpCoInvestBps ?? 0;
-  let equityRequired: bigint | null = null;
-  if (lpEquity > 0n && gpBps < 10_000) {
-    equityRequired = (lpEquity * 10_000n) / BigInt(10_000 - gpBps);
-  }
+  const equityRequired = resolveEquityRequiredCents({
+    lpContributedCents: lpEquity,
+    gpCoInvestBps: gpBps,
+  });
   const cashAfterDebt = noiReady ? annualizedNoi! - debtService * 12n : null;
   const cashOnCashBps =
     noiReady && cashAfterDebt != null && equityRequired != null && equityRequired > 0n
@@ -186,9 +186,17 @@ export async function captureDealSnapshot(opts: {
     try {
       let year1 = annualizedNoi != null && annualizedNoi > 0n ? annualizedNoi : 0n;
       if (useBooks) {
-        const monthly = await periodCfadsForEntity(entity.id, entity.code, opts.year, opts.month);
-        if (monthly > 0n) year1 = monthly * 12n;
+        const annual = await readAnnualCfadsCents(entity.id, opts.year, opts.month);
+        if (annual > 0n) year1 = annual;
       }
+      const debt = await readAnnualDebtServiceCents({
+        entityId: entity.id,
+        owned,
+        year: opts.year,
+        month: opts.month,
+        snapshotNoiCents: periodNoi,
+        snapshotDscrBps: dscrBps,
+      });
       const metrics = projectDealReturns({
         config: waterfall.config,
         lpContributedCents: waterfall.lpContributedCents,
@@ -203,6 +211,7 @@ export async function captureDealSnapshot(opts: {
         otherLpFeeCents: entity.otherLpFeeCents,
         purchasePriceCents: entity.purchasePriceCents,
         equityRequiredCents: equityRequired,
+        annualDebtServiceCents: debt,
       });
       if (!metrics.gap) {
         lpNetIrrBps = metrics.lpNetIrrBps;

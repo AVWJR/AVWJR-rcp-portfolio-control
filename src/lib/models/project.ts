@@ -1,9 +1,15 @@
 import { runOpCoProforma, type DealProformaInput, type OpCoPlatformPrefs } from "@rcp/ledger";
-import { evaluateDeal, type Criterion, type LibraryFact } from "@/lib/library/criteria";
+import { evaluateDeal, type Criterion, type CriterionField, type LibraryFact } from "@/lib/library/criteria";
 import { FEE_NEEDED } from "@/lib/library/fees";
 import type { StaleLevel } from "@/lib/library/staleness";
 import { IRR_NOT_AVAILABLE, rateToBps, solveIrr, type IrrCashFlow } from "@/lib/returns/irr";
-import { exitEquityFromCap, projectDealReturns, type DealReturnInput, type DealReturnMetrics } from "@/lib/returns/project-deal";
+import {
+  EXIT_VALUE_NEEDED,
+  exitEquityFromCap,
+  projectDealReturns,
+  type DealReturnInput,
+  type DealReturnMetrics,
+} from "@/lib/returns/project-deal";
 import { PROJECTION_LABEL } from "./membership";
 
 export type ModelAssumptions = {
@@ -77,7 +83,9 @@ export type ModelProjection = {
   rcpIrrBps: number | null;
   rcpIrrNote: string | null;
   rcpEquityMultipleBps: number | null;
+  rcpMultipleNote: string | null;
   rcpGap: string | null;
+  cashGap: string | null;
   equityRequiredCents: bigint | null;
   lpNetIrrBps: number | null;
   lpIrrNote: string | null;
@@ -97,6 +105,25 @@ function yieldBps(cash: bigint, equity: bigint): number | null {
   return Number((cash * 10_000n) / equity);
 }
 
+function factFromMetrics(fact: LibraryFact, metrics: DealReturnMetrics): LibraryFact {
+  const metricGaps: Partial<Record<CriterionField, string>> = { ...fact.metricGaps };
+  if (metrics.gap) {
+    metricGaps.lpNetIrr = metrics.gap;
+    metricGaps.lpCashYield = metrics.gap;
+    metricGaps.rcpIrr = metrics.gap;
+  } else {
+    if (metrics.lpIrrNote) metricGaps.lpNetIrr = metrics.lpIrrNote;
+    if (metrics.rcpIrrNote) metricGaps.rcpIrr = metrics.rcpIrrNote;
+  }
+  return {
+    ...fact,
+    lpNetIrrBps: metrics.gap ? null : metrics.lpNetIrrBps,
+    lpCashYieldBps: metrics.gap ? null : metrics.lpAvgCashYieldBps,
+    rcpIrrBps: metrics.gap ? null : metrics.rcpIrrBps,
+    metricGaps,
+  };
+}
+
 function blank(notes: string[], deals: ModelDealResult[]): ModelProjection {
   return {
     label: PROJECTION_LABEL,
@@ -111,7 +138,9 @@ function blank(notes: string[], deals: ModelDealResult[]): ModelProjection {
     rcpIrrBps: null,
     rcpIrrNote: null,
     rcpEquityMultipleBps: null,
+    rcpMultipleNote: null,
     rcpGap: null,
+    cashGap: null,
     equityRequiredCents: null,
     lpNetIrrBps: null,
     lpIrrNote: null,
@@ -135,11 +164,12 @@ const DIMENSIONS: { dimension: ConcentrationRow["dimension"]; field: "metro" | "
 ];
 
 function concentration(deals: { input: ModelDealInput; exclusions: { field: string }[] }[]): ConcentrationRow[] {
+  const counted = deals.filter((deal) => deal.exclusions.length === 0 && deal.input.dealStatus !== "ARCHIVED");
   const rows: ConcentrationRow[] = [];
-  const total = deals.reduce((sum, deal) => sum + (deal.input.equityRequiredCents != null && deal.input.equityRequiredCents > 0n ? deal.input.equityRequiredCents : 0n), 0n);
+  const total = counted.reduce((sum, deal) => sum + (deal.input.equityRequiredCents != null && deal.input.equityRequiredCents > 0n ? deal.input.equityRequiredCents : 0n), 0n);
   for (const dimension of DIMENSIONS) {
     const buckets = new Map<string, { equity: bigint; breached: boolean }>();
-    for (const deal of deals) {
+    for (const deal of counted) {
       const label = dimension.read(deal.input);
       const current = buckets.get(label) ?? { equity: 0n, breached: false };
       const equity = deal.input.equityRequiredCents != null && deal.input.equityRequiredCents > 0n ? deal.input.equityRequiredCents : 0n;
@@ -176,7 +206,21 @@ export function projectModel(opts: {
   deals: ModelDealInput[];
 }): ModelProjection {
   const notes = [PROJECTION_LABEL, "Same waterfall as the live books. This Model does not post journals or change a deal."];
-  const evaluated = opts.deals.map((input) => {
+  const metricsByCode = new Map<string, DealReturnMetrics>();
+  const prepared = opts.deals.map((input) => {
+    const metrics = projectDealReturns({
+      ...input.returns,
+      holdYears: opts.assumptions.holdYears,
+      growthBps: opts.assumptions.growthBps,
+      exitEquityProceedsCents: 0n,
+      exitCapRateBps: opts.assumptions.exitCapRateBps,
+      year1NoiCents: input.annualizedNoiCents ?? input.returns.year1CfadsCents,
+      upbCents: input.upbCents,
+    });
+    metricsByCode.set(input.code, metrics);
+    return { ...input, fact: factFromMetrics(input.fact, metrics) };
+  });
+  const evaluated = prepared.map((input) => {
     const exclusions = evaluateDeal(input.fact, opts.criteria);
     if (input.dealStatus === "ARCHIVED") {
       exclusions.unshift({ field: "dealStatus", label: "Status", reason: "Archived deals are view only." });
@@ -184,20 +228,6 @@ export function projectModel(opts: {
     return { input, exclusions };
   });
   const passing = evaluated.filter((row) => row.exclusions.length === 0);
-  const metricsByCode = new Map<string, DealReturnMetrics>();
-
-  for (const row of passing) {
-    const metrics = projectDealReturns({
-      ...row.input.returns,
-      holdYears: opts.assumptions.holdYears,
-      growthBps: opts.assumptions.growthBps,
-      exitEquityProceedsCents: 0n,
-      exitCapRateBps: opts.assumptions.exitCapRateBps,
-      year1NoiCents: row.input.annualizedNoiCents ?? row.input.returns.year1CfadsCents,
-      upbCents: row.input.upbCents,
-    });
-    metricsByCode.set(row.input.code, metrics);
-  }
 
   const dealResults: ModelDealResult[] = evaluated.map((row) => ({
     code: row.input.code,
@@ -274,6 +304,7 @@ export function projectModel(opts: {
       exitEquityProceedsCents: cap.proceedsCents,
       europeanPromoteOpen: row.input.returns.europeanPromoteOpen,
       operationsDeductionCents: metrics.feeAnnualCents ?? 0n,
+      debtServiceCents: row.input.returns.annualDebtServiceCents ?? 0n,
       entityCode: row.input.code,
       entityName: row.input.name,
     });
@@ -292,16 +323,20 @@ export function projectModel(opts: {
     const rolled = runOpCoProforma({ deals: proformaDeals, platform });
     rcpByYear = rolled.years.map((row) => row.opcoGpCents);
     notes.push("Optional OpCo pref is modeled on RCP cash after each deal waterfall.");
+  } else if (feeBlocked && (prefRate != null || prefCapital != null)) {
+    notes.push(`OpCo pref is not modeled because ${feeReason}.`);
   } else if (prefRate != null || prefCapital != null) {
     notes.push("OpCo pref is blank until both a rate and platform capital are typed.");
   }
 
-  const years: ModelYear[] = rcpByYear.map((rcp, index) => ({
-    year: index + 1,
-    rcpCents: rcp,
-    lpCents: yearLp[index] ?? 0n,
-    feeIncomeCents: feeIncome,
-  }));
+  const years: ModelYear[] = feeBlocked
+    ? Array.from({ length: Math.max(hold, opts.assumptions.holdYears, 1) }, (_, index) => ({ year: index + 1, rcpCents: 0n, lpCents: 0n, feeIncomeCents: 0n }))
+    : rcpByYear.map((rcp, index) => ({
+        year: index + 1,
+        rcpCents: rcp,
+        lpCents: yearLp[index] ?? 0n,
+        feeIncomeCents: feeIncome,
+      }));
 
   const includedFacts = passing.map((row) => row.input);
   const projection: ModelProjection = {
@@ -317,7 +352,9 @@ export function projectModel(opts: {
     rcpIrrBps: null,
     rcpIrrNote: null,
     rcpEquityMultipleBps: null,
+    rcpMultipleNote: null,
     rcpGap: feeBlocked ? feeReason : null,
+    cashGap: feeBlocked ? feeReason : null,
     equityRequiredCents: haveEquity ? equityRequired : null,
     lpNetIrrBps: null,
     lpIrrNote: null,
@@ -341,11 +378,15 @@ export function projectModel(opts: {
   else if (opts.gaBudgetCents === 0n) projection.gaGap = "G&A budget is zero";
   else projection.gaCoverageBps = Number((feeIncome * 10_000n) / opts.gaBudgetCents);
 
+  const exitUnset = opts.assumptions.exitCapRateBps == null;
   if (lpEquity > 0n) {
-    const flows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.lpCents), tYears: row.year }))];
-    const irr = solveIrr(flows);
-    projection.lpNetIrrBps = rateToBps(irr.rate);
-    if (irr.reason && projection.lpNetIrrBps == null) projection.lpIrrNote = IRR_NOT_AVAILABLE;
+    if (exitUnset) projection.lpIrrNote = EXIT_VALUE_NEEDED;
+    else {
+      const flows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.lpCents), tYears: row.year }))];
+      const irr = solveIrr(flows);
+      projection.lpNetIrrBps = rateToBps(irr.rate);
+      if (irr.reason && projection.lpNetIrrBps == null) projection.lpIrrNote = IRR_NOT_AVAILABLE;
+    }
     const n = BigInt(years.length || 1);
     const ops = yearLpOps.reduce((sum, value) => sum + value, 0n);
     projection.lpYear1YieldBps = yieldBps(yearLpOps[0] ?? 0n, lpEquity);
@@ -364,21 +405,28 @@ export function projectModel(opts: {
   }
 
   if (rcpEquity > 0n) {
-    const flows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.rcpCents), tYears: row.year }))];
-    const irr = solveIrr(flows);
-    projection.rcpIrrBps = rateToBps(irr.rate);
-    if (irr.reason && projection.rcpIrrBps == null) projection.rcpIrrNote = IRR_NOT_AVAILABLE;
     const n = BigInt(years.length || 1);
     const ops = yearRcpOps.reduce((sum, value) => sum + value, 0n);
     projection.rcpCashOnCashBps = yieldBps(yearRcpOps[0] ?? 0n, rcpEquity);
     projection.rcpAvgCashOnCashBps = yieldBps(ops / n, rcpEquity);
-    const total = years.reduce((sum, row) => sum + row.rcpCents, 0n);
-    projection.rcpEquityMultipleBps = yieldBps(total, rcpEquity);
+    if (exitUnset) {
+      projection.rcpIrrNote = EXIT_VALUE_NEEDED;
+      projection.rcpMultipleNote = EXIT_VALUE_NEEDED;
+    } else {
+      const flows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.rcpCents), tYears: row.year }))];
+      const irr = solveIrr(flows);
+      projection.rcpIrrBps = rateToBps(irr.rate);
+      if (irr.reason && projection.rcpIrrBps == null) projection.rcpIrrNote = IRR_NOT_AVAILABLE;
+      const total = years.reduce((sum, row) => sum + row.rcpCents, 0n);
+      projection.rcpEquityMultipleBps = yieldBps(total, rcpEquity);
+    }
   } else {
     projection.rcpGap = "RCP equity is zero";
   }
 
-  if (projection.lpIrrNote || projection.rcpIrrNote) projection.notes.push(IRR_NOT_AVAILABLE);
+  for (const note of [projection.lpIrrNote, projection.rcpIrrNote]) {
+    if (note && !projection.notes.includes(note)) projection.notes.push(note);
+  }
 
   return projection;
 }

@@ -3,6 +3,7 @@
 import { CriteriaBuilder } from "@/components/library/criteria-builder";
 import type { Criterion, CriterionField } from "@/lib/library/criteria";
 import { FEE_NEEDED } from "@/lib/library/fees";
+import { RETURNS_BASIS } from "@/lib/returns/project-deal";
 import { MAX_COMPARE } from "@/lib/models/membership";
 import type { ModelView } from "@/lib/models/view";
 import { staleFlagLabel, type StaleLevel } from "@/lib/library/staleness";
@@ -31,10 +32,10 @@ function show(bps: number | null, gap: string | null, format: (value: number | n
   return format(bps);
 }
 
-function showIrr(bps: number | null, gap: string | null, note: string | null): string {
+function showIrr(bps: number | null, gap: string | null, note: string | null, format: (value: number | null) => string = percent): string {
   if (gap) return gap;
   if (bps == null && note) return note;
-  return percent(bps);
+  return format(bps);
 }
 
 async function send(url: string, method: string, body?: unknown) {
@@ -223,7 +224,7 @@ export function ModelDetail({
 
   return (
     <div className="space-y-6">
-      <p className="border border-gold-500 bg-gold-100 px-3 py-2 text-sm text-navy-950">{view.label}</p>
+      <p className="border border-gold-500 bg-gold-100 px-3 py-2 text-sm text-navy-950">{view.label} Returns are {RETURNS_BASIS}.</p>
       <div className="flex flex-wrap gap-3 text-sm">
         <Link className="text-navy-800 underline" href={`/models/${view.id}/assumptions?${periodQuery}`}>Assumptions</Link>
         <Link className="text-navy-800 underline" href={`/models/compare?ids=${view.id}&${periodQuery}`}>Compare</Link>
@@ -237,7 +238,7 @@ export function ModelDetail({
         <Metric label="LP IRR range" value={view.lpIrrMinBps == null ? "—" : `${percent(view.lpIrrMinBps)} – ${percent(view.lpIrrMaxBps)}`} />
         <Metric label="RCP cash-on-cash Y1" value={show(view.rcpCashOnCashBps, view.rcpGap, percent)} />
         <Metric label="RCP IRR" value={showIrr(view.rcpIrrBps, view.rcpGap, view.rcpIrrNote)} />
-        <Metric label="RCP equity multiple" value={show(view.rcpEquityMultipleBps, view.rcpGap, multiple)} />
+        <Metric label="RCP equity multiple" value={showIrr(view.rcpEquityMultipleBps, view.rcpGap, view.rcpMultipleNote, multiple)} />
         <Metric label="Equity required" value={money(view.equityRequiredCents)} />
         <Metric label="Fee income / year" value={view.gaGap === FEE_NEEDED && view.feeIncomeCents == null ? FEE_NEEDED : money(view.feeIncomeCents)} />
         <Metric label="G&A coverage" value={view.gaGap ?? multiple(view.gaCoverageBps)} />
@@ -260,9 +261,9 @@ export function ModelDetail({
               {view.years.map((row) => (
                 <tr key={row.year} className="border-t border-cream-300">
                   <td className="px-3 py-2">Year {row.year}</td>
-                  <td className="px-3 py-2">{money(row.rcpCents)}</td>
-                  <td className="px-3 py-2">{money(row.lpCents)}</td>
-                  <td className="px-3 py-2">{view.feeIncomeCents == null ? FEE_NEEDED : money(row.feeIncomeCents)}</td>
+                  <td className="px-3 py-2">{view.cashGap ?? money(row.rcpCents)}</td>
+                  <td className="px-3 py-2">{view.cashGap ?? money(row.lpCents)}</td>
+                  <td className="px-3 py-2">{view.cashGap ?? (view.feeIncomeCents == null ? FEE_NEEDED : money(row.feeIncomeCents))}</td>
                 </tr>
               ))}
             </tbody>
@@ -314,7 +315,7 @@ export function ModelDetail({
         <ul className="mt-2 divide-y divide-cream-300 border border-cream-300 bg-white text-sm">
           {view.concentration.map((row) => (
             <li key={`${row.dimension}-${row.label}`} className={`flex flex-wrap justify-between gap-2 px-3 py-2 ${row.breached ? "bg-gold-100" : ""}`}>
-              <span>{row.dimension}: {row.label}{row.breached ? " · limit breached" : ""}</span>
+              <span>{row.dimension}: {row.label}{row.breached ? " · fails criteria" : ""}</span>
               <span>{money(row.equityCents)} · {(row.shareBps / 100).toFixed(2)}%</span>
             </li>
           ))}
@@ -443,7 +444,8 @@ export function ModelCompare({ views }: { views: ModelView[] }) {
             <div className="flex justify-between gap-3"><dt>LP net IRR</dt><dd>{showIrr(view.lpNetIrrBps, view.lpGap, view.lpIrrNote)}</dd></div>
             <div className="flex justify-between gap-3"><dt>LP yield Y1 / avg</dt><dd>{show(view.lpYear1YieldBps, view.lpGap, percent)} / {show(view.lpAvgYieldBps, view.lpGap, percent)}</dd></div>
             <div className="flex justify-between gap-3"><dt>RCP IRR</dt><dd>{showIrr(view.rcpIrrBps, view.rcpGap, view.rcpIrrNote)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>RCP multiple</dt><dd>{show(view.rcpEquityMultipleBps, view.rcpGap, multiple)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>RCP multiple</dt><dd>{showIrr(view.rcpEquityMultipleBps, view.rcpGap, view.rcpMultipleNote, multiple)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>Basis</dt><dd>{RETURNS_BASIS}</dd></div>
             <div className="flex justify-between gap-3"><dt>G&amp;A coverage</dt><dd>{view.gaGap ?? multiple(view.gaCoverageBps)}</dd></div>
             <div className="flex justify-between gap-3"><dt>Equity required</dt><dd>{money(view.equityRequiredCents)}</dd></div>
             <div className="flex justify-between gap-3"><dt>Deals</dt><dd>{view.deals.length}</dd></div>

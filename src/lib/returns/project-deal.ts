@@ -1,4 +1,6 @@
 import {
+  CASH_SHORTFALL_NOTE,
+  FEE_EXCEEDS_CASH_NOTE,
   growCents,
   isLookThroughTemplate,
   runDealProforma,
@@ -6,6 +8,10 @@ import {
 } from "@rcp/ledger";
 import { IRR_NOT_AVAILABLE, rateToBps, solveIrr, type IrrCashFlow } from "./irr";
 import { resolveAnnualFee, type FeeInputs } from "./fees";
+
+export const EXIT_VALUE_NEEDED = "exit value needed";
+export const DEBT_SERVICE_NEEDED = "debt service needed";
+export const RETURNS_BASIS = "after debt service and fees";
 
 /**
  * LP and RCP returns as a thin layer on runDealProforma.
@@ -25,6 +31,8 @@ export type DealReturnInput = FeeInputs & {
   exitEquityProceedsCents: bigint;
   europeanPromoteOpen?: boolean;
   equityRequiredCents: bigint | null;
+  /** null means the payment is not on file. 0 means the deal has no debt service. */
+  annualDebtServiceCents: bigint | null;
   /** Exit-year NOI before debt, used only when an exit cap rate is typed. */
   year1NoiCents?: bigint;
   upbCents?: bigint;
@@ -43,6 +51,7 @@ export type DealReturnMetrics = {
   lpAvgCashYieldBps: number | null;
   rcpIrrBps: number | null;
   rcpIrrNote: string | null;
+  rcpEquityMultipleNote: string | null;
   rcpYear1CashOnCashBps: number | null;
   rcpAvgCashOnCashBps: number | null;
   rcpEquityMultipleBps: number | null;
@@ -80,6 +89,18 @@ export function exitEquityFromCap(opts: {
   return { proceedsCents: equity > 0n ? equity : 0n, note: null };
 }
 
+/** Snapshot equity when it is on file, otherwise LP equity grossed up for GP co-invest. */
+export function resolveEquityRequiredCents(opts: {
+  lpContributedCents: bigint;
+  gpCoInvestBps: number;
+  snapshotCents?: bigint | null;
+}): bigint | null {
+  if (opts.snapshotCents != null && opts.snapshotCents > 0n) return opts.snapshotCents;
+  const lp = opts.lpContributedCents > 0n ? opts.lpContributedCents : 0n;
+  if (lp <= 0n || opts.gpCoInvestBps >= 10_000 || opts.gpCoInvestBps < 0) return null;
+  return (lp * 10_000n) / BigInt(10_000 - opts.gpCoInvestBps);
+}
+
 export function rcpEquityCents(opts: {
   lpContributedCents: bigint;
   gpCoInvestBps: number;
@@ -115,6 +136,7 @@ function emptyMetrics(gap: string, notes: string[] = []): DealReturnMetrics {
     lpAvgCashYieldBps: null,
     rcpIrrBps: null,
     rcpIrrNote: null,
+    rcpEquityMultipleNote: null,
     rcpYear1CashOnCashBps: null,
     rcpAvgCashOnCashBps: null,
     rcpEquityMultipleBps: null,
@@ -126,6 +148,8 @@ function emptyMetrics(gap: string, notes: string[] = []): DealReturnMetrics {
 export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   const fee = resolveAnnualFee(input);
   if (!fee.ok) return emptyMetrics(fee.gap);
+  if (input.annualDebtServiceCents == null) return emptyMetrics(DEBT_SERVICE_NEEDED);
+  const annualDebt = input.annualDebtServiceCents > 0n ? input.annualDebtServiceCents : 0n;
 
   const cap = exitEquityFromCap({
     exitCapRateBps: input.exitCapRateBps,
@@ -149,6 +173,7 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     exitEquityProceedsCents: exit,
     europeanPromoteOpen: input.europeanPromoteOpen,
     operationsDeductionCents: fee.annualCents,
+    debtServiceCents: annualDebt,
   });
 
   const lpEquity = input.lpContributedCents > 0n ? input.lpContributedCents : 0n;
@@ -181,6 +206,7 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   }
 
   const n = BigInt(years.length || 1);
+  const saleUnset = exit <= 0n;
   let gap: string | null = null;
   let lpNetIrrBps: number | null = null;
   let lpIrrNote: string | null = null;
@@ -189,31 +215,45 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   if (lpEquity <= 0n) {
     gap = "LP equity is not on file";
   } else {
-    const irr = solveIrr(lpFlows);
-    lpNetIrrBps = rateToBps(irr.rate);
-    if (irr.reason && lpNetIrrBps == null) lpIrrNote = IRR_NOT_AVAILABLE;
     const year1Ops = years[0]?.lpOperatingCents ?? 0n;
     lpYear1 = yieldBps(year1Ops, lpEquity);
     lpAvg = yieldBps(lpOps / n, lpEquity);
+    if (saleUnset) lpIrrNote = EXIT_VALUE_NEEDED;
+    else {
+      const irr = solveIrr(lpFlows);
+      lpNetIrrBps = rateToBps(irr.rate);
+      if (irr.reason && lpNetIrrBps == null) lpIrrNote = IRR_NOT_AVAILABLE;
+    }
   }
 
   let rcpIrrBps: number | null = null;
   let rcpIrrNote: string | null = null;
+  let rcpMultipleNote: string | null = null;
   let rcpYear1: number | null = null;
   let rcpAvg: number | null = null;
   let multiple: number | null = null;
   if (rcpEquity <= 0n) {
     notes.push("RCP equity is zero, so RCP cash-on-cash, IRR, and equity multiple stay blank.");
   } else {
-    const irr = solveIrr(rcpFlows);
-    rcpIrrBps = rateToBps(irr.rate);
-    if (irr.reason && rcpIrrBps == null) rcpIrrNote = IRR_NOT_AVAILABLE;
     const year1Ops = years[0]?.rcpOperatingCents ?? 0n;
     rcpYear1 = yieldBps(year1Ops, rcpEquity);
     rcpAvg = yieldBps(rcpOps / n, rcpEquity);
-    multiple = yieldBps(rcpTotal, rcpEquity);
+    if (saleUnset) {
+      rcpIrrNote = EXIT_VALUE_NEEDED;
+      rcpMultipleNote = EXIT_VALUE_NEEDED;
+    } else {
+      const irr = solveIrr(rcpFlows);
+      rcpIrrBps = rateToBps(irr.rate);
+      if (irr.reason && rcpIrrBps == null) rcpIrrNote = IRR_NOT_AVAILABLE;
+      multiple = yieldBps(rcpTotal, rcpEquity);
+    }
   }
-  if (lpIrrNote || rcpIrrNote) notes.push(IRR_NOT_AVAILABLE);
+  for (const note of [lpIrrNote, rcpIrrNote]) {
+    if (note && !notes.includes(note)) notes.push(note);
+  }
+  for (const note of proforma.notes) {
+    if ((note === CASH_SHORTFALL_NOTE || note === FEE_EXCEEDS_CASH_NOTE) && !notes.includes(note)) notes.push(note);
+  }
 
   return {
     gap,
@@ -227,6 +267,7 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     lpAvgCashYieldBps: lpAvg,
     rcpIrrBps,
     rcpIrrNote,
+    rcpEquityMultipleNote: rcpMultipleNote,
     rcpYear1CashOnCashBps: rcpYear1,
     rcpAvgCashOnCashBps: rcpAvg,
     rcpEquityMultipleBps: multiple,

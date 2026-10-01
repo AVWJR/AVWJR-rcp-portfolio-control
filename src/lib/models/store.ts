@@ -181,7 +181,7 @@ function assumptionsOf(model: {
   };
 }
 
-export async function loadModelProjection(id: string, year: number, month: number): Promise<{
+export async function loadModelProjection(id: string, year?: number | null, month?: number | null): Promise<{
   id: string;
   name: string;
   kind: ModelKind;
@@ -191,16 +191,6 @@ export async function loadModelProjection(id: string, year: number, month: numbe
 }> {
   const model = await requireModel(id);
   const kind = modelKind(model.kind);
-  for (const deal of model.deals) {
-    const entity = await prisma.entity.findUnique({ where: { id: deal.entityId } });
-    if (!entity) continue;
-    const decision = membershipDecision(effectiveDealStatus(entity), kind);
-    const eligible = decision.ok ? decision.optimizerEligible : false;
-    if (eligible !== deal.optimizerEligible) {
-      await prisma.portfolioModelDeal.update({ where: { id: deal.id }, data: { optimizerEligible: eligible } });
-      deal.optimizerEligible = eligible;
-    }
-  }
   const inputs = await loadModelDealInputs({
     entityIds: model.deals.map((deal) => deal.entityId),
     modelKind: kind,
@@ -220,7 +210,7 @@ export async function loadModelProjection(id: string, year: number, month: numbe
   };
 }
 
-export async function compareModelProjections(ids: string[], year: number, month: number) {
+export async function compareModelProjections(ids: string[], year?: number | null, month?: number | null) {
   const unique = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
   if (unique.length > MAX_COMPARE) {
     throw new ModelError(`Compare up to ${MAX_COMPARE} Models.`);

@@ -7,6 +7,7 @@ import {
   isPrismaDataLossAbort,
   isSqliteUrl,
   previewSchemaPushPlan,
+  sameDatabaseUrl,
   resolveDatabaseUrl,
   resolveDirectUrl,
   resolvePrismaProvider,
@@ -147,6 +148,18 @@ describe("prisma provider selection", () => {
     expect(plan.push).toBe(false);
     expect(plan.databaseUrl).toBeUndefined();
     expect(plan.reason).toContain("production database");
+    expect(
+      sameDatabaseUrl(
+        "postgresql://user:secret@ep-abc-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
+        "postgresql://other:other@ep-abc.us-east-2.aws.neon.tech/neondb",
+      ),
+    ).toBe(true);
+    expect(
+      sameDatabaseUrl(
+        "postgresql://user:secret@ep-abc-pooler.us-east-2.aws.neon.tech/neondb",
+        "postgresql://user:secret@ep-abc.us-east-2.aws.neon.tech/otherdb",
+      ),
+    ).toBe(false);
   });
 
   it("skips prisma db push when VERCEL=1 and VERCEL_ENV is missing or unexpected", () => {

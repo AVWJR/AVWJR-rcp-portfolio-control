@@ -26,7 +26,9 @@ export type ModelView = {
   rcpIrrBps: number | null;
   rcpIrrNote: string | null;
   rcpEquityMultipleBps: number | null;
+  rcpMultipleNote: string | null;
   rcpGap: string | null;
+  cashGap: string | null;
   equityRequiredCents: number | null;
   lpNetIrrBps: number | null;
   lpIrrNote: string | null;
@@ -99,7 +101,9 @@ export function toModelView(input: {
     rcpIrrBps: projection.rcpIrrBps,
     rcpIrrNote: projection.rcpIrrNote,
     rcpEquityMultipleBps: projection.rcpEquityMultipleBps,
+    rcpMultipleNote: projection.rcpMultipleNote,
     rcpGap: projection.rcpGap,
+    cashGap: projection.cashGap,
     equityRequiredCents: num(projection.equityRequiredCents),
     lpNetIrrBps: projection.lpNetIrrBps,
     lpIrrNote: projection.lpIrrNote,

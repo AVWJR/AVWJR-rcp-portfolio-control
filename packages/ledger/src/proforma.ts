@@ -50,7 +50,15 @@ export type DealProformaInput = DealProformaScenario & {
    * Omitted or zero leaves the live proforma unchanged. Sale proceeds are not reduced.
    */
   operationsDeductionCents?: bigint;
+  /**
+   * Annual debt service taken off operations before the fee and the waterfall.
+   * Omitted or zero leaves the live proforma unchanged. Exit equity is not reduced.
+   */
+  debtServiceCents?: bigint;
 };
+
+export const CASH_SHORTFALL_NOTE = "cash shortfall, no distribution";
+export const FEE_EXCEEDS_CASH_NOTE = "fee exceeds cash";
 
 export type ProformaYearRow = {
   year: number;
@@ -180,6 +188,10 @@ export function runDealProforma(input: DealProformaInput): DealProformaResult {
   ];
   if (input.config.notes) notes.push(input.config.notes);
   const deduction = input.operationsDeductionCents != null && input.operationsDeductionCents > 0n ? input.operationsDeductionCents : 0n;
+  const annualDebt = input.debtServiceCents != null && input.debtServiceCents > 0n ? input.debtServiceCents : 0n;
+  if (annualDebt > 0n) {
+    notes.push("Annual debt service is deducted from operations before the fee and the waterfall. Exit equity is already net of the loan balance.");
+  }
   if (deduction > 0n) {
     notes.push("Annual fee is deducted from operations before the waterfall. Sale proceeds are not reduced by that fee.");
   }
@@ -187,6 +199,9 @@ export function runDealProforma(input: DealProformaInput): DealProformaResult {
   let unreturned = resolveUnreturnedCapitalCents(input.unreturnedCapitalCents, input.lpContributedCents);
   let unpaidPref = resolveUnpaidPrefCents(input.unpaidPrefCents);
   let prefPaid = input.prefPaidToDateCents > 0n ? input.prefPaidToDateCents : 0n;
+  let accruedFee = 0n;
+  let shortfallNoted = false;
+  let feeShortNoted = false;
 
   const years: ProformaYearRow[] = [];
   let totPool = 0n;
@@ -198,7 +213,20 @@ export function runDealProforma(input: DealProformaInput): DealProformaResult {
   for (let y = 1; y <= holdYears; y += 1) {
     const isExit = y === holdYears;
     const grossOperations = growCents(input.year1CfadsCents, input.cfadsGrowthBps, y - 1);
-    const operations = grossOperations > deduction ? grossOperations - deduction : 0n;
+    const afterDebt = grossOperations - annualDebt;
+    if (afterDebt < 0n && !shortfallNoted) {
+      notes.push(CASH_SHORTFALL_NOTE);
+      shortfallNoted = true;
+    }
+    const available = afterDebt > 0n ? afterDebt : 0n;
+    const feeDue = deduction + accruedFee;
+    const feePaid = feeDue > available ? available : feeDue;
+    accruedFee = feeDue - feePaid;
+    if (accruedFee > 0n && !feeShortNoted) {
+      notes.push(FEE_EXCEEDS_CASH_NOTE);
+      feeShortNoted = true;
+    }
+    const operations = available - feePaid;
     const exit = isExit && input.exitEquityProceedsCents > 0n ? input.exitEquityProceedsCents : 0n;
     const pool = operations + exit;
     const openingUnreturned = unreturned;

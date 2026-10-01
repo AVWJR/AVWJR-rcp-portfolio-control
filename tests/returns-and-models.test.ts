@@ -1,7 +1,9 @@
-import { applyWaterfallTemplate, dollars, runDealProforma, runWaterfall } from "@rcp/ledger";
+import { applyWaterfallTemplate, CASH_SHORTFALL_NOTE, dollars, FEE_EXCEEDS_CASH_NOTE, runDealProforma, runWaterfall } from "@rcp/ledger";
 import { buildOpCoDashboard } from "@/lib/dashboards";
 import { createEntityWithCoa } from "@/lib/entities";
+import { evaluateCriterion, type LibraryFact } from "@/lib/library/criteria";
 import { FEE_NEEDED } from "@/lib/library/fees";
+import { loadLibraryRows } from "@/lib/library/facts";
 import { membershipDecision, MAX_COMPARE } from "@/lib/models/membership";
 import { projectModel, type ModelDealInput } from "@/lib/models/project";
 import {
@@ -10,14 +12,14 @@ import {
   copyModel,
   createModel,
   deleteModel,
+  loadModelProjection,
   removeModelDeal,
   updateModelAssumptions,
 } from "@/lib/models/store";
 import { prisma } from "@/lib/prisma";
-import { cashFlowsFromDates, IRR_NOT_AVAILABLE, solveIrr } from "@/lib/returns/irr";
+import { cashFlowsFromDates, solveIrr } from "@/lib/returns/irr";
 import { resolveAnnualFee } from "@/lib/returns/fees";
-import { projectDealReturns } from "@/lib/returns/project-deal";
-import type { LibraryFact } from "@/lib/library/criteria";
+import { EXIT_VALUE_NEEDED, projectDealReturns } from "@/lib/returns/project-deal";
 import { afterAll, describe, expect, it } from "vitest";
 
 const ids: string[] = [];
@@ -47,6 +49,7 @@ function baseInput(over: Partial<Parameters<typeof projectDealReturns>[0]> = {})
     otherLpFeeCents: 0n,
     purchasePriceCents: dollars(10_000_000),
     equityRequiredCents: null,
+    annualDebtServiceCents: 0n,
     ...over,
   };
 }
@@ -163,12 +166,24 @@ describe("LP cash yield and fees", () => {
     expect(noExit.gap).toBeNull();
     expect(noExit.feeAnnualCents).toBe(dollars(100_000));
     expect(noExit.lpNetIrrBps).toBeNull();
-    expect(noExit.lpIrrNote).toBe(IRR_NOT_AVAILABLE);
-    expect(noExit.rcpIrrNote).toBe(IRR_NOT_AVAILABLE);
-    expect(noExit.notes).toContain(IRR_NOT_AVAILABLE);
-    expect(noExit.notes.some((note) => note.includes("No IRR in range"))).toBe(false);
+    expect(noExit.lpIrrNote).toBe(EXIT_VALUE_NEEDED);
+    expect(noExit.rcpIrrNote).toBe(EXIT_VALUE_NEEDED);
+    expect(noExit.rcpEquityMultipleBps).toBeNull();
+    expect(noExit.rcpEquityMultipleNote).toBe(EXIT_VALUE_NEEDED);
+    expect(noExit.notes).toContain(EXIT_VALUE_NEEDED);
     expect(noExit.lpYear1CashYieldBps).not.toBeNull();
     expect(noExit.lpAvgCashYieldBps).not.toBeNull();
+
+    const fiveYear = projectDealReturns(baseInput({ holdYears: 5 }));
+    expect(fiveYear.lpNetIrrBps).toBeNull();
+    expect(fiveYear.lpIrrNote).toBe(EXIT_VALUE_NEEDED);
+    expect(fiveYear.lpAvgCashYieldBps).not.toBeNull();
+
+    const short = projectDealReturns(baseInput({ annualDebtServiceCents: dollars(2_000_000) }));
+    expect(short.lpYear1CashYieldBps).toBe(0);
+    expect(short.years[0]?.lpCents).toBe(0n);
+    expect(short.years[0]?.rcpCents).toBe(0n);
+    expect(short.notes).toContain(CASH_SHORTFALL_NOTE);
 
     const priced = projectDealReturns(baseInput({ exitEquityProceedsCents: dollars(15_000_000) }));
     expect(priced.gap).toBeNull();
@@ -199,6 +214,19 @@ describe("LP cash yield and fees", () => {
     expect(net.years[0]?.distributableCents).toBe(dollars(11_900_000));
     expect(net.years[0]?.lpCents).toBe(direct.lpCents);
     expect(net.years[0]?.lpCents).not.toBe(gross.lpCents);
+
+    const carried = runDealProforma({
+      config: applyWaterfallTemplate("simple_pref_promote"),
+      ...CAPITAL,
+      holdYears: 2,
+      year1CfadsCents: dollars(100),
+      cfadsGrowthBps: 10_000,
+      exitEquityProceedsCents: 0n,
+      operationsDeductionCents: dollars(120),
+    });
+    expect(carried.notes).toContain(FEE_EXCEEDS_CASH_NOTE);
+    expect(carried.years[0]?.operationsCents).toBe(0n);
+    expect(carried.years[1]?.operationsCents).toBe(dollars(60));
   });
 });
 
@@ -293,6 +321,48 @@ describe("Model membership and projection", () => {
     expect(ready.lpNetIrrBps).not.toBeNull();
     expect(ready.gaCoverageBps).not.toBeNull();
     expect(ready.label).toBe("Projection, not books.");
+
+    const noExit = projectModel({
+      assumptions: { holdYears: 5, growthBps: 0, exitCapRateBps: null, opcoPrefRateBps: null, opcoPrefCapitalCents: null, opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      gaBudgetCents: dollars(50_000),
+      deals: [dealInput("SPE-S", "SCREENED", true)],
+    });
+    expect(noExit.lpNetIrrBps).toBeNull();
+    expect(noExit.lpIrrNote).toBe(EXIT_VALUE_NEEDED);
+    expect(noExit.rcpMultipleNote).toBe(EXIT_VALUE_NEEDED);
+    expect(noExit.rcpEquityMultipleBps).toBeNull();
+    expect(noExit.lpYear1YieldBps).not.toBeNull();
+    expect(noExit.cashGap).toBeNull();
+
+    const mixed = projectModel({
+      assumptions: { holdYears: 5, growthBps: 0, exitCapRateBps: 500, opcoPrefRateBps: 800, opcoPrefCapitalCents: dollars(1_000_000), opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      gaBudgetCents: dollars(50_000),
+      deals: [dealInput("SPE-S", "SCREENED", true), dealInput("SPE-Q", "SCREENED", false)],
+    });
+    expect(mixed.cashGap).toBe(FEE_NEEDED);
+    expect(mixed.feeIncomeCents).toBeNull();
+    expect(mixed.years.length).toBeGreaterThan(0);
+    expect(mixed.years.every((row) => row.lpCents === 0n && row.rcpCents === 0n && row.feeIncomeCents === 0n)).toBe(true);
+    expect(mixed.notes.join(" ")).toMatch(/fee needed/);
+    expect(mixed.notes.join(" ")).not.toMatch(/blank until both/);
+
+    const stacked = projectModel({
+      assumptions: { holdYears: 1, growthBps: 0, exitCapRateBps: null, opcoPrefRateBps: null, opcoPrefCapitalCents: null, opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      gaBudgetCents: dollars(50_000),
+      deals: [dealInput("SPE-S", "SCREENED", true), dealInput("SPE-A", "ARCHIVED", true)],
+    });
+    const metro = stacked.concentration.filter((row) => row.dimension === "Metro");
+    expect(metro).toHaveLength(1);
+    expect(metro[0]?.equityCents).toBe(dollars(11_000_000));
+
+    const limit = evaluateCriterion(
+      { ...fact("SPE-S", "SCREENED"), lpNetIrrBps: null, metricGaps: { lpNetIrr: EXIT_VALUE_NEEDED } },
+      { id: "irr", field: "lpNetIrr", operator: "gte", value: 15, role: "HARD_LIMIT" },
+    );
+    expect(limit?.reason).toMatch(/exit value needed/);
   });
 });
 
@@ -300,7 +370,6 @@ describe("Models do not move the OpCo roll-up", () => {
   it("creates, copies, adds, removes, and compares without touching books", async () => {
     const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
     if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
-    const before = await rollupFingerprint(opco.id);
     const demosBefore = await prisma.entity.findMany({
       where: { code: { in: ["SPE-WBG", "SPE-CVC", "SPE-HCR"] } },
       select: { code: true, dealStatus: true, updatedAt: true },
@@ -357,43 +426,48 @@ describe("Models do not move the OpCo roll-up", () => {
     expect(await prisma.journal.count({ where: { entityId: { in: ids } } })).toBe(0);
     expect(await prisma.distributionEvent.count({ where: { entityId: { in: ids } } })).toBe(0);
 
-    const after = await rollupFingerprint(opco.id);
-    expect(after).toEqual(before);
     const demosAfter = await prisma.entity.findMany({
       where: { code: { in: ["SPE-WBG", "SPE-CVC", "SPE-HCR"] } },
       select: { code: true, dealStatus: true, updatedAt: true },
     });
     expect(demosAfter).toEqual(demosBefore);
   }, 60_000);
-});
 
-async function rollupFingerprint(opcoId: string) {
-  const demos = await prisma.entity.findMany({
-    where: { code: { in: ["SPE-WBG", "SPE-CVC", "SPE-HCR", "RCP-OPCO"] } },
-    select: { id: true },
-  });
-  const entityIds = demos.map((row) => row.id);
-  const dash = await buildOpCoDashboard({ opcoId, year: 2026, month: 8 });
-  const demoCodes = new Set(["SPE-WBG", "SPE-CVC", "SPE-HCR"]);
-  const lines = await prisma.journalLine.aggregate({
-    where: { journal: { entityId: { in: entityIds } } },
-    _sum: { debit: true, credit: true },
-    _count: true,
-  });
-  return {
-    journals: await prisma.journal.count({ where: { entityId: { in: entityIds } } }),
-    lines: lines._count,
-    debits: (lines._sum.debit ?? 0n).toString(),
-    credits: (lines._sum.credit ?? 0n).toString(),
-    distributions: await prisma.distributionEvent.count({ where: { entityId: { in: entityIds } } }),
-    properties: dash.properties
-      .filter((row) => demoCodes.has(row.entityCode))
-      .map((row) => ({
-        code: row.entityCode,
-        noi: row.noiCents.toString(),
-        cfadsRcp: row.cfadsRcpCents.toString(),
-        cfadsLp: row.cfadsLpCents.toString(),
-      }))
-      .sort((a, b) => a.code.localeCompare(b.code)),
-  };
-}
+  it("reads the library and a model without opening periods or moving the T12 tile", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
+    const demoCodes = ["SPE-WBG", "SPE-CVC", "SPE-HCR"];
+    const periodsBefore = await prisma.period.count({ where: { entity: { code: { in: demoCodes } } } });
+    const checksBefore = await prisma.closeChecklistItem.count({
+      where: { period: { entity: { code: { in: demoCodes } } } },
+    });
+    const dashBefore = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
+
+    await loadLibraryRows();
+
+    const suffix = Date.now().toString(36).toUpperCase().slice(-4);
+    const owned = await createEntityWithCoa({
+      code: `SPE-O${suffix}`,
+      name: `Owned ${suffix}`,
+      type: "SPE",
+      parentId: opco.id,
+      dealStatus: "OWNED",
+    });
+    ids.push(owned.id);
+    const live = await createModel({ name: `Read ${suffix}`, kind: "LIVE" });
+    modelIds.push(live.id);
+    await addModelDeal(live.id, owned.code);
+    await loadModelProjection(live.id);
+    await updateModelAssumptions(live.id, { holdYears: 4, growthPercent: 1, exitCapPercent: "", opcoPrefPercent: "", opcoPrefCapitalUsd: "" });
+    await loadModelProjection(live.id, 2030, 1);
+    await loadLibraryRows();
+
+    expect(await prisma.period.count({ where: { entity: { code: { in: demoCodes } } } })).toBe(periodsBefore);
+    expect(await prisma.closeChecklistItem.count({ where: { period: { entity: { code: { in: demoCodes } } } } })).toBe(checksBefore);
+    expect(await prisma.period.count({ where: { entityId: owned.id } })).toBe(0);
+    const dashAfter = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
+    expect(dashAfter.t12.monthsAvailable).toBe(dashBefore.t12.monthsAvailable);
+    expect(dashAfter.t12.noiCents).toBe(dashBefore.t12.noiCents);
+    expect(dashAfter.tiles.find((tile) => tile.id === "noi_t12")?.display).toBe(dashBefore.tiles.find((tile) => tile.id === "noi_t12")?.display);
+  }, 60_000);
+});
