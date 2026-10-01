@@ -22,7 +22,7 @@ import {
   dealStatusArchivedMessage,
   permanentDemoStatusMessage,
 } from "@/lib/deal-status";
-import { EXPERT_HOWTOS, routeMatches } from "@/lib/expert/howtos";
+import { EXPERT_HOWTOS, howToById, routeMatches } from "@/lib/expert/howtos";
 import { PAGE_CATALOG, listPageCatalogPatterns } from "@/lib/expert/nav";
 import {
   ALREADY_REVERSED,
@@ -126,6 +126,19 @@ describe("Expert how-to coverage", () => {
     expect(missing, `Uncovered APIs: ${missing.join(", ")}`).toEqual([]);
     for (const [route, reason] of Object.entries(HOWTO_EXEMPT_API)) {
       expect(reason.trim().length, route).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives each Models screen its own how-to", () => {
+    expect(howToById("models.list")?.routes).toContain("/models");
+    expect(howToById("models.detail")?.routes).toContain("/models/[id]");
+    expect(howToById("models.compare")?.routes).toContain("/models/compare");
+    expect(howToById("models.assumptions")?.routes).toContain("/models/[id]/assumptions");
+    expect(howToById("models.fees")?.routes).toContain("/models/fees");
+    const screens = ["/models", "/models/compare", "/models/fees", "/models/[id]", "/models/[id]/assumptions"];
+    for (const route of screens) {
+      const owners = EXPERT_HOWTOS.filter((entry) => entry.routes.includes(route));
+      expect(owners, route).toHaveLength(1);
     }
   });
 

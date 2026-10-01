@@ -5,6 +5,7 @@ import { CriteriaBuilder } from "@/components/library/criteria-builder";
 import { columnMeta, defaultColumnLayout, moveColumn, normalizeColumnLayout, type ColumnLayoutItem, type LibraryColumnId } from "@/lib/library/columns";
 import { evaluateDeal, passCount, type Criterion, type CriterionField } from "@/lib/library/criteria";
 import { libraryCsv } from "@/lib/library/csv";
+import { libraryXlsxBytes } from "@/lib/library/excel";
 import { FEE_NEEDED } from "@/lib/library/fees";
 import type { LibraryRow } from "@/lib/library/facts";
 import { staleFlagLabel } from "@/lib/library/staleness";
@@ -40,8 +41,17 @@ function displayCell(row: LibraryRow, id: LibraryColumnId): string {
     const value = id === "debtYield" ? row.debtYieldBps : id === "capRate" ? row.capRateBps : id === "ltv" ? row.ltvBps : id === "cashOnCash" ? row.cashOnCashBps : row.occupancyBps;
     return percent(value);
   }
-  if (id === "lpNetIrr" || id === "lpCashYield") return row.feeNeeded ? `Phase 2 · ${FEE_NEEDED}` : "Phase 2";
-  if (id === "rcpIrr") return "Phase 2";
+  if (id === "lpNetIrr" || id === "rcpIrr") {
+    const value = id === "lpNetIrr" ? row.lpNetIrrBps : row.rcpIrrBps;
+    if (value == null) return row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "—");
+    return percent(value);
+  }
+  if (id === "lpCashYield") {
+    if (row.lpCashYieldBps == null && row.lpYear1CashYieldBps == null) return row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "—");
+    const year1 = row.lpYear1CashYieldBps == null ? "—" : percent(row.lpYear1CashYieldBps);
+    const avg = row.lpCashYieldBps == null ? "—" : percent(row.lpCashYieldBps);
+    return `Y1 ${year1} · avg ${avg}`;
+  }
   if (id === "pricePerUnit") return money(row.pricePerUnitCents);
   if (id === "metro") return row.metro ?? "—";
   if (id === "units") return row.unitCount == null ? "—" : String(row.unitCount);
@@ -161,6 +171,20 @@ export function LibraryWorkspace({
     URL.revokeObjectURL(url);
   }
 
+  function exportExcel() {
+    const passing = sorted.filter((item) => item.excluded.length === 0).map((item) => item.row);
+    const bytes = libraryXlsxBytes(passing, layout);
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    const blob = new Blob([copy], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `rcp-deal-library-${period}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function savePreset(name: string) {
     const res = await fetch("/api/library/presets", {
       method: "POST",
@@ -272,6 +296,9 @@ export function LibraryWorkspace({
         </button>
         <button type="button" onClick={exportCsv} className="border border-navy-900 px-3 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900">
           Export CSV
+        </button>
+        <button type="button" onClick={exportExcel} className="border border-navy-900 px-3 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900">
+          Export Excel
         </button>
         <button type="button" onClick={() => setColumnsOpen((value) => !value)} className="border border-navy-900 px-3 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-900" aria-expanded={columnsOpen}>
           Columns
@@ -389,6 +416,9 @@ function sortValue(row: LibraryRow, id: "name" | LibraryColumnId): string | numb
   if (id === "capRate") return row.capRateBps;
   if (id === "ltv") return row.ltvBps;
   if (id === "cashOnCash") return row.cashOnCashBps;
+  if (id === "lpNetIrr") return row.lpNetIrrBps;
+  if (id === "lpCashYield") return row.lpCashYieldBps;
+  if (id === "rcpIrr") return row.rcpIrrBps;
   if (id === "occupancy") return row.occupancyBps;
   if (id === "pricePerUnit") return row.pricePerUnitCents;
   if (id === "metro") return row.metro;

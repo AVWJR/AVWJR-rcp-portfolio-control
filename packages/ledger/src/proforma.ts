@@ -45,6 +45,11 @@ export type DealProformaInput = DealProformaScenario & {
   europeanPromoteOpen?: boolean;
   entityCode?: string;
   entityName?: string;
+  /**
+   * Flat annual dollars taken off operations before the waterfall.
+   * Omitted or zero leaves the live proforma unchanged. Sale proceeds are not reduced.
+   */
+  operationsDeductionCents?: bigint;
 };
 
 export type ProformaYearRow = {
@@ -58,6 +63,10 @@ export type ProformaYearRow = {
   gpCents: bigint;
   rcpCents: bigint;
   coGpCents: bigint;
+  /** LP cash from operations. Exit-year sale stays in lpCents and out of this field. */
+  lpOperatingCents: bigint;
+  /** RCP cash from operations. Exit-year sale stays in rcpCents and out of this field. */
+  rcpOperatingCents: bigint;
   unpaidPrefAfterCents: bigint;
   unreturnedCapitalAfterCents: bigint;
 };
@@ -170,6 +179,10 @@ export function runDealProforma(input: DealProformaInput): DealProformaResult {
     "Year 1 CFADS is the scenario input (default = this period × 12). Growth is simple annual on that base. Exit proceeds are user-entered.",
   ];
   if (input.config.notes) notes.push(input.config.notes);
+  const deduction = input.operationsDeductionCents != null && input.operationsDeductionCents > 0n ? input.operationsDeductionCents : 0n;
+  if (deduction > 0n) {
+    notes.push("Annual fee is deducted from operations before the waterfall. Sale proceeds are not reduced by that fee.");
+  }
 
   let unreturned = resolveUnreturnedCapitalCents(input.unreturnedCapitalCents, input.lpContributedCents);
   let unpaidPref = resolveUnpaidPrefCents(input.unpaidPrefCents);
@@ -184,19 +197,39 @@ export function runDealProforma(input: DealProformaInput): DealProformaResult {
 
   for (let y = 1; y <= holdYears; y += 1) {
     const isExit = y === holdYears;
-    const operations = growCents(input.year1CfadsCents, input.cfadsGrowthBps, y - 1);
+    const grossOperations = growCents(input.year1CfadsCents, input.cfadsGrowthBps, y - 1);
+    const operations = grossOperations > deduction ? grossOperations - deduction : 0n;
     const exit = isExit && input.exitEquityProceedsCents > 0n ? input.exitEquityProceedsCents : 0n;
     const pool = operations + exit;
+    const openingUnreturned = unreturned;
+    const openingUnpaid = unpaidPref;
+    const openingPrefPaid = prefPaid;
     const run = runWaterfall({
       config: input.config,
       distributableCents: pool,
       lpContributedCents: input.lpContributedCents,
-      unreturnedCapitalCents: unreturned,
-      unpaidPrefCents: unpaidPref,
-      prefPaidToDateCents: prefPaid,
+      unreturnedCapitalCents: openingUnreturned,
+      unpaidPrefCents: openingUnpaid,
+      prefPaidToDateCents: openingPrefPaid,
       periodMonths: 12,
       europeanPromoteOpen: input.europeanPromoteOpen,
     });
+    let lpOperating = run.lpCents;
+    let rcpOperating = run.rcpCents;
+    if (exit > 0n) {
+      const opsOnly = runWaterfall({
+        config: input.config,
+        distributableCents: operations,
+        lpContributedCents: input.lpContributedCents,
+        unreturnedCapitalCents: openingUnreturned,
+        unpaidPrefCents: openingUnpaid,
+        prefPaidToDateCents: openingPrefPaid,
+        periodMonths: 12,
+        europeanPromoteOpen: input.europeanPromoteOpen,
+      });
+      lpOperating = opsOnly.lpCents > run.lpCents ? run.lpCents : opsOnly.lpCents;
+      rcpOperating = opsOnly.rcpCents > run.rcpCents ? run.rcpCents : opsOnly.rcpCents;
+    }
     prefPaid += prefPaidThisRun(unpaidPref, run);
     unreturned = run.unreturnedCapitalAfterCents;
     unpaidPref = run.unpaidPrefAfterCents;
@@ -216,6 +249,8 @@ export function runDealProforma(input: DealProformaInput): DealProformaResult {
       gpCents: run.gpCents,
       rcpCents: run.rcpCents,
       coGpCents: run.coGpCents,
+      lpOperatingCents: lpOperating,
+      rcpOperatingCents: rcpOperating,
       unpaidPrefAfterCents: unpaidPref,
       unreturnedCapitalAfterCents: unreturned,
     });

@@ -182,6 +182,7 @@ model Entity {
   distributionAudits DistributionAudit[]
   analysisSnapshots  DealAnalysisSnapshot[]
   statusEvents       DealStatusEvent[]
+  modelMemberships   PortfolioModelDeal[]
 
   @@index([dealStatus])
 }
@@ -845,7 +846,7 @@ model DistributionAudit {
 }
 
 /// Dated underwriting ratios for one deal. New rows only — old snapshots stay.
-/// LP net IRR and LP cash yield columns are Phase 2 placeholders and stay null.
+/// LP net IRR, LP cash yield, and RCP IRR stay null until fees and cash flows are on file.
 model DealAnalysisSnapshot {
   id                  String   @id @default(cuid())
   entityId            String
@@ -919,4 +920,45 @@ model LibraryPickItem {
 
   @@unique([kind, label])
   @@index([kind, sortOrder])
+}
+
+/// Named what-if list of deals. Read-only analysis.
+/// Never posts journals, never writes the distribution ledger, and never changes deal status.
+model PortfolioModel {
+  id                   String   @id @default(cuid())
+  name                 String
+  /// LIVE or TEST. Test deals belong only in TEST models.
+  kind                 String   @default("LIVE")
+  holdYears            Int      @default(5)
+  growthBps            Int      @default(0)
+  /// Exit cap rate in basis points. Null means no exit value was typed.
+  exitCapRateBps       Int?
+  /// Optional OpCo pref. Null rate or null capital means it is not modeled.
+  opcoPrefRateBps      Int?
+  opcoPrefCapitalCents BigInt?
+  opcoLpSplitBps       Int      @default(8000)
+  opcoGpSplitBps       Int      @default(2000)
+  criteriaJson         String   @default("[]")
+  copiedFromId         String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  deals                PortfolioModelDeal[]
+
+  @@index([kind])
+}
+
+/// One deal inside a Model. Deleting the row removes it from the Model only.
+model PortfolioModelDeal {
+  id                String         @id @default(cuid())
+  modelId           String
+  model             PortfolioModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  entityId          String
+  entity            Entity         @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sortOrder         Int            @default(0)
+  /// False while Pipeline. True for Screened and Owned. The optimizer is Phase 3.
+  optimizerEligible Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+
+  @@unique([modelId, entityId])
+  @@index([entityId])
 }

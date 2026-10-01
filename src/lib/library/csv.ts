@@ -3,15 +3,25 @@ import type { LibraryRow } from "./facts";
 import { FEE_NEEDED } from "./fees";
 import { staleFlagLabel } from "./staleness";
 
+function returnCell(bps: number | null, row: LibraryRow): string {
+  if (bps == null) return row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "");
+  return ratio(bps, "%");
+}
+
 function cell(row: LibraryRow, id: ColumnLayoutItem["id"]): string {
-  const phase = "Phase 2";
   if (id === "dscr") return ratio(row.dscrBps, "x");
   if (id === "debtYield") return ratio(row.debtYieldBps, "%");
   if (id === "capRate") return ratio(row.capRateBps, "%");
   if (id === "ltv") return ratio(row.ltvBps, "%");
   if (id === "cashOnCash") return ratio(row.cashOnCashBps, "%");
-  if (id === "lpNetIrr" || id === "lpCashYield") return row.feeNeeded ? `${phase}; ${FEE_NEEDED}` : phase;
-  if (id === "rcpIrr") return phase;
+  if (id === "lpNetIrr") return returnCell(row.lpNetIrrBps, row);
+  if (id === "lpCashYield") {
+    if (row.lpCashYieldBps == null && row.lpYear1CashYieldBps == null) return returnCell(null, row);
+    const year1 = row.lpYear1CashYieldBps == null ? "" : `Y1 ${ratio(row.lpYear1CashYieldBps, "%")}`;
+    const avg = row.lpCashYieldBps == null ? "" : `avg ${ratio(row.lpCashYieldBps, "%")}`;
+    return [year1, avg].filter(Boolean).join("; ");
+  }
+  if (id === "rcpIrr") return returnCell(row.rcpIrrBps, row);
   if (id === "pricePerUnit") return money(row.pricePerUnitCents);
   if (id === "occupancy") return ratio(row.occupancyBps, "%");
   if (id === "metro") return row.metro ?? "";
@@ -44,16 +54,24 @@ function escape(value: string): string {
   return value;
 }
 
-const TEXT_COLUMNS = new Set<ColumnLayoutItem["id"]>(["metro", "lpNetIrr", "lpCashYield", "rcpIrr"]);
+const TEXT_COLUMNS = new Set<ColumnLayoutItem["id"]>(["metro", "lpCashYield"]);
+
+export function libraryTable(rows: LibraryRow[], layout: ColumnLayoutItem[]): string[][] {
+  const visible = layout.filter((column) => column.visible);
+  const header = ["Deal", "Code", "Status", "Analysis", ...visible.map((column) => columnMeta(column.id).label)];
+  const body = rows.map((row) => {
+    const stale = staleFlagLabel(row.stale) ?? "Current";
+    return [row.name, row.code, row.statusLabel, stale, ...visible.map((column) => cell(row, column.id))];
+  });
+  return [header, ...body];
+}
 
 /** CSV of the current view. Does not delete anything. */
 export function libraryCsv(rows: LibraryRow[], layout: ColumnLayoutItem[]): string {
+  const table = libraryTable(rows, layout);
   const visible = layout.filter((column) => column.visible);
-  const header = ["Deal", "Code", "Status", "Analysis", ...visible.map((column) => columnMeta(column.id).label)];
-  const lines = [header.join(",")];
-  for (const row of rows) {
-    const stale = staleFlagLabel(row.stale) ?? "Current";
-    const values = [row.name, row.code, row.statusLabel, stale, ...visible.map((column) => cell(row, column.id))];
+  const lines = [table[0]!.join(",")];
+  for (const values of table.slice(1)) {
     lines.push(
       values
         .map((value, index) => {

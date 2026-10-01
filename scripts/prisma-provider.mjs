@@ -139,6 +139,16 @@ export function previewSchemaPushPlan(env = process.env) {
           "Skipping prisma db push. Preview and production share one database, so a preview build must not change the schema. Set PREVIEW_DATABASE_URL only if this preview has its own database.",
       };
     }
+    const productionUrls = [env.DATABASE_URL, env.DIRECT_URL, env.POSTGRES_PRISMA_URL, env.POSTGRES_URL]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    if (productionUrls.some((url) => sameDatabaseUrl(url, previewUrl))) {
+      return {
+        push: false,
+        reason:
+          "Skipping prisma db push. PREVIEW_DATABASE_URL points at the production database, so a preview build must not change the schema.",
+      };
+    }
     const direct = String(env.PREVIEW_DIRECT_URL ?? "").trim() || previewUrl;
     return {
       push: true,
@@ -153,6 +163,14 @@ export function previewSchemaPushPlan(env = process.env) {
     push: false,
     reason: `Skipping prisma db push. VERCEL=1 but VERCEL_ENV is ${envLabel}. A Vercel build pushes the schema only for production, or for a preview that has its own PREVIEW_DATABASE_URL.`,
   };
+}
+
+/** Compare database URLs without trailing slashes so a preview cannot target production. */
+export function sameDatabaseUrl(left, right) {
+  const norm = (value) => String(value ?? "").trim().replace(/\/+$/, "");
+  const a = norm(left);
+  const b = norm(right);
+  return a.length > 0 && a === b;
 }
 
 /**

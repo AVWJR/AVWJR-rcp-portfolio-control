@@ -557,7 +557,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     facts: [
       "Hard limit filters the list. Preference is stored for the Phase 3 optimizer and does not exclude a deal yet.",
-      "A Phase 2 metric used as a hard limit excludes every deal. LP net IRR says Phase 2. fee needed means the AM fee or the other LP fee is blank on the deal profile.",
+      "LP net IRR, LP cash yield, and RCP IRR are calculated in Phase 2 after the AM fee. fee needed means the AM fee or the other LP fee is blank. A hard limit excludes every deal that is missing the number.",
       "Cap rate is annualized NOI divided by purchase price. It stays blank without a price or NOI. Enter the price, then Save analysis snapshot or Backfill analysis snapshots.",
       "No snapshot means no analysis snapshot yet. Stale is amber at 90 days and red at 180 days. Age never deletes a deal or a file.",
       "Show Test deals is off until you tick it. Export CSV downloads the passing rows and the visible columns.",
@@ -565,9 +565,9 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     troubleshooting: [
       {
-        symptom: "LP net IRR is Phase 2 · fee needed",
-        cause: "Phase 2 columns are placeholders. A hard limit on LP net IRR excludes every deal. fee needed means the AM fee is blank.",
-        fix: "Enter the AM fee on the deal profile. Do not use a Phase 2 hard limit until that metric exists. Fees are not on the LP/GP waterfall.",
+        symptom: "LP net IRR says Phase 2 · fee needed",
+        cause: "fee needed means the AM fee or the other LP fee is blank. A hard limit excludes every deal that is missing LP net IRR.",
+        fix: "Enter the AM fee and the other LP fee on the deal profile, then read the number. A blank fee is not a guessed percent.",
       },
       {
         symptom: "No snapshot",
@@ -1219,6 +1219,132 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       },
     ],
     sourceRefs: ["src/lib/expert/nav.ts:230"],
+  },
+  {
+    id: "models.list",
+    feature: "Models list",
+    routes: ["/models"],
+    apiRoutes: ["/api/models"],
+    navPath: "Models → Create Model",
+    keywords: [/create a model|models list|new model|copy a model|delete a model/i],
+    steps: [
+      "Gold nav Models. Type a name, pick Live or Test, and click Create Model.",
+      "Copy makes a new Model with the same deals and assumptions. Delete Model removes the list only. The deal stays.",
+      "Tick up to four Models and click Compare.",
+    ],
+    facts: [
+      "A Model is a what-if list. Projection, not books. It does not post journals, write the distribution ledger, or change deal status.",
+      "Models are owner-only, the same gate as Library.",
+    ],
+    troubleshooting: [
+      {
+        symptom: "Name the Model.",
+        cause: "Create was clicked with a blank name.",
+        fix: "Type a name, then Create Model.",
+      },
+    ],
+    sourceRefs: ["src/app/models/page.tsx:1", "src/lib/models/store.ts:1", "src/lib/models/membership.ts:1"],
+  },
+  {
+    id: "models.detail",
+    feature: "Model detail",
+    routes: ["/models/[id]"],
+    apiRoutes: ["/api/models/[id]", "/api/models/[id]/deals", "/api/models/[id]/copy", "/api/models/[id]/criteria"],
+    navPath: "Models → Model name → Add deal",
+    keywords: [/add a deal to the model|remove a deal|not yet screened|optimizer eligible|model detail/i],
+    steps: [
+      "Open the Model. Pick a deal and click Add deal. Remove takes it off the Model only.",
+      "Read RCP cash and LP cash by year, LP net IRR, LP cash yield Year 1 and average, RCP IRR, equity multiple, G&A coverage, and concentration.",
+      "The banner says Projection, not books. Hard limits apply. Preference rows are stored and unused until the Phase 3 optimizer.",
+    ],
+    facts: [
+      "Pipeline deals can be added and are flagged not yet screened. They are not optimizer eligible until Screened.",
+      "Archived deals are view only and cannot be added. Test deals only go in a Test Model.",
+      "A missing fee shows fee needed. Dependent returns stay blank.",
+    ],
+    troubleshooting: [
+      {
+        symptom: "Archived deals are view only. Restore one before it can go in a Model.",
+        cause: "Archived is not addable.",
+        fix: "Restore the deal from Deal Archive, then add it.",
+      },
+      {
+        symptom: "Test deals only go in a Test Model.",
+        cause: "A Test deal was added to a Live Model.",
+        fix: "Create a Test Model, then add the Test deal there.",
+      },
+      {
+        symptom: "That deal is already in this Model.",
+        cause: "The deal is already a member.",
+        fix: "Leave it, or Remove it and add it again.",
+      },
+    ],
+    sourceRefs: ["src/app/models/[id]/page.tsx:1", "src/lib/models/membership.ts:1", "src/components/models/model-controls.tsx:1"],
+  },
+  {
+    id: "models.compare",
+    feature: "Compare Models",
+    routes: ["/models/compare"],
+    navPath: "Models → tick up to four → Compare",
+    keywords: [/compare models|side by side|up to four/i],
+    steps: ["On Models, tick up to four rows and click Compare.", "Read LP net IRR, LP yield, RCP IRR, and G&A coverage for each. The OpCo dashboard does not move."],
+    facts: ["Compare shows at most four Models. Each one is still Projection, not books."],
+    troubleshooting: [
+      {
+        symptom: "Compare up to 4 Models.",
+        cause: "More than four ids were requested.",
+        fix: "Untick until four or fewer remain, then Compare.",
+      },
+    ],
+    sourceRefs: ["src/app/models/compare/page.tsx:1", "src/lib/models/membership.ts:1"],
+  },
+  {
+    id: "models.assumptions",
+    feature: "Model assumptions",
+    routes: ["/models/[id]/assumptions"],
+    apiRoutes: ["/api/models/[id]/assumptions"],
+    navPath: "Models → Model name → Assumptions",
+    keywords: [/model assumptions|exit cap|hold years|opco pref/i],
+    steps: [
+      "Open Assumptions. Set hold years and CFADS growth. Leave exit cap rate blank unless you mean a number.",
+      "Optional OpCo pref needs both a rate and platform capital. Click Save assumptions.",
+    ],
+    facts: [
+      "Blank exit value is not guessed. Sale proceeds stay out until an exit cap rate is typed.",
+      "Assumptions belong to the Model. They do not change the live OpCo proforma.",
+    ],
+    troubleshooting: [
+      {
+        symptom: "Exit value is not set. Sale proceeds are not guessed.",
+        cause: "The exit cap rate box is blank.",
+        fix: "Type an exit cap rate and Save assumptions, or leave sale proceeds out.",
+      },
+    ],
+    sourceRefs: ["src/app/models/[id]/assumptions/page.tsx:1", "src/lib/returns/project-deal.ts:1"],
+  },
+  {
+    id: "models.fees",
+    feature: "Model fees",
+    routes: ["/models/fees"],
+    apiRoutes: ["/api/models/fees"],
+    navPath: "Models → Fees settings",
+    keywords: [/model fees|g&a coverage|fee needed|save g&a/i],
+    steps: [
+      "Open Models → Fees settings. Type the OpCo G&A budget and click Save G&A. Leave it blank to keep fee needed.",
+      "Type each deal's AM fee and other LP fees on the deal profile. Those dollars come off operations before the waterfall.",
+    ],
+    facts: [
+      "A blank G&A budget or a blank deal fee shows fee needed. Coverage and LP returns are not filled with a guessed number.",
+      "Saving G&A does not post a journal.",
+    ],
+    troubleshooting: [
+      {
+        symptom: "fee needed",
+        cause: "The AM fee, the other LP fee, or the OpCo G&A budget is blank.",
+        fix: "Type the missing fee. A typed 0 is zero. Do not leave the box blank if you mean zero.",
+      },
+    ],
+    sourceRefs: ["src/app/models/fees/page.tsx:1", "src/lib/library/fees.ts:1", "src/lib/returns/fees.ts:1"],
   },
 ];
 

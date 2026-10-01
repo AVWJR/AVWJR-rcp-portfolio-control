@@ -5,7 +5,7 @@ import { loadPortfolioDebt } from "@/lib/debt-view";
 import { europeanPromoteOpen, loadLiveSpeWaterfalls, loadSpeWaterfall, type SpeWaterfallRecord } from "@/lib/waterfall";
 import type { DealProformaSeed } from "@/lib/proforma-types";
 
-async function periodCfadsForEntity(entityId: string, entityCode: string, year: number, month: number): Promise<bigint> {
+export async function periodCfadsForEntity(entityId: string, entityCode: string, year: number, month: number): Promise<bigint> {
   const pack = await buildOperatingPackage({ entityId, year, month, consolidated: false });
   const balances = rollupBalances(pack.scope.throughEnd);
   const endMap = new Map(balances.map((row) => [row.code, netByCode(balances, row.code)]));

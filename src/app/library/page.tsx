@@ -25,7 +25,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
               <p className="text-[11px] uppercase tracking-[0.2em] text-gold-700">{reportSubtitle(ctx)}</p>
               <h1 className="font-display text-4xl text-navy-900">Deal Library</h1>
               <p className="mt-2 max-w-3xl text-sm text-ink-700">
-                Every analyzed deal, in every status. Only Owned deals are in the OpCo roll-up. LP net IRR, LP cash yield, and RCP IRR stay Phase 2 until the returns build. A stale flag is a reminder. Nothing here is deleted because of age.
+                Every analyzed deal, in every status. Only Owned deals are in the OpCo roll-up. LP net IRR, LP cash yield, and RCP IRR use the deal waterfall after fees. A blank fee says fee needed. The Library column does not guess an exit cap rate. A stale flag is a reminder. Nothing here is deleted because of age.
               </p>
             </div>
             <LibraryWorkspace

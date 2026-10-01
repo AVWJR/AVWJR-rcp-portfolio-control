@@ -136,6 +136,19 @@ describe("prisma provider selection", () => {
     });
   });
 
+  it("refuses a preview push when PREVIEW_DATABASE_URL is the production database", () => {
+    const plan = previewSchemaPushPlan({
+      VERCEL: "1",
+      VERCEL_ENV: "preview",
+      DATABASE_URL: "postgresql://prod.example/neondb",
+      DIRECT_URL: "postgresql://prod-direct.example/neondb/",
+      PREVIEW_DATABASE_URL: "postgresql://prod-direct.example/neondb",
+    });
+    expect(plan.push).toBe(false);
+    expect(plan.databaseUrl).toBeUndefined();
+    expect(plan.reason).toContain("production database");
+  });
+
   it("skips prisma db push when VERCEL=1 and VERCEL_ENV is missing or unexpected", () => {
     for (const env of [
       { VERCEL: "1" },

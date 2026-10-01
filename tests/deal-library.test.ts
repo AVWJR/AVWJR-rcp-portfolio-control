@@ -424,9 +424,10 @@ describe("criteria, presets, columns, stale flags, fees, and pick lists", () => 
     const preference = { ...hard("dscr", "gt", 9), role: "PREFERENCE" as const };
     expect(evaluateCriterion(row, preference)).toBeNull();
     const phase = evaluateCriterion(row, hard("lpNetIrr", "gte", 15));
-    expect(phase?.reason).toMatch(/Phase 2/);
+    expect(phase?.reason).toMatch(/not on file/);
     expect(phase?.reason).toMatch(/fee needed/);
-    expect(evaluateCriterion(fact({ feeNeeded: false }), hard("rcpIrr", "gte", 15))?.reason).toBe("RCP IRR is Phase 2");
+    expect(evaluateCriterion(fact({ feeNeeded: false }), hard("rcpIrr", "gte", 15))?.reason).toBe("RCP IRR is not on file");
+    expect(evaluateCriterion(fact({ feeNeeded: false, lpNetIrrBps: 1_600 }), hard("lpNetIrr", "gte", 15))).toBeNull();
     expect(passCount([row, fact({ dscrBps: 10_000 })], [hard("dscr", "gte", 1.25)])).toEqual({ pass: 1, total: 2 });
     expect(evaluateDeal(row, [hard("dscr", "gte", 1.25), preference])).toEqual([]);
     const parsed = parseCriteria([{ field: "dscr", operator: "gte", value: 1.25, role: "HARD_LIMIT", id: "keep" }, { field: "nope" }]);
@@ -463,7 +464,9 @@ describe("criteria, presets, columns, stale flags, fees, and pick lists", () => 
       "units",
       "equityRequired",
     ]);
-    expect(LIBRARY_COLUMNS.find((column) => column.id === "lpNetIrr")).toMatchObject({ placeholder: "Phase 2" });
+    expect(LIBRARY_COLUMNS.find((column) => column.id === "lpNetIrr")?.label).toBe("LP net IRR");
+    expect(LIBRARY_COLUMNS.find((column) => column.id === "lpCashYield")?.label).toBe("LP cash yield");
+    expect(LIBRARY_COLUMNS.find((column) => column.id === "rcpIrr")?.label).toBe("RCP IRR");
     expect(defaultColumnLayout().every((column) => column.visible)).toBe(true);
     const saved = normalizeColumnLayout([
       { id: "metro", visible: true },

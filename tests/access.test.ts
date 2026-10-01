@@ -36,6 +36,10 @@ describe("partner viewer access", () => {
     expect(isViewerBlockedPath("/deals/new")).toBe(true);
     expect(isViewerBlockedPath("/admin/seed")).toBe(true);
     expect(isViewerBlockedPath("/archive")).toBe(true);
+    expect(isViewerBlockedPath("/library")).toBe(true);
+    expect(isViewerBlockedPath("/models")).toBe(true);
+    expect(isViewerBlockedPath("/models/compare")).toBe(true);
+    expect(isViewerBlockedPath("/models/fees")).toBe(true);
     expect(isViewerBlockedPath("/dashboard/SPE-WBG")).toBe(false);
     expect(isViewerBlockedPath("/narratives")).toBe(false);
     expect(viewerForbiddenApi("/api/deals/SPE-WBG/delete", "POST")).toBe(true);
@@ -51,6 +55,10 @@ describe("partner viewer access", () => {
     expect(viewerForbiddenApi("/api/expert/chat", "POST")).toBe(false);
     expect(viewerForbiddenApi("/api/access", "POST")).toBe(false);
     expect(viewerForbiddenApi("/api/narratives", "GET")).toBe(false);
+    expect(viewerForbiddenApi("/api/library/fees", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/models", "GET")).toBe(true);
+    expect(viewerForbiddenApi("/api/models/fees", "POST")).toBe(true);
+    expect(viewerForbiddenApi("/api/models/id/deals", "DELETE")).toBe(true);
     expect(viewerForbiddenApi("/api/deals/SPE-WBG/distributions", "POST")).toBe(true);
     expect(viewerForbiddenApi("/api/deals/SPE-WBG/distributions", "GET")).toBe(false);
     expect(viewerForbiddenApi("/api/deals/SPE-WBG/distributions/evt/reverse", "POST")).toBe(true);

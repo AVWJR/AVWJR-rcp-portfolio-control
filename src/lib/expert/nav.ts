@@ -169,12 +169,45 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
     ],
   },
   {
+    pattern: "/models/compare",
+    test: /^\/models\/compare$/,
+    title: "Compare Models",
+    hints: ["Up to four Models side by side. Projection, not books. The OpCo dashboard does not move."],
+  },
+  {
+    pattern: "/models/fees",
+    test: /^\/models\/fees$/,
+    title: "Model fees",
+    hints: ["OpCo G&A budget for Model coverage. Blank stays fee needed. Deal AM fees stay on the deal profile."],
+  },
+  {
+    pattern: "/models/[id]/assumptions",
+    test: /^\/models\/[^/]+\/assumptions$/,
+    title: "Model assumptions",
+    hints: ["Hold years, growth, exit cap rate, and optional OpCo pref. Blank exit value is not guessed."],
+  },
+  {
+    pattern: "/models/[id]",
+    test: /^\/models\/(?!compare$|fees$)[^/]+$/,
+    title: "Model",
+    hints: [
+      "RCP cash and LP cash by year, fees versus G&A, RCP and LP returns, concentration. Projection, not books.",
+      "Pipeline deals are flagged not yet screened and stay out of the future optimizer.",
+    ],
+  },
+  {
+    pattern: "/models",
+    test: /^\/models$/,
+    title: "Models",
+    hints: ["Create, copy, or delete a Model. Add or remove a deal. Compare up to four. Owner only, same gate as Library."],
+  },
+  {
     pattern: "/deals/[code]",
     test: /^\/deals\/SPE-[A-Z0-9]+$/,
     title: "Deal profile",
     hints: [
       "Library fields, fees, and deal status. Only Owned feeds the OpCo roll-up.",
-      "Save analysis snapshot keeps the prior one. LP net IRR is Phase 2.",
+      "Save analysis snapshot keeps the prior one. LP net IRR needs the AM fee.",
     ],
   },
   {
@@ -283,6 +316,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "cf", href: "/reports/cash-flow", label: "Cash Flow", hint: "Indirect; ties to BS" },
   { id: "deals", href: "/deals", label: "Deals", hint: "Live Owned SPE list and Add Deal drafts" },
   { id: "library", href: "/library", label: "Library", hint: "How do I find deals that meet my criteria? Sentence builder, hard limits, presets, why excluded." },
+  { id: "models", href: "/models", label: "Models", hint: "What-if deal lists. Create, copy, compare up to four. Projection, not books." },
   { id: "waterfall", href: "/deals", label: "Deal waterfall", hint: "LP/GP waterfall and Co-GP on a live SPE card — how do I set the deal waterfall?" },
   { id: "distributions", href: "/deals", label: "Distribution ledger", hint: "Record a distribution and see how much pref is still owed on /deals/{SPE}/distributions" },
   { id: "deal_proforma", href: "/deals", label: "Deal proforma", hint: "Forward-looking Deal LP / Deal GP (RCP + Co-GP) on a live SPE" },
