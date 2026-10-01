@@ -39,6 +39,7 @@ export type ModelView = {
   lpIrrMinBps: number | null;
   lpIrrMaxBps: number | null;
   lpIrrGapDeals: string[];
+  noLpEquityDeals: string[];
   lpGap: string | null;
   dscrBps: number | null;
   debtYieldBps: number | null;
@@ -118,6 +119,7 @@ export function toModelView(input: {
     lpIrrMinBps: projection.lpIrrMinBps,
     lpIrrMaxBps: projection.lpIrrMaxBps,
     lpIrrGapDeals: projection.lpIrrGapDeals,
+    noLpEquityDeals: projection.noLpEquityDeals,
     lpGap: projection.lpGap,
     dscrBps: projection.dscrBps,
     debtYieldBps: projection.debtYieldBps,

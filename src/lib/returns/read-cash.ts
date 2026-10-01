@@ -66,6 +66,25 @@ async function monthlyCfadsCents(entityId: string, period: ReadablePeriod): Prom
   });
 }
 
+async function periodNoiCents(entityId: string, period: ReadablePeriod): Promise<bigint> {
+  const throughEnd = await loadPostedLines({ entityIds: [entityId], through: period.endDate });
+  const inPeriod = await loadPostedLines({ entityIds: [entityId], from: period.startDate, to: period.endDate });
+  return buildIncomeStatement({ throughEnd, inPeriod }).noi;
+}
+
+/**
+ * Annualized NOI from an existing period: that period's NOI × 12.
+ * Uses the requested month when it is already on file, otherwise the latest closed or posted period.
+ * Never opens a month. Never uses cash flow or CFADS.
+ */
+export async function readAnnualNoiCents(entityId: string, year?: number | null, month?: number | null): Promise<bigint> {
+  const period = await resolveReadablePeriod(entityId, year, month);
+  if (!period) return 0n;
+  const noi = await periodNoiCents(entityId, period);
+  if (noi <= 0n) return 0n;
+  return noi * 12n;
+}
+
 /** Annualized CFADS from an existing period. Missing books return 0. Never opens a month. */
 export async function readAnnualCfadsCents(entityId: string, year?: number | null, month?: number | null): Promise<bigint> {
   const period = await resolveReadablePeriod(entityId, year, month);

@@ -6,6 +6,7 @@ import { IRR_NOT_AVAILABLE, rateToBps, solveIrr, type IrrCashFlow } from "@/lib/
 import {
   dealCashNotes,
   exitValueNeededFor,
+  NO_CASH_RETURNED_TO_LP,
   projectDealReturns,
   type DealReturnInput,
   type DealReturnMetrics,
@@ -95,6 +96,7 @@ export type ModelProjection = {
   lpIrrMinBps: number | null;
   lpIrrMaxBps: number | null;
   lpIrrGapDeals: string[];
+  noLpEquityDeals: string[];
   lpGap: string | null;
   dscrBps: number | null;
   debtYieldBps: number | null;
@@ -152,6 +154,7 @@ function blank(notes: string[], deals: ModelDealResult[]): ModelProjection {
     lpIrrMinBps: null,
     lpIrrMaxBps: null,
     lpIrrGapDeals: [],
+    noLpEquityDeals: [],
     lpGap: null,
     dscrBps: null,
     debtYieldBps: null,
@@ -367,6 +370,7 @@ export function projectModel(opts: {
     lpIrrMinBps: null,
     lpIrrMaxBps: null,
     lpIrrGapDeals: [],
+    noLpEquityDeals: [],
     lpGap: feeBlocked ? feeReason : otherGap,
     dscrBps: portfolioRatio(includedFacts, "dscr"),
     debtYieldBps: portfolioRatio(includedFacts, "debtYield"),
@@ -383,16 +387,31 @@ export function projectModel(opts: {
   else if (opts.gaBudgetCents === 0n) projection.gaGap = "G&A budget is zero";
   else projection.gaCoverageBps = Number((feeIncome * 10_000n) / opts.gaBudgetCents);
 
-  const gapped = passing.filter((row) => metricsByCode.get(row.input.code)?.exitGap);
+  const noLpEquity = passing.filter((row) => (metricsByCode.get(row.input.code)?.lpEquityCents ?? 0n) <= 0n);
+  const gapped = passing.filter((row) => {
+    const metrics = metricsByCode.get(row.input.code);
+    return Boolean(metrics?.exitGap && metrics.lpEquityCents > 0n);
+  });
   projection.lpIrrGapDeals = gapped.map((row) => row.input.code);
+  projection.noLpEquityDeals = noLpEquity.map((row) => row.input.code);
+  if (projection.noLpEquityDeals.length) {
+    const line = `no LP equity: ${projection.noLpEquityDeals.join(", ")}`;
+    if (!projection.notes.includes(line)) projection.notes.push(line);
+  }
   const exitNote = gapped.length ? exitValueNeededFor(gapped.length) : null;
   if (lpEquity > 0n) {
     if (exitNote) projection.lpIrrNote = exitNote;
     else {
-      const flows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.lpCents ?? 0n), tYears: row.year }))];
-      const irr = solveIrr(flows);
-      projection.lpNetIrrBps = rateToBps(irr.rate);
-      if (irr.reason && projection.lpNetIrrBps == null) projection.lpIrrNote = IRR_NOT_AVAILABLE;
+      const lpCash = years.reduce((sum, row) => sum + (row.lpCents ?? 0n), 0n);
+      if (lpCash <= 0n) {
+        projection.lpNetIrrBps = -10_000;
+        projection.lpIrrNote = NO_CASH_RETURNED_TO_LP;
+      } else {
+        const flows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.lpCents ?? 0n), tYears: row.year }))];
+        const irr = solveIrr(flows);
+        projection.lpNetIrrBps = rateToBps(irr.rate);
+        if (irr.reason && projection.lpNetIrrBps == null) projection.lpIrrNote = IRR_NOT_AVAILABLE;
+      }
     }
     const n = BigInt(years.length || 1);
     const ops = yearLpOps.reduce((sum, value) => sum + value, 0n);
@@ -420,12 +439,18 @@ export function projectModel(opts: {
       projection.rcpIrrNote = exitNote;
       projection.rcpMultipleNote = exitNote;
     } else {
-      const flows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.rcpCents ?? 0n), tYears: row.year }))];
-      const irr = solveIrr(flows);
-      projection.rcpIrrBps = rateToBps(irr.rate);
-      if (irr.reason && projection.rcpIrrBps == null) projection.rcpIrrNote = IRR_NOT_AVAILABLE;
       const total = years.reduce((sum, row) => sum + (row.rcpCents ?? 0n), 0n);
-      projection.rcpEquityMultipleBps = yieldBps(total, rcpEquity);
+      if (total <= 0n) {
+        projection.rcpIrrBps = -10_000;
+        projection.rcpIrrNote = NO_CASH_RETURNED_TO_LP;
+        projection.rcpEquityMultipleBps = yieldBps(total, rcpEquity);
+      } else {
+        const flows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.rcpCents ?? 0n), tYears: row.year }))];
+        const irr = solveIrr(flows);
+        projection.rcpIrrBps = rateToBps(irr.rate);
+        if (irr.reason && projection.rcpIrrBps == null) projection.rcpIrrNote = IRR_NOT_AVAILABLE;
+        projection.rcpEquityMultipleBps = yieldBps(total, rcpEquity);
+      }
     }
   } else {
     projection.rcpGap = "RCP equity is zero";

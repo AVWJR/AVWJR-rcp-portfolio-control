@@ -1,5 +1,5 @@
 import { europeanPromoteOpen, loadSpeWaterfall, type SpeWaterfallRecord } from "@/lib/waterfall";
-import { readAnnualCfadsCents, readAnnualDebtServiceCents } from "@/lib/returns/read-cash";
+import { readAnnualCfadsCents, readAnnualDebtServiceCents, readAnnualNoiCents } from "@/lib/returns/read-cash";
 import { resolveEquityRequiredCents } from "@/lib/returns/project-deal";
 import { effectiveDealStatus, isOwnedSpe } from "@/lib/owned-spe";
 import { analysisStaleLevel, type StaleLevel } from "@/lib/library/staleness";
@@ -65,6 +65,11 @@ export async function loadModelDealInputs(opts: {
       snapshotDscrBps: snap?.dscrBps ?? null,
     });
     const upb = entity.loans.reduce((sum, loan) => sum + loan.currentUpbCents, 0n);
+    let annualizedNoi = snap?.annualizedNoiCents != null && snap.annualizedNoiCents > 0n ? snap.annualizedNoiCents : null;
+    if (annualizedNoi == null && owned) {
+      const bookNoi = await readAnnualNoiCents(entity.id, opts.year, opts.month);
+      if (bookNoi > 0n) annualizedNoi = bookNoi;
+    }
     const flag = decision.ok ? decision.flag : status === "ARCHIVED" ? "view only" : null;
     const optimizerEligible = decision.ok ? decision.optimizerEligible : false;
     const fact: LibraryFact = {
@@ -111,7 +116,7 @@ export async function loadModelDealInputs(opts: {
       equityRequiredCents: equityRequired,
       dscrBps: snap?.dscrBps ?? null,
       debtYieldBps: snap?.debtYieldBps ?? null,
-      annualizedNoiCents: snap?.annualizedNoiCents ?? null,
+      annualizedNoiCents: annualizedNoi,
       upbCents: upb,
       fact,
       returns: {

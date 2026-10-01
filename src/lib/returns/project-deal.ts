@@ -13,6 +13,7 @@ import { resolveAnnualFee, type FeeInputs } from "./fees";
 
 export const EXIT_VALUE_NEEDED = "exit value needed";
 export const LOAN_EXCEEDS_EXIT_NOTE = "loan exceeds exit value, no sale proceeds";
+export const NO_CASH_RETURNED_TO_LP = "no cash returned to LP";
 export const DEBT_SERVICE_NEEDED = "debt service needed";
 export const RETURNS_BASIS = "after debt service and fees";
 
@@ -105,6 +106,7 @@ export function exitEquityFromCap(opts: {
   }
   const exitNoi = growCents(opts.year1NoiCents, opts.growthBps, Math.max(0, opts.holdYears - 1));
   if (exitNoi <= 0n) return { proceedsCents: 0n, exitGap: true, note: EXIT_VALUE_NEEDED };
+  // Exit value is grown NOI / cap. Cash flow and CFADS are not a value.
   const gross = (exitNoi * 10_000n) / BigInt(opts.exitCapRateBps);
   const debt = opts.upbCents > 0n ? opts.upbCents : 0n;
   const equity = gross - debt;
@@ -251,7 +253,10 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     lpYear1 = yieldBps(year1Ops, lpEquity);
     lpAvg = yieldBps(lpOps / n, lpEquity);
     if (exitGap) lpIrrNote = EXIT_VALUE_NEEDED;
-    else {
+    else if (years.reduce((sum, row) => sum + row.lpCents, 0n) <= 0n) {
+      lpNetIrrBps = -10_000;
+      lpIrrNote = NO_CASH_RETURNED_TO_LP;
+    } else {
       const irr = solveIrr(lpFlows);
       lpNetIrrBps = rateToBps(irr.rate);
       if (irr.reason && lpNetIrrBps == null) lpIrrNote = IRR_NOT_AVAILABLE;
@@ -274,6 +279,10 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     if (exitGap) {
       rcpIrrNote = EXIT_VALUE_NEEDED;
       rcpMultipleNote = EXIT_VALUE_NEEDED;
+    } else if (years.reduce((sum, row) => sum + row.rcpCents, 0n) <= 0n) {
+      rcpIrrBps = -10_000;
+      rcpIrrNote = NO_CASH_RETURNED_TO_LP;
+      multiple = yieldBps(rcpTotal, rcpEquity);
     } else {
       const irr = solveIrr(rcpFlows);
       rcpIrrBps = rateToBps(irr.rate);

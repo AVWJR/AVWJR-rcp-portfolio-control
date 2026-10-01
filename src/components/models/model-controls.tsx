@@ -39,11 +39,12 @@ function showIrr(bps: number | null, gap: string | null, note: string | null, fo
   return format(bps);
 }
 
-function irrRange(min: number | null, max: number | null, gaps: string[]): string {
-  const span = min == null || max == null ? null : `${percent(min)} – ${percent(max)}`;
-  if (!gaps.length) return span ?? "—";
-  const list = `exit value needed: ${gaps.join(", ")}`;
-  return span ? `${span} · ${list}` : list;
+function irrRange(min: number | null, max: number | null, gaps: string[], noEquity: string[]): string {
+  const parts: string[] = [];
+  if (min != null && max != null) parts.push(`${percent(min)} – ${percent(max)}`);
+  if (gaps.length) parts.push(`exit value needed: ${gaps.join(", ")}`);
+  if (noEquity.length) parts.push(`no LP equity: ${noEquity.join(", ")}`);
+  return parts.length ? parts.join(" · ") : "—";
 }
 
 function cashNote(note: string, accruedCents: number | null): string {
@@ -248,7 +249,7 @@ export function ModelDetail({
         <Metric label="LP net IRR" value={showIrr(view.lpNetIrrBps, view.lpGap, view.lpIrrNote)} />
         <Metric label="LP cash yield Y1" value={show(view.lpYear1YieldBps, view.lpGap, percent)} />
         <Metric label="LP cash yield avg" value={show(view.lpAvgYieldBps, view.lpGap, percent)} />
-        <Metric label="LP IRR range" value={irrRange(view.lpIrrMinBps, view.lpIrrMaxBps, view.lpIrrGapDeals)} />
+        <Metric label="LP IRR range" value={irrRange(view.lpIrrMinBps, view.lpIrrMaxBps, view.lpIrrGapDeals, view.noLpEquityDeals)} />
         <Metric label="RCP cash-on-cash Y1" value={show(view.rcpCashOnCashBps, view.rcpGap, percent)} />
         <Metric label="RCP IRR" value={showIrr(view.rcpIrrBps, view.rcpGap, view.rcpIrrNote)} />
         <Metric label="RCP equity multiple" value={showIrr(view.rcpEquityMultipleBps, view.rcpGap, view.rcpMultipleNote, multiple)} />
