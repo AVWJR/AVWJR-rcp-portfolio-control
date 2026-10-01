@@ -10,7 +10,7 @@ import { FEE_NEEDED } from "@/lib/library/fees";
 import type { LibraryRow } from "@/lib/library/facts";
 import { staleFlagLabel } from "@/lib/library/staleness";
 import { visibleLibraryRows } from "@/lib/library/view";
-import { formatUsd } from "@rcp/ledger";
+import { FEE_ACCRUED_UNPAID_NOTE, formatUsd } from "@rcp/ledger";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -45,6 +45,7 @@ function displayCell(row: LibraryRow, id: LibraryColumnId): string {
     const value = id === "lpNetIrr" ? row.lpNetIrrBps : row.rcpIrrBps;
     const note = id === "lpNetIrr" ? row.lpIrrNote : row.rcpIrrNote;
     if (value == null) return note ?? row.returnGap ?? (row.feeNeeded ? FEE_NEEDED : "—");
+    if (note) return `${percent(value)} · ${note}`;
     return percent(value);
   }
   if (id === "lpCashYield") {
@@ -370,6 +371,13 @@ export function LibraryWorkspace({
                     {row.name}
                   </Link>
                   <p className="text-xs text-ink-500">{row.code}</p>
+                  {row.returnNotes.map((note) => (
+                    <p key={note} className="mt-1 text-xs text-gold-700">
+                      {note === FEE_ACCRUED_UNPAID_NOTE && row.feeAccruedUnpaidCents != null
+                        ? `${note} · ${money(row.feeAccruedUnpaidCents)}`
+                        : note}
+                    </p>
+                  ))}
                   {row.dealStatus !== "OWNED" && row.dealStatus !== "ARCHIVED" ? (
                     <div className="mt-2">
                       <ArchiveDealButton code={row.code} name={row.name} afterHref="/library" />

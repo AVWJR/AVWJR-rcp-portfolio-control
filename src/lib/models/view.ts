@@ -1,4 +1,5 @@
 import type { Criterion } from "@/lib/library/criteria";
+import { dealCashNotes } from "@/lib/returns/project-deal";
 import type { ModelAssumptions, ModelProjection } from "./project";
 import type { ModelKind } from "./membership";
 
@@ -16,8 +17,9 @@ export type ModelView = {
   };
   criteria: Criterion[];
   notes: string[];
-  years: { year: number; rcpCents: number; lpCents: number; feeIncomeCents: number }[];
+  years: { year: number; rcpCents: number | null; lpCents: number | null; feeIncomeCents: number | null }[];
   feeIncomeCents: number | null;
+  feeAccruedUnpaidCents: number | null;
   gaCoverageBps: number | null;
   gaGap: string | null;
   rcpEquityCents: number | null;
@@ -36,6 +38,7 @@ export type ModelView = {
   lpAvgYieldBps: number | null;
   lpIrrMinBps: number | null;
   lpIrrMaxBps: number | null;
+  lpIrrGapDeals: string[];
   lpGap: string | null;
   dscrBps: number | null;
   debtYieldBps: number | null;
@@ -50,6 +53,8 @@ export type ModelView = {
     excluded: boolean;
     exclusions: string[];
     gap: string | null;
+    notes: string[];
+    feeAccruedUnpaidCents: number | null;
     lpNetIrrBps: number | null;
     lpIrrNote: string | null;
     lpYear1YieldBps: number | null;
@@ -88,11 +93,12 @@ export function toModelView(input: {
     notes: projection.notes,
     years: projection.years.map((row) => ({
       year: row.year,
-      rcpCents: Number(row.rcpCents),
-      lpCents: Number(row.lpCents),
-      feeIncomeCents: Number(row.feeIncomeCents),
+      rcpCents: num(row.rcpCents),
+      lpCents: num(row.lpCents),
+      feeIncomeCents: num(row.feeIncomeCents),
     })),
     feeIncomeCents: num(projection.feeIncomeCents),
+    feeAccruedUnpaidCents: num(projection.feeAccruedUnpaidCents),
     gaCoverageBps: projection.gaCoverageBps,
     gaGap: projection.gaGap,
     rcpEquityCents: num(projection.rcpEquityCents),
@@ -111,6 +117,7 @@ export function toModelView(input: {
     lpAvgYieldBps: projection.lpAvgYieldBps,
     lpIrrMinBps: projection.lpIrrMinBps,
     lpIrrMaxBps: projection.lpIrrMaxBps,
+    lpIrrGapDeals: projection.lpIrrGapDeals,
     lpGap: projection.lpGap,
     dscrBps: projection.dscrBps,
     debtYieldBps: projection.debtYieldBps,
@@ -131,6 +138,8 @@ export function toModelView(input: {
       excluded: deal.excluded,
       exclusions: deal.exclusions,
       gap: deal.gap,
+      notes: dealCashNotes(deal.metrics?.notes ?? []),
+      feeAccruedUnpaidCents: deal.metrics && deal.metrics.feeAccruedUnpaidCents > 0n ? Number(deal.metrics.feeAccruedUnpaidCents) : null,
       lpNetIrrBps: deal.metrics?.lpNetIrrBps ?? null,
       lpIrrNote: deal.metrics?.lpIrrNote ?? null,
       lpYear1YieldBps: deal.metrics?.lpYear1CashYieldBps ?? null,

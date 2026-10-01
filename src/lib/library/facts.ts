@@ -3,7 +3,7 @@ import { dealFeeNeededLabel } from "@/lib/library/fees";
 import { analysisStaleLevel, type StaleLevel } from "@/lib/library/staleness";
 import { isOwnedSpe } from "@/lib/owned-spe";
 import { prisma } from "@/lib/prisma";
-import { projectDealReturns, resolveEquityRequiredCents } from "@/lib/returns/project-deal";
+import { dealCashNotes, projectDealReturns, resolveEquityRequiredCents } from "@/lib/returns/project-deal";
 import { readAnnualCfadsCents, readAnnualDebtServiceCents } from "@/lib/returns/read-cash";
 import { loadSpeWaterfall } from "@/lib/waterfall";
 import type { LibraryFact } from "./criteria";
@@ -32,6 +32,8 @@ export type LibraryRow = LibraryFact & {
   lpYear1CashYieldBps: number | null;
   lpIrrNote: string | null;
   rcpIrrNote: string | null;
+  returnNotes: string[];
+  feeAccruedUnpaidCents: number | null;
   returnGap: string | null;
   purchasePriceCents: number | null;
   appraisedValueCents: number | null;
@@ -111,7 +113,7 @@ export async function loadLibraryRows(now = new Date(), period?: { year: number;
       prefRateBps: snap?.prefRateBps ?? null,
       catchUpBps: snap?.catchUpBps ?? null,
       coGpBps: snap?.coGpOfPromoteBps ?? null,
-      equityRequiredCents: num(snap?.equityRequiredCents),
+      equityRequiredCents: num(returns.equityRequiredCents),
       feeNeeded,
       streetAddress: spe.streetAddress,
       purchasePriceCents: num(spe.purchasePriceCents),
@@ -125,6 +127,8 @@ export async function loadLibraryRows(now = new Date(), period?: { year: number;
       lpYear1CashYieldBps: returns.lpYear1CashYieldBps,
       lpIrrNote: returns.lpIrrNote,
       rcpIrrNote: returns.rcpIrrNote,
+      returnNotes: returns.returnNotes,
+      feeAccruedUnpaidCents: returns.feeAccruedUnpaidCents > 0n ? Number(returns.feeAccruedUnpaidCents) : null,
       returnGap: returns.returnGap,
       metricGaps: returns.metricGaps,
     });
@@ -144,6 +148,9 @@ async function libraryReturns(
   rcpIrrBps: number | null;
   lpIrrNote: string | null;
   rcpIrrNote: string | null;
+  returnNotes: string[];
+  feeAccruedUnpaidCents: bigint;
+  equityRequiredCents: bigint | null;
   returnGap: string | null;
   metricGaps: Partial<Record<"lpNetIrr" | "lpCashYield" | "rcpIrr", string>>;
 }> {
@@ -154,6 +161,9 @@ async function libraryReturns(
     rcpIrrBps: null,
     lpIrrNote: null as string | null,
     rcpIrrNote: null as string | null,
+    returnNotes: [] as string[],
+    feeAccruedUnpaidCents: 0n,
+    equityRequiredCents: null as bigint | null,
     returnGap: null as string | null,
     metricGaps: {} as Partial<Record<"lpNetIrr" | "lpCashYield" | "rcpIrr", string>>,
   };
@@ -171,6 +181,7 @@ async function libraryReturns(
       gpCoInvestBps: waterfall.config.gpCoInvestBps ?? 0,
       snapshotCents: snap?.equityRequiredCents ?? null,
     });
+    const withEquity = { ...blank, equityRequiredCents: equityRequired };
     const debt = await readAnnualDebtServiceCents({
       entityId: spe.id,
       owned,
@@ -200,10 +211,10 @@ async function libraryReturns(
       metricGaps.lpNetIrr = metrics.gap;
       metricGaps.lpCashYield = metrics.gap;
       metricGaps.rcpIrr = metrics.gap;
-      return { ...blank, returnGap: metrics.gap, metricGaps };
+      return { ...withEquity, returnGap: metrics.gap, metricGaps };
     }
-    if (metrics.lpIrrNote) metricGaps.lpNetIrr = metrics.lpIrrNote;
-    if (metrics.rcpIrrNote) metricGaps.rcpIrr = metrics.rcpIrrNote;
+    if (metrics.lpNetIrrBps == null && metrics.lpIrrNote) metricGaps.lpNetIrr = metrics.lpIrrNote;
+    if (metrics.rcpIrrBps == null && metrics.rcpIrrNote) metricGaps.rcpIrr = metrics.rcpIrrNote;
     return {
       lpNetIrrBps: metrics.lpNetIrrBps,
       lpCashYieldBps: metrics.lpAvgCashYieldBps,
@@ -211,6 +222,9 @@ async function libraryReturns(
       rcpIrrBps: metrics.rcpIrrBps,
       lpIrrNote: metrics.lpIrrNote,
       rcpIrrNote: metrics.rcpIrrNote,
+      returnNotes: dealCashNotes(metrics.notes),
+      feeAccruedUnpaidCents: metrics.feeAccruedUnpaidCents,
+      equityRequiredCents: equityRequired,
       returnGap: null,
       metricGaps,
     };

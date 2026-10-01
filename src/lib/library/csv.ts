@@ -8,6 +8,7 @@ function gapCell(row: LibraryRow): string {
 }
 
 function irrCell(bps: number | null, note: string | null, row: LibraryRow): string {
+  if (bps != null && note) return `${ratio(bps, "%")} · ${note}`;
   if (bps != null) return ratio(bps, "%");
   return note ?? gapCell(row);
 }

@@ -557,7 +557,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     facts: [
       "Hard limit filters the list. Preference is stored for the Phase 3 optimizer and does not exclude a deal yet.",
-      "LP net IRR, LP cash yield, and RCP IRR are calculated in Phase 2 after debt service and fees. fee needed means the AM fee or the other LP fee is blank. A hard limit excludes every deal that is missing the number. exit value needed means no sale proceeds were set, so IRR does not pass.",
+      "LP net IRR, LP cash yield, and RCP IRR are calculated in Phase 2 after debt service and fees. fee needed means the AM fee or the other LP fee is blank. A hard limit excludes every deal that is missing the number. exit value needed means no sale was entered or NOI cannot value the property, so IRR does not pass. cash shortfall, no distribution means operations do not cover debt service. fee accrued, unpaid is the fee still owed. loan exceeds exit value means the sale leaves no equity and the IRR is still calculated.",
       "Cap rate is annualized NOI divided by purchase price. It stays blank without a price or NOI. Enter the price, then Save analysis snapshot or Backfill analysis snapshots.",
       "No snapshot means no analysis snapshot yet. Stale is amber at 90 days and red at 180 days. Age never deletes a deal or a file.",
       "Show Test deals is off until you tick it. Export CSV downloads the passing rows and the visible columns.",
@@ -1260,7 +1260,7 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     facts: [
       "Pipeline deals can be added and are flagged not yet screened. They are not optimizer eligible until Screened.",
       "Archived deals are view only and cannot be added. Test deals only go in a Test Model.",
-      "A missing fee shows fee needed. Dependent returns stay blank, including cash by year. Returns are after debt service and fees. A missing debt payment says debt service needed. No exit value says exit value needed, and cash yield can still show.",
+      "A missing fee shows fee needed. Dependent returns stay blank, including cash by year. Returns are after debt service and fees. A missing debt payment says debt service needed. No exit value says exit value needed, and cash yield can still show. Fee income is the fee paid from cash after debt service. fee accrued, unpaid is shown apart from that income. If the sale cannot pay it, the note is fee unpaid at exit. cash shortfall, no distribution means no distribution that year. loan exceeds exit value is a real projection with exit equity at zero. If any included deal still needs an exit value, LP net IRR, RCP IRR, and the equity multiple say exit value needed for that many deals. A blank G&A budget says G&A budget needed.",
     ],
     troubleshooting: [
       {
@@ -1310,14 +1310,14 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
       "Optional OpCo pref needs both a rate and platform capital. Click Save assumptions.",
     ],
     facts: [
-      "Blank exit value is not guessed. Sale proceeds stay out until an exit cap rate is typed. Without sale proceeds the screen says exit value needed.",
+      "Blank exit value is not guessed. Sale proceeds stay out until an exit cap rate is typed. Without a sale, or when NOI cannot value the property, the screen says exit value needed. When the loan is larger than a computed sale, exit equity is zero and the screen says loan exceeds exit value, no sale proceeds. That IRR is still calculated.",
       "Assumptions belong to the Model. They do not change the live OpCo proforma.",
     ],
     troubleshooting: [
       {
-        symptom: "Exit value is not set. Sale proceeds are not guessed.",
-        cause: "The exit cap rate box is blank.",
-        fix: "Type an exit cap rate and Save assumptions, or leave sale proceeds out.",
+        symptom: "exit value needed",
+        cause: "No exit cap was typed, or NOI cannot value the property.",
+        fix: "Type an exit cap and Save assumptions, or leave the combined IRR as exit value needed.",
       },
     ],
     sourceRefs: ["src/app/models/[id]/assumptions/page.tsx:1", "src/lib/returns/project-deal.ts:1"],
@@ -1330,18 +1330,23 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     navPath: "Models → Fees settings",
     keywords: [/model fees|g&a coverage|fee needed|save g&a/i],
     steps: [
-      "Open Models → Fees settings. Type the OpCo G&A budget and click Save G&A. Leave it blank to keep fee needed.",
+      "Open Models → Fees settings. Type the OpCo G&A budget and click Save G&A. Leave it blank and coverage says G&A budget needed.",
       "Type each deal's AM fee and other LP fees on the deal profile. Those dollars come off operations before the waterfall.",
     ],
     facts: [
-      "A blank G&A budget or a blank deal fee shows fee needed. Coverage and LP returns are not filled with a guessed number.",
+      "A blank G&A budget says G&A budget needed. A blank deal fee says fee needed. Coverage and LP returns are not filled with a guessed number. Fee income counts fees paid from cash after debt service. fee accrued, unpaid is separate.",
       "Saving G&A does not post a journal.",
     ],
     troubleshooting: [
       {
         symptom: "fee needed",
-        cause: "The AM fee, the other LP fee, or the OpCo G&A budget is blank.",
-        fix: "Type the missing fee. A typed 0 is zero. Do not leave the box blank if you mean zero.",
+        cause: "The AM fee or the other LP fee is blank.",
+        fix: "Type the missing fee on the deal profile. A typed 0 is zero. Do not leave the box blank if you mean zero.",
+      },
+      {
+        symptom: "G&A budget needed",
+        cause: "The OpCo G&A budget is blank.",
+        fix: "Type the OpCo G&A budget and click Save G&A. A typed 0 stays G&A budget is zero.",
       },
     ],
     sourceRefs: ["src/app/models/fees/page.tsx:1", "src/lib/library/fees.ts:1", "src/lib/returns/fees.ts:1"],

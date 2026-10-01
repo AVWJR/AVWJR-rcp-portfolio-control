@@ -2,12 +2,12 @@
 
 import { CriteriaBuilder } from "@/components/library/criteria-builder";
 import type { Criterion, CriterionField } from "@/lib/library/criteria";
-import { FEE_NEEDED } from "@/lib/library/fees";
+import { FEE_NEEDED, GA_BUDGET_NEEDED } from "@/lib/library/fees";
 import { RETURNS_BASIS } from "@/lib/returns/project-deal";
 import { MAX_COMPARE } from "@/lib/models/membership";
 import type { ModelView } from "@/lib/models/view";
 import { staleFlagLabel, type StaleLevel } from "@/lib/library/staleness";
-import { formatUsd } from "@rcp/ledger";
+import { FEE_ACCRUED_UNPAID_NOTE, formatUsd } from "@rcp/ledger";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -34,8 +34,21 @@ function show(bps: number | null, gap: string | null, format: (value: number | n
 
 function showIrr(bps: number | null, gap: string | null, note: string | null, format: (value: number | null) => string = percent): string {
   if (gap) return gap;
+  if (bps != null && note) return `${format(bps)} · ${note}`;
   if (bps == null && note) return note;
   return format(bps);
+}
+
+function irrRange(min: number | null, max: number | null, gaps: string[]): string {
+  const span = min == null || max == null ? null : `${percent(min)} – ${percent(max)}`;
+  if (!gaps.length) return span ?? "—";
+  const list = `exit value needed: ${gaps.join(", ")}`;
+  return span ? `${span} · ${list}` : list;
+}
+
+function cashNote(note: string, accruedCents: number | null): string {
+  if (note === FEE_ACCRUED_UNPAID_NOTE && accruedCents != null && accruedCents > 0) return `${note} · ${money(accruedCents)}`;
+  return note;
 }
 
 async function send(url: string, method: string, body?: unknown) {
@@ -235,13 +248,16 @@ export function ModelDetail({
         <Metric label="LP net IRR" value={showIrr(view.lpNetIrrBps, view.lpGap, view.lpIrrNote)} />
         <Metric label="LP cash yield Y1" value={show(view.lpYear1YieldBps, view.lpGap, percent)} />
         <Metric label="LP cash yield avg" value={show(view.lpAvgYieldBps, view.lpGap, percent)} />
-        <Metric label="LP IRR range" value={view.lpIrrMinBps == null ? "—" : `${percent(view.lpIrrMinBps)} – ${percent(view.lpIrrMaxBps)}`} />
+        <Metric label="LP IRR range" value={irrRange(view.lpIrrMinBps, view.lpIrrMaxBps, view.lpIrrGapDeals)} />
         <Metric label="RCP cash-on-cash Y1" value={show(view.rcpCashOnCashBps, view.rcpGap, percent)} />
         <Metric label="RCP IRR" value={showIrr(view.rcpIrrBps, view.rcpGap, view.rcpIrrNote)} />
         <Metric label="RCP equity multiple" value={showIrr(view.rcpEquityMultipleBps, view.rcpGap, view.rcpMultipleNote, multiple)} />
         <Metric label="Equity required" value={money(view.equityRequiredCents)} />
-        <Metric label="Fee income / year" value={view.gaGap === FEE_NEEDED && view.feeIncomeCents == null ? FEE_NEEDED : money(view.feeIncomeCents)} />
+        <Metric label="Fee income / year" value={view.cashGap ?? money(view.feeIncomeCents)} />
         <Metric label="G&A coverage" value={view.gaGap ?? multiple(view.gaCoverageBps)} />
+        {view.feeAccruedUnpaidCents != null && view.feeAccruedUnpaidCents > 0 ? (
+          <Metric label="Fee accrued, unpaid" value={money(view.feeAccruedUnpaidCents)} />
+        ) : null}
         <Metric label="Portfolio DSCR" value={multiple(view.dscrBps)} />
         <Metric label="Portfolio debt yield" value={percent(view.debtYieldBps)} />
       </section>
@@ -263,7 +279,7 @@ export function ModelDetail({
                   <td className="px-3 py-2">Year {row.year}</td>
                   <td className="px-3 py-2">{view.cashGap ?? money(row.rcpCents)}</td>
                   <td className="px-3 py-2">{view.cashGap ?? money(row.lpCents)}</td>
-                  <td className="px-3 py-2">{view.cashGap ?? (view.feeIncomeCents == null ? FEE_NEEDED : money(row.feeIncomeCents))}</td>
+                  <td className="px-3 py-2">{view.cashGap ?? money(row.feeIncomeCents)}</td>
                 </tr>
               ))}
             </tbody>
@@ -299,9 +315,12 @@ export function ModelDetail({
                 {deal.gap ? <p className="text-sm text-gold-700">{deal.gap}</p> : null}
                 {deal.excluded ? <p className="text-sm text-navy-900">{deal.exclusions.join(" · ")}</p> : (
                   <p className="text-sm text-ink-700">
-                    LP net IRR {deal.lpNetIrrBps == null && deal.lpIrrNote ? deal.lpIrrNote : percent(deal.lpNetIrrBps)} · Y1 {percent(deal.lpYear1YieldBps)} · avg {percent(deal.lpAvgYieldBps)}
+                    LP net IRR {showIrr(deal.lpNetIrrBps, null, deal.lpIrrNote)} · Y1 {percent(deal.lpYear1YieldBps)} · avg {percent(deal.lpAvgYieldBps)}
                   </p>
                 )}
+                {deal.notes.map((note) => (
+                  <p key={note} className="text-sm text-gold-700">{cashNote(note, deal.feeAccruedUnpaidCents)}</p>
+                ))}
               </div>
               <button type="button" disabled={busy} onClick={() => void remove(deal.code)} className="border border-navy-900 px-3 py-1 text-[12px] uppercase tracking-[0.14em]">
                 Remove
@@ -314,8 +333,8 @@ export function ModelDetail({
         <h2 className="font-display text-2xl text-navy-900">Concentration</h2>
         <ul className="mt-2 divide-y divide-cream-300 border border-cream-300 bg-white text-sm">
           {view.concentration.map((row) => (
-            <li key={`${row.dimension}-${row.label}`} className={`flex flex-wrap justify-between gap-2 px-3 py-2 ${row.breached ? "bg-gold-100" : ""}`}>
-              <span>{row.dimension}: {row.label}{row.breached ? " · fails criteria" : ""}</span>
+            <li key={`${row.dimension}-${row.label}`} className="flex flex-wrap justify-between gap-2 px-3 py-2">
+              <span>{row.dimension}: {row.label}</span>
               <span>{money(row.equityCents)} · {(row.shareBps / 100).toFixed(2)}%</span>
             </li>
           ))}
@@ -405,7 +424,7 @@ export function ModelFeesForm({ gaBudgetCents }: { gaBudgetCents: number | null 
     setMessage(null);
     try {
       await send("/api/models/fees", "POST", { gaBudgetUsd: ga });
-      setMessage(ga.trim() ? "G&A budget saved." : FEE_NEEDED);
+      setMessage(ga.trim() ? "G&A budget saved." : GA_BUDGET_NEEDED);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save G&A.");
@@ -417,13 +436,13 @@ export function ModelFeesForm({ gaBudgetCents }: { gaBudgetCents: number | null 
   return (
     <section className="max-w-xl border border-cream-300 bg-cream-50 p-4">
       <p className="text-sm text-ink-700">
-        OpCo G&amp;A is one budget for every Model. Deal AM fees and other LP fees are typed on the deal profile. A blank stays {FEE_NEEDED}. Nothing here is guessed, and nothing is posted to the books.
+        OpCo G&amp;A is one budget for every Model. Deal AM fees and other LP fees are typed on the deal profile. A blank budget stays {GA_BUDGET_NEEDED}. A blank deal fee stays {FEE_NEEDED}. Nothing here is guessed, and nothing is posted to the books.
       </p>
       <label className="mt-3 block text-sm">
         OpCo G&amp;A budget (USD)
-        <input className="mt-1 w-full border border-cream-300 px-3 py-2" value={ga} placeholder={FEE_NEEDED} onChange={(event) => setGa(event.target.value)} />
+        <input className="mt-1 w-full border border-cream-300 px-3 py-2" value={ga} placeholder={GA_BUDGET_NEEDED} onChange={(event) => setGa(event.target.value)} />
       </label>
-      {ga.trim() ? null : <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gold-700">{FEE_NEEDED}</p>}
+      {ga.trim() ? null : <p className="mt-1 text-xs uppercase tracking-[0.14em] text-gold-700">{GA_BUDGET_NEEDED}</p>}
       <button type="button" disabled={busy} onClick={() => void save()} className="mt-3 bg-navy-900 px-4 py-2 text-[12px] uppercase tracking-[0.14em] text-cream-50 disabled:opacity-40">
         Save G&amp;A
       </button>

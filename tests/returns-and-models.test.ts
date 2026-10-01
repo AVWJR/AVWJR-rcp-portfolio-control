@@ -1,10 +1,15 @@
-import { applyWaterfallTemplate, buildIncomeStatement, CASH_SHORTFALL_NOTE, dollars, FEE_EXCEEDS_CASH_NOTE, runDealProforma, runWaterfall } from "@rcp/ledger";
+import { DatabaseSync } from "node:sqlite";
+import path from "node:path";
+import { applyWaterfallTemplate, CASH_SHORTFALL_NOTE, dollars, FEE_ACCRUED_UNPAID_NOTE, FEE_EXCEEDS_CASH_NOTE, FEE_UNPAID_AT_EXIT_NOTE, runDealProforma, runWaterfall } from "@rcp/ledger";
+import { buildOpCoDashboard } from "@/lib/dashboards";
+import { openPeriod } from "@/lib/deals/periods";
 import { createEntityWithCoa } from "@/lib/entities";
 import { evaluateCriterion, type LibraryFact } from "@/lib/library/criteria";
-import { FEE_NEEDED } from "@/lib/library/fees";
+import { FEE_NEEDED, GA_BUDGET_NEEDED } from "@/lib/library/fees";
 import { loadLibraryRows } from "@/lib/library/facts";
 import { membershipDecision, MAX_COMPARE } from "@/lib/models/membership";
 import { projectModel, type ModelDealInput } from "@/lib/models/project";
+import { toModelView } from "@/lib/models/view";
 import {
   addModelDeal,
   compareModelProjections,
@@ -15,44 +20,31 @@ import {
   removeModelDeal,
   updateModelAssumptions,
 } from "@/lib/models/store";
+import { postJournal } from "@/lib/post-journal";
 import { prisma } from "@/lib/prisma";
-import { loadPostedLines } from "@/lib/queries";
 import { cashFlowsFromDates, solveIrr } from "@/lib/returns/irr";
 import { resolveAnnualFee } from "@/lib/returns/fees";
-import { EXIT_VALUE_NEEDED, projectDealReturns } from "@/lib/returns/project-deal";
+import { EXIT_VALUE_NEEDED, exitValueNeededFor, LOAN_EXCEEDS_EXIT_NOTE, projectDealReturns, resolveEquityRequiredCents } from "@/lib/returns/project-deal";
+import { saveSpeWaterfall } from "@/lib/waterfall";
 import { afterAll, describe, expect, it } from "vitest";
 
-/** Demo-only trailing NOI through 2026-08, using the given Period ids. Read-only. */
-async function demoT12(periodIds: string[]): Promise<{ months: number; noi: bigint }> {
-  if (!periodIds.length) return { months: 0, noi: 0n };
-  const periods = await prisma.period.findMany({
-    where: {
-      id: { in: periodIds },
-      OR: [{ year: { lt: 2026 } }, { year: 2026, month: { lte: 8 } }],
-    },
-    orderBy: [{ entityId: "asc" }, { year: "asc" }, { month: "asc" }],
-    select: { entityId: true, startDate: true, endDate: true },
-  });
-  const byEntity = new Map<string, typeof periods>();
-  for (const period of periods) {
-    const list = byEntity.get(period.entityId) ?? [];
-    list.push(period);
-    byEntity.set(period.entityId, list);
-  }
-  const series: bigint[][] = [];
-  for (const rows of byEntity.values()) {
-    const values: bigint[] = [];
-    for (const period of rows) {
-      const inPeriod = await loadPostedLines({ entityIds: [period.entityId], from: period.startDate, to: period.endDate });
-      const throughEnd = await loadPostedLines({ entityIds: [period.entityId], through: period.endDate });
-      values.push(buildIncomeStatement({ throughEnd, inPeriod }).noi);
+/** Holds a reserved write lock so other vitest workers cannot change books between the two dashboards. */
+async function withWritersBlocked<T>(fn: () => Promise<T>): Promise<T> {
+  const spec = (process.env.DATABASE_URL ?? "file:./dev.db").replace(/^file:/, "");
+  const dbPath = path.isAbsolute(spec) ? spec : path.resolve(process.cwd(), "prisma", spec);
+  const db = new DatabaseSync(dbPath);
+  db.exec("PRAGMA busy_timeout = 30000");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    return await fn();
+  } finally {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      /* the lock connection may already be closed */
     }
-    series.push(values);
+    db.close();
   }
-  const months = Math.max(0, ...series.map((row) => row.length));
-  let noi = 0n;
-  for (let i = 0; i < months; i += 1) noi += series.reduce((acc, row) => acc + (row[i] ?? 0n), 0n);
-  return { months, noi };
 }
 
 /** Counts write calls on this process's Prisma delegate. Other test files have their own client. */
@@ -280,7 +272,55 @@ describe("LP cash yield and fees", () => {
     });
     expect(carried.notes).toContain(FEE_EXCEEDS_CASH_NOTE);
     expect(carried.years[0]?.operationsCents).toBe(0n);
+    expect(carried.years[0]?.feePaidCents).toBe(dollars(100));
     expect(carried.years[1]?.operationsCents).toBe(dollars(60));
+    expect(carried.years[1]?.feeAccruedCents).toBe(0n);
+
+    const cleared = projectDealReturns(
+      baseInput({
+        holdYears: 2,
+        year1CfadsCents: dollars(100),
+        growthBps: 10_000,
+        exitEquityProceedsCents: dollars(1_000),
+        amFeeBps: 0,
+        otherLpFeeCents: dollars(120),
+        purchasePriceCents: dollars(1),
+      }),
+    );
+    expect(cleared.notes).toContain(FEE_EXCEEDS_CASH_NOTE);
+    expect(cleared.notes).not.toContain(FEE_ACCRUED_UNPAID_NOTE);
+    expect(cleared.notes).not.toContain(FEE_UNPAID_AT_EXIT_NOTE);
+    expect(cleared.feeAccruedUnpaidCents).toBe(0n);
+    expect(cleared.years[0]?.feePaidCents).toBe(dollars(100));
+
+    const unpaidExit = runDealProforma({
+      config: applyWaterfallTemplate("simple_pref_promote"),
+      ...CAPITAL,
+      holdYears: 1,
+      year1CfadsCents: dollars(100),
+      cfadsGrowthBps: 0,
+      exitEquityProceedsCents: dollars(10),
+      operationsDeductionCents: dollars(120),
+    });
+    expect(unpaidExit.years[0]?.distributableCents).toBe(0n);
+    expect(unpaidExit.years[0]?.feePaidCents).toBe(dollars(100));
+    expect(unpaidExit.years[0]?.feeAccruedCents).toBe(dollars(10));
+    expect(unpaidExit.notes).toContain(FEE_UNPAID_AT_EXIT_NOTE);
+    expect(unpaidExit.notes).toContain(FEE_ACCRUED_UNPAID_NOTE);
+
+    const salePays = runDealProforma({
+      config: applyWaterfallTemplate("simple_pref_promote"),
+      ...CAPITAL,
+      holdYears: 1,
+      year1CfadsCents: dollars(100),
+      cfadsGrowthBps: 0,
+      exitEquityProceedsCents: dollars(50),
+      operationsDeductionCents: dollars(120),
+    });
+    expect(salePays.years[0]?.exitCents).toBe(dollars(30));
+    expect(salePays.years[0]?.distributableCents).toBe(dollars(30));
+    expect(salePays.years[0]?.feeAccruedCents).toBe(0n);
+    expect(salePays.notes).not.toContain(FEE_UNPAID_AT_EXIT_NOTE);
   });
 });
 
@@ -383,11 +423,13 @@ describe("Model membership and projection", () => {
       deals: [dealInput("SPE-S", "SCREENED", true)],
     });
     expect(noExit.lpNetIrrBps).toBeNull();
-    expect(noExit.lpIrrNote).toBe(EXIT_VALUE_NEEDED);
-    expect(noExit.rcpMultipleNote).toBe(EXIT_VALUE_NEEDED);
+    expect(noExit.lpIrrNote).toBe(exitValueNeededFor(1));
+    expect(noExit.rcpIrrNote).toBe(exitValueNeededFor(1));
+    expect(noExit.rcpMultipleNote).toBe(exitValueNeededFor(1));
     expect(noExit.rcpEquityMultipleBps).toBeNull();
     expect(noExit.lpYear1YieldBps).not.toBeNull();
     expect(noExit.cashGap).toBeNull();
+    expect(noExit.lpIrrGapDeals).toEqual(["SPE-S"]);
 
     const mixed = projectModel({
       assumptions: { holdYears: 5, growthBps: 0, exitCapRateBps: 500, opcoPrefRateBps: 800, opcoPrefCapitalCents: dollars(1_000_000), opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
@@ -398,7 +440,16 @@ describe("Model membership and projection", () => {
     expect(mixed.cashGap).toBe(FEE_NEEDED);
     expect(mixed.feeIncomeCents).toBeNull();
     expect(mixed.years.length).toBeGreaterThan(0);
-    expect(mixed.years.every((row) => row.lpCents === 0n && row.rcpCents === 0n && row.feeIncomeCents === 0n)).toBe(true);
+    expect(mixed.years.every((row) => row.lpCents === null && row.rcpCents === null && row.feeIncomeCents === null)).toBe(true);
+    const mixedView = toModelView({
+      id: "mixed",
+      name: "Mixed",
+      kind: "LIVE",
+      assumptions: { holdYears: 5, growthBps: 0, exitCapRateBps: 500, opcoPrefRateBps: 800, opcoPrefCapitalCents: dollars(1_000_000), opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      projection: mixed,
+    });
+    expect(mixedView.years[0]).toEqual({ year: 1, rcpCents: null, lpCents: null, feeIncomeCents: null });
     expect(mixed.notes.join(" ")).toMatch(/fee needed/);
     expect(mixed.notes.join(" ")).not.toMatch(/blank until both/);
 
@@ -417,6 +468,97 @@ describe("Model membership and projection", () => {
       { id: "irr", field: "lpNetIrr", operator: "gte", value: 15, role: "HARD_LIMIT" },
     );
     expect(limit?.reason).toMatch(/exit value needed/);
+
+    const blankBudget = projectModel({
+      assumptions: { holdYears: 1, growthBps: 0, exitCapRateBps: 500, opcoPrefRateBps: null, opcoPrefCapitalCents: null, opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      gaBudgetCents: null,
+      deals: [dealInput("SPE-S", "SCREENED", true)],
+    });
+    expect(blankBudget.gaGap).toBe(GA_BUDGET_NEEDED);
+    expect(blankBudget.feeIncomeCents).toBe(dollars(100_000));
+    expect(blankBudget.cashGap).toBeNull();
+  });
+
+  it("treats a missing exit and an underwater loan differently, and blocks a combined IRR when any deal is gapped", () => {
+    const unvalued = projectDealReturns(baseInput({ exitCapRateBps: 500, year1NoiCents: 0n, upbCents: dollars(8_000_000) }));
+    expect(unvalued.exitGap).toBe(true);
+    expect(unvalued.lpNetIrrBps).toBeNull();
+    expect(unvalued.lpIrrNote).toBe(EXIT_VALUE_NEEDED);
+    expect(unvalued.rcpEquityMultipleNote).toBe(EXIT_VALUE_NEEDED);
+    expect(unvalued.notes).not.toContain(LOAN_EXCEEDS_EXIT_NOTE);
+
+    const underwater = projectDealReturns(
+      baseInput({
+        exitCapRateBps: 500,
+        year1NoiCents: dollars(1_200_000),
+        upbCents: dollars(30_000_000),
+        year1CfadsCents: dollars(12_000_000),
+      }),
+    );
+    expect(underwater.exitGap).toBe(false);
+    expect(underwater.exitEquityProceedsCents).toBe(0n);
+    expect(underwater.lpNetIrrBps).not.toBeNull();
+    expect(underwater.rcpIrrBps).not.toBeNull();
+    expect(underwater.rcpEquityMultipleBps).not.toBeNull();
+    expect(underwater.lpIrrNote).toBe(LOAN_EXCEEDS_EXIT_NOTE);
+    expect(underwater.notes).toContain(LOAN_EXCEEDS_EXIT_NOTE);
+    expect(underwater.notes).not.toContain(EXIT_VALUE_NEEDED);
+    expect(underwater.lpYear1CashYieldBps).not.toBeNull();
+
+    const valued = dealInput("SPE-OK", "SCREENED", true);
+    const gapped = dealInput("SPE-GAP", "SCREENED", true);
+    gapped.annualizedNoiCents = 0n;
+    const combined = projectModel({
+      assumptions: { holdYears: 1, growthBps: 0, exitCapRateBps: 500, opcoPrefRateBps: null, opcoPrefCapitalCents: null, opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      gaBudgetCents: dollars(50_000),
+      deals: [valued, gapped],
+    });
+    expect(combined.lpNetIrrBps).toBeNull();
+    expect(combined.rcpIrrBps).toBeNull();
+    expect(combined.rcpEquityMultipleBps).toBeNull();
+    expect(combined.lpIrrNote).toBe(exitValueNeededFor(1));
+    expect(combined.rcpIrrNote).toBe(exitValueNeededFor(1));
+    expect(combined.rcpMultipleNote).toBe(exitValueNeededFor(1));
+    expect(combined.lpIrrGapDeals).toEqual(["SPE-GAP"]);
+    expect(combined.lpIrrMinBps).not.toBeNull();
+    expect(combined.lpIrrMaxBps).toBe(combined.lpIrrMinBps);
+    expect(combined.deals.find((deal) => deal.code === "SPE-OK")?.metrics?.lpNetIrrBps).not.toBeNull();
+    expect(combined.deals.find((deal) => deal.code === "SPE-GAP")?.metrics?.lpIrrNote).toBe(EXIT_VALUE_NEEDED);
+  });
+
+  it("counts fee income from cash after debt service and keeps unpaid fees out of that total", () => {
+    const payable = dealInput("SPE-PAY", "SCREENED", true);
+    payable.returns = { ...payable.returns, year1CfadsCents: dollars(100_000) };
+    const shortB = dealInput("SPE-B", "SCREENED", true);
+    shortB.returns = { ...shortB.returns, year1CfadsCents: 0n };
+    const shortC = dealInput("SPE-C", "SCREENED", true);
+    shortC.returns = { ...shortC.returns, year1CfadsCents: 0n };
+    const model = projectModel({
+      assumptions: { holdYears: 1, growthBps: 0, exitCapRateBps: null, opcoPrefRateBps: null, opcoPrefCapitalCents: null, opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      gaBudgetCents: dollars(50_000),
+      deals: [payable, shortB, shortC],
+    });
+    expect(model.feeIncomeCents).toBe(dollars(100_000));
+    expect(model.years[0]?.feeIncomeCents).toBe(dollars(100_000));
+    expect(model.feeAccruedUnpaidCents).toBe(dollars(200_000));
+    expect(model.gaCoverageBps).toBe(20_000);
+    expect(model.notes.join(" ")).toContain(FEE_ACCRUED_UNPAID_NOTE);
+    expect(model.notes.join(" ")).toContain(FEE_UNPAID_AT_EXIT_NOTE);
+    expect(model.notes.join(" ")).toContain(FEE_EXCEEDS_CASH_NOTE);
+    const view = toModelView({
+      id: "fees",
+      name: "Fees",
+      kind: "LIVE",
+      assumptions: { holdYears: 1, growthBps: 0, exitCapRateBps: null, opcoPrefRateBps: null, opcoPrefCapitalCents: null, opcoLpSplitBps: 8000, opcoGpSplitBps: 2000 },
+      criteria: [],
+      projection: model,
+    });
+    expect(view.deals.find((deal) => deal.code === "SPE-B")?.notes).toContain(FEE_ACCRUED_UNPAID_NOTE);
+    expect(view.deals.find((deal) => deal.code === "SPE-B")?.feeAccruedUnpaidCents).toBe(Number(dollars(100_000)));
+    expect(view.deals.find((deal) => deal.code === "SPE-PAY")?.notes).not.toContain(FEE_ACCRUED_UNPAID_NOTE);
   });
 });
 
@@ -487,25 +629,9 @@ describe("Models do not move the OpCo roll-up", () => {
     expect(demosAfter).toEqual(demosBefore);
   }, 60_000);
 
-  it("reads the library and a model without opening periods or moving the T12 tile", async () => {
+  it("reads the library and a model without opening periods or moving the OpCo T12", async () => {
     const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
     if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
-    const demoCodes = ["SPE-WBG", "SPE-CVC", "SPE-HCR"];
-    const demoPeriodsBefore = await prisma.period.findMany({
-      where: { entity: { code: { in: demoCodes } } },
-      select: { id: true },
-    });
-    const demoPeriodIds = demoPeriodsBefore.map((row) => row.id);
-    const checksBefore = demoPeriodIds.length
-      ? await prisma.closeChecklistItem.count({ where: { periodId: { in: demoPeriodIds } } })
-      : 0;
-    const linesBefore = await prisma.journalLine.findMany({
-      where: { journal: { entity: { code: { in: demoCodes } }, status: "POSTED" } },
-      select: { id: true, debit: true, credit: true },
-      orderBy: { id: "asc" },
-    });
-    const tileBefore = await demoT12(demoPeriodIds);
-
     const suffix = Date.now().toString(36).toUpperCase().slice(-4);
     const owned = await createEntityWithCoa({
       code: `SPE-O${suffix}`,
@@ -515,49 +641,74 @@ describe("Models do not move the OpCo roll-up", () => {
       dealStatus: "OWNED",
     });
     ids.push(owned.id);
-    const live = await createModel({ name: `Read ${suffix}`, kind: "LIVE" });
-    modelIds.push(live.id);
-
-    const periodWrites = watchWrites(prisma.period, ["create", "createMany", "upsert", "update", "updateMany", "delete", "deleteMany"]);
-    const checklistWrites = watchWrites(prisma.closeChecklistItem, ["create", "createMany", "upsert", "update", "updateMany"]);
-    const journalWrites = watchWrites(prisma.journal, ["create", "createMany"]);
-    try {
-      await loadLibraryRows();
-      await addModelDeal(live.id, owned.code);
-      await updateModelAssumptions(live.id, { holdYears: 4, growthPercent: 1, exitCapPercent: "", opcoPrefPercent: "", opcoPrefCapitalUsd: "" });
-      await loadModelProjection(live.id);
-      await loadModelProjection(live.id, 2030, 1);
-      await loadLibraryRows();
-      expect(periodWrites.calls, "Period writes").toEqual([]);
-      expect(checklistWrites.calls, "checklist writes").toEqual([]);
-      expect(journalWrites.calls, "journal writes").toEqual([]);
-    } finally {
-      periodWrites.restore();
-      checklistWrites.restore();
-      journalWrites.restore();
-    }
-
-    if (demoPeriodIds.length) {
-      expect(await prisma.period.count({ where: { id: { in: demoPeriodIds } } })).toBe(demoPeriodIds.length);
-      expect(await prisma.closeChecklistItem.count({ where: { periodId: { in: demoPeriodIds } } })).toBe(checksBefore);
-    }
-    const linesAfter = await prisma.journalLine.findMany({
-      where: { journal: { entity: { code: { in: demoCodes } }, status: "POSTED" } },
-      select: { id: true, debit: true, credit: true },
-      orderBy: { id: "asc" },
+    const period = await openPeriod(owned.id, 2026, 8);
+    await postJournal({
+      entityId: owned.id,
+      periodId: period.id,
+      date: period.startDate,
+      memo: "Owned rent for the library read test",
+      lines: [
+        { accountCode: "1010", debit: dollars(50_000), credit: 0n },
+        { accountCode: "4010", debit: 0n, credit: dollars(50_000) },
+      ],
     });
-    const demoPeriodsAfter = await prisma.period.count({ where: { entity: { code: { in: demoCodes } } } });
-    const booksUnchanged =
-      demoPeriodsAfter === demoPeriodIds.length &&
-      linesAfter.length === linesBefore.length &&
-      linesAfter.every((line, index) => {
-        const before = linesBefore[index];
-        return before != null && line.id === before.id && line.debit === before.debit && line.credit === before.credit;
-      });
-    if (booksUnchanged) {
-      const tileAfter = await demoT12(demoPeriodIds);
-      expect(tileAfter.months).toBe(tileBefore.months);
-      expect(tileAfter.noi).toBe(tileBefore.noi);
-    }
+
+    await withWritersBlocked(async () => {
+      const before = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
+      const periodWrites = watchWrites(prisma.period, ["create", "createMany", "upsert", "update", "updateMany", "delete", "deleteMany"]);
+      const checklistWrites = watchWrites(prisma.closeChecklistItem, ["create", "createMany", "upsert", "update", "updateMany"]);
+      const journalWrites = watchWrites(prisma.journal, ["create", "createMany"]);
+      const live = await createModel({ name: `Read ${suffix}`, kind: "LIVE" });
+      modelIds.push(live.id);
+      try {
+        await loadLibraryRows();
+        await addModelDeal(live.id, owned.code);
+        await loadModelProjection(live.id);
+        await updateModelAssumptions(live.id, { holdYears: 4, growthPercent: 1, exitCapPercent: "", opcoPrefPercent: "", opcoPrefCapitalUsd: "" });
+        await loadModelProjection(live.id, 2030, 1);
+        await deleteModel(live.id);
+        modelIds.splice(modelIds.indexOf(live.id), 1);
+        await loadLibraryRows();
+        expect(periodWrites.calls, "Period writes").toEqual([]);
+        expect(checklistWrites.calls, "checklist writes").toEqual([]);
+        expect(journalWrites.calls, "journal writes").toEqual([]);
+      } finally {
+        periodWrites.restore();
+        checklistWrites.restore();
+        journalWrites.restore();
+      }
+      const after = await buildOpCoDashboard({ opcoId: opco.id, year: 2026, month: 8 });
+      expect(after.t12.monthsAvailable).toBe(before.t12.monthsAvailable);
+      expect(after.t12.noiCents).toBe(before.t12.noiCents);
+      const tile = (dash: typeof before) => dash.tiles.find((row) => row.id === "noi_t12")?.display;
+      expect(tile(after)).toBe(tile(before));
+    });
   }, 60_000);
+
+  it("shows library equity from the same helper Models use", async () => {
+    const opco = await prisma.entity.findUnique({ where: { code: "RCP-OPCO" } });
+    if (!opco) throw new Error("Seed RCP-OPCO before running this test (npm run db:reset)");
+    const suffix = Date.now().toString(36).toUpperCase().slice(-4);
+    const entity = await createEntityWithCoa({
+      code: `SPE-E${suffix}`,
+      name: `Equity ${suffix}`,
+      type: "SPE",
+      parentId: opco.id,
+      dealStatus: "PIPELINE",
+    });
+    ids.push(entity.id);
+    const lp = dollars(9_000_000);
+    await saveSpeWaterfall(entity.id, {
+      ...applyWaterfallTemplate("simple_pref_promote"),
+      gpCoInvestBps: 1_000,
+      lpContributedCents: lp,
+      unreturnedCapitalCents: lp,
+      unpaidPrefCents: 0n,
+      prefPaidToDateCents: 0n,
+    });
+    const expected = resolveEquityRequiredCents({ lpContributedCents: lp, gpCoInvestBps: 1_000, snapshotCents: null });
+    const row = (await loadLibraryRows()).find((item) => item.code === entity.code);
+    expect(expected).toBe(dollars(10_000_000));
+    expect(row?.equityRequiredCents).toBe(Number(expected));
+  });
 });

@@ -178,7 +178,7 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
     pattern: "/models/fees",
     test: /^\/models\/fees$/,
     title: "Model fees",
-    hints: ["OpCo G&A budget for Model coverage. Blank stays fee needed. Deal AM fees stay on the deal profile."],
+    hints: ["OpCo G&A budget for Model coverage. Blank stays G&A budget needed. Deal AM fees stay on the deal profile."],
   },
   {
     pattern: "/models/[id]/assumptions",

@@ -1,6 +1,8 @@
 import {
   CASH_SHORTFALL_NOTE,
+  FEE_ACCRUED_UNPAID_NOTE,
   FEE_EXCEEDS_CASH_NOTE,
+  FEE_UNPAID_AT_EXIT_NOTE,
   growCents,
   isLookThroughTemplate,
   runDealProforma,
@@ -10,8 +12,26 @@ import { IRR_NOT_AVAILABLE, rateToBps, solveIrr, type IrrCashFlow } from "./irr"
 import { resolveAnnualFee, type FeeInputs } from "./fees";
 
 export const EXIT_VALUE_NEEDED = "exit value needed";
+export const LOAN_EXCEEDS_EXIT_NOTE = "loan exceeds exit value, no sale proceeds";
 export const DEBT_SERVICE_NEEDED = "debt service needed";
 export const RETURNS_BASIS = "after debt service and fees";
+
+const CASH_NOTES = new Set<string>([
+  CASH_SHORTFALL_NOTE,
+  FEE_EXCEEDS_CASH_NOTE,
+  FEE_ACCRUED_UNPAID_NOTE,
+  FEE_UNPAID_AT_EXIT_NOTE,
+  LOAN_EXCEEDS_EXIT_NOTE,
+]);
+
+export function exitValueNeededFor(count: number): string {
+  return count === 1 ? "exit value needed for 1 deal" : `exit value needed for ${count} deals`;
+}
+
+/** Cash, fee, and loan notes that belong on a deal row. IRR gap phrases stay on the IRR cell. */
+export function dealCashNotes(notes: string[]): string[] {
+  return notes.filter((note) => CASH_NOTES.has(note));
+}
 
 /**
  * LP and RCP returns as a thin layer on runDealProforma.
@@ -55,12 +75,20 @@ export type DealReturnMetrics = {
   rcpYear1CashOnCashBps: number | null;
   rcpAvgCashOnCashBps: number | null;
   rcpEquityMultipleBps: number | null;
+  /** True only when no exit was entered, or NOI cannot value the property. */
+  exitGap: boolean;
+  /** Exit equity passed into the waterfall. Zero when the loan consumes the sale. */
+  exitEquityProceedsCents: bigint;
+  /** Fee still unpaid after the exit-year sale attempt. */
+  feeAccruedUnpaidCents: bigint;
   years: {
     year: number;
     lpCents: bigint;
     lpOperatingCents: bigint;
     rcpCents: bigint;
     rcpOperatingCents: bigint;
+    /** Fee paid from operating cash after debt service. Sale payoff is not included. */
+    feePaidCents: bigint;
   }[];
   notes: string[];
 };
@@ -71,22 +99,17 @@ export function exitEquityFromCap(opts: {
   growthBps: number;
   holdYears: number;
   upbCents: bigint;
-}): { proceedsCents: bigint; note: string | null } {
-  if (opts.exitCapRateBps == null) {
-    return { proceedsCents: 0n, note: "Exit value is not set. Sale proceeds are not guessed." };
-  }
-  if (opts.exitCapRateBps <= 0) {
-    return { proceedsCents: 0n, note: "Exit cap rate must be above zero. Sale proceeds were not guessed." };
-  }
-  if (opts.year1NoiCents <= 0n) {
-    return { proceedsCents: 0n, note: "Exit value needs NOI. Sale proceeds were not guessed." };
+}): { proceedsCents: bigint; exitGap: boolean; note: string | null } {
+  if (opts.exitCapRateBps == null || opts.exitCapRateBps <= 0 || opts.year1NoiCents <= 0n) {
+    return { proceedsCents: 0n, exitGap: true, note: EXIT_VALUE_NEEDED };
   }
   const exitNoi = growCents(opts.year1NoiCents, opts.growthBps, Math.max(0, opts.holdYears - 1));
-  if (exitNoi <= 0n) return { proceedsCents: 0n, note: "Exit value needs NOI. Sale proceeds were not guessed." };
+  if (exitNoi <= 0n) return { proceedsCents: 0n, exitGap: true, note: EXIT_VALUE_NEEDED };
   const gross = (exitNoi * 10_000n) / BigInt(opts.exitCapRateBps);
   const debt = opts.upbCents > 0n ? opts.upbCents : 0n;
   const equity = gross - debt;
-  return { proceedsCents: equity > 0n ? equity : 0n, note: null };
+  if (equity <= 0n) return { proceedsCents: 0n, exitGap: false, note: LOAN_EXCEEDS_EXIT_NOTE };
+  return { proceedsCents: equity, exitGap: false, note: null };
 }
 
 /** Snapshot equity when it is on file, otherwise LP equity grossed up for GP co-invest. */
@@ -140,6 +163,9 @@ function emptyMetrics(gap: string, notes: string[] = []): DealReturnMetrics {
     rcpYear1CashOnCashBps: null,
     rcpAvgCashOnCashBps: null,
     rcpEquityMultipleBps: null,
+    exitGap: false,
+    exitEquityProceedsCents: 0n,
+    feeAccruedUnpaidCents: 0n,
     years: [],
     notes,
   };
@@ -151,15 +177,20 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   if (input.annualDebtServiceCents == null) return emptyMetrics(DEBT_SERVICE_NEEDED);
   const annualDebt = input.annualDebtServiceCents > 0n ? input.annualDebtServiceCents : 0n;
 
-  const cap = exitEquityFromCap({
-    exitCapRateBps: input.exitCapRateBps,
-    year1NoiCents: input.year1NoiCents ?? 0n,
-    growthBps: input.growthBps,
-    holdYears: input.holdYears,
-    upbCents: input.upbCents ?? 0n,
-  });
-  const exit = input.exitEquityProceedsCents > 0n ? input.exitEquityProceedsCents : cap.proceedsCents;
-  const notes = [...(cap.note && input.exitEquityProceedsCents <= 0n ? [cap.note] : [])];
+  const explicitExit = input.exitEquityProceedsCents > 0n;
+  const cap = explicitExit
+    ? { proceedsCents: input.exitEquityProceedsCents, exitGap: false, note: null }
+    : exitEquityFromCap({
+        exitCapRateBps: input.exitCapRateBps,
+        year1NoiCents: input.year1NoiCents ?? 0n,
+        growthBps: input.growthBps,
+        holdYears: input.holdYears,
+        upbCents: input.upbCents ?? 0n,
+      });
+  const exit = cap.proceedsCents;
+  const exitGap = cap.exitGap;
+  const exitNote = cap.note;
+  const notes: string[] = [];
 
   const proforma = runDealProforma({
     config: input.config,
@@ -190,7 +221,9 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     lpOperatingCents: row.lpOperatingCents,
     rcpCents: row.rcpCents,
     rcpOperatingCents: row.rcpOperatingCents,
+    feePaidCents: row.feePaidCents,
   }));
+  const feeAccruedUnpaidCents = proforma.years.at(-1)?.feeAccruedCents ?? 0n;
 
   const lpFlows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }];
   const rcpFlows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }];
@@ -206,7 +239,6 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
   }
 
   const n = BigInt(years.length || 1);
-  const saleUnset = exit <= 0n;
   let gap: string | null = null;
   let lpNetIrrBps: number | null = null;
   let lpIrrNote: string | null = null;
@@ -218,11 +250,12 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     const year1Ops = years[0]?.lpOperatingCents ?? 0n;
     lpYear1 = yieldBps(year1Ops, lpEquity);
     lpAvg = yieldBps(lpOps / n, lpEquity);
-    if (saleUnset) lpIrrNote = EXIT_VALUE_NEEDED;
+    if (exitGap) lpIrrNote = EXIT_VALUE_NEEDED;
     else {
       const irr = solveIrr(lpFlows);
       lpNetIrrBps = rateToBps(irr.rate);
       if (irr.reason && lpNetIrrBps == null) lpIrrNote = IRR_NOT_AVAILABLE;
+      else if (exitNote) lpIrrNote = exitNote;
     }
   }
 
@@ -238,21 +271,24 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     const year1Ops = years[0]?.rcpOperatingCents ?? 0n;
     rcpYear1 = yieldBps(year1Ops, rcpEquity);
     rcpAvg = yieldBps(rcpOps / n, rcpEquity);
-    if (saleUnset) {
+    if (exitGap) {
       rcpIrrNote = EXIT_VALUE_NEEDED;
       rcpMultipleNote = EXIT_VALUE_NEEDED;
     } else {
       const irr = solveIrr(rcpFlows);
       rcpIrrBps = rateToBps(irr.rate);
       if (irr.reason && rcpIrrBps == null) rcpIrrNote = IRR_NOT_AVAILABLE;
+      else if (exitNote) rcpIrrNote = exitNote;
       multiple = yieldBps(rcpTotal, rcpEquity);
     }
   }
   for (const note of [lpIrrNote, rcpIrrNote]) {
     if (note && !notes.includes(note)) notes.push(note);
   }
+  if (exitNote && !exitGap && !notes.includes(exitNote)) notes.push(exitNote);
   for (const note of proforma.notes) {
-    if ((note === CASH_SHORTFALL_NOTE || note === FEE_EXCEEDS_CASH_NOTE) && !notes.includes(note)) notes.push(note);
+    if (note === FEE_ACCRUED_UNPAID_NOTE && feeAccruedUnpaidCents <= 0n) continue;
+    if (CASH_NOTES.has(note) && !notes.includes(note)) notes.push(note);
   }
 
   return {
@@ -271,6 +307,9 @@ export function projectDealReturns(input: DealReturnInput): DealReturnMetrics {
     rcpYear1CashOnCashBps: rcpYear1,
     rcpAvgCashOnCashBps: rcpAvg,
     rcpEquityMultipleBps: multiple,
+    exitGap,
+    exitEquityProceedsCents: exit,
+    feeAccruedUnpaidCents,
     years,
     notes,
   };

@@ -234,6 +234,20 @@ describe("Expert how-to coverage", () => {
     }
   });
 
+  it("describes returns after debt service and the exit and fee notes", () => {
+    const prompt = readFileSync(path.join(ROOT, "src/lib/expert/system-prompt.ts"), "utf8");
+    const howtos = readFileSync(path.join(ROOT, "src/lib/expert/howtos.ts"), "utf8");
+    expect(prompt).not.toMatch(/after the AM fee/);
+    expect(prompt).toMatch(/after debt service and fees/);
+    expect(howtos).toMatch(/after debt service and fees/);
+    for (const phrase of ["exit value needed", "cash shortfall, no distribution", "fee accrued, unpaid", "loan exceeds exit value"]) {
+      expect(prompt, phrase).toContain(phrase);
+      expect(howtos, phrase).toContain(phrase);
+    }
+    expect(howtos).toContain("G&A budget needed");
+    expect(howtos).toContain("exit value needed for");
+  });
+
   it("rejects the stale roll-up and naming phrases", () => {
     const files = [
       "src/lib/expert/system-prompt.ts",

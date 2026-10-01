@@ -1,11 +1,11 @@
 import { runOpCoProforma, type DealProformaInput, type OpCoPlatformPrefs } from "@rcp/ledger";
 import { evaluateDeal, type Criterion, type CriterionField, type LibraryFact } from "@/lib/library/criteria";
-import { FEE_NEEDED } from "@/lib/library/fees";
+import { FEE_NEEDED, GA_BUDGET_NEEDED } from "@/lib/library/fees";
 import type { StaleLevel } from "@/lib/library/staleness";
 import { IRR_NOT_AVAILABLE, rateToBps, solveIrr, type IrrCashFlow } from "@/lib/returns/irr";
 import {
-  EXIT_VALUE_NEEDED,
-  exitEquityFromCap,
+  dealCashNotes,
+  exitValueNeededFor,
   projectDealReturns,
   type DealReturnInput,
   type DealReturnMetrics,
@@ -44,9 +44,9 @@ export type ModelDealInput = {
 
 export type ModelYear = {
   year: number;
-  rcpCents: bigint;
-  lpCents: bigint;
-  feeIncomeCents: bigint;
+  rcpCents: bigint | null;
+  lpCents: bigint | null;
+  feeIncomeCents: bigint | null;
 };
 
 export type ConcentrationRow = {
@@ -75,6 +75,7 @@ export type ModelProjection = {
   notes: string[];
   years: ModelYear[];
   feeIncomeCents: bigint | null;
+  feeAccruedUnpaidCents: bigint | null;
   gaCoverageBps: number | null;
   gaGap: string | null;
   rcpEquityCents: bigint | null;
@@ -93,6 +94,7 @@ export type ModelProjection = {
   lpAvgYieldBps: number | null;
   lpIrrMinBps: number | null;
   lpIrrMaxBps: number | null;
+  lpIrrGapDeals: string[];
   lpGap: string | null;
   dscrBps: number | null;
   debtYieldBps: number | null;
@@ -112,8 +114,8 @@ function factFromMetrics(fact: LibraryFact, metrics: DealReturnMetrics): Library
     metricGaps.lpCashYield = metrics.gap;
     metricGaps.rcpIrr = metrics.gap;
   } else {
-    if (metrics.lpIrrNote) metricGaps.lpNetIrr = metrics.lpIrrNote;
-    if (metrics.rcpIrrNote) metricGaps.rcpIrr = metrics.rcpIrrNote;
+    if (metrics.lpNetIrrBps == null && metrics.lpIrrNote) metricGaps.lpNetIrr = metrics.lpIrrNote;
+    if (metrics.rcpIrrBps == null && metrics.rcpIrrNote) metricGaps.rcpIrr = metrics.rcpIrrNote;
   }
   return {
     ...fact,
@@ -130,6 +132,7 @@ function blank(notes: string[], deals: ModelDealResult[]): ModelProjection {
     notes,
     years: [],
     feeIncomeCents: null,
+    feeAccruedUnpaidCents: null,
     gaCoverageBps: null,
     gaGap: null,
     rcpEquityCents: null,
@@ -148,6 +151,7 @@ function blank(notes: string[], deals: ModelDealResult[]): ModelProjection {
     lpAvgYieldBps: null,
     lpIrrMinBps: null,
     lpIrrMaxBps: null,
+    lpIrrGapDeals: [],
     lpGap: null,
     dscrBps: null,
     debtYieldBps: null,
@@ -214,7 +218,7 @@ export function projectModel(opts: {
       growthBps: opts.assumptions.growthBps,
       exitEquityProceedsCents: 0n,
       exitCapRateBps: opts.assumptions.exitCapRateBps,
-      year1NoiCents: input.annualizedNoiCents ?? input.returns.year1CfadsCents,
+      year1NoiCents: input.annualizedNoiCents ?? 0n,
       upbCents: input.upbCents,
     });
     metricsByCode.set(input.code, metrics);
@@ -255,7 +259,7 @@ export function projectModel(opts: {
   const feeReason = feeBlocked?.gap ?? FEE_NEEDED;
   const otherGap = passing.map((row) => metricsByCode.get(row.input.code)?.gap).find((gap) => gap && gap !== feeReason) ?? null;
 
-  let feeIncome = 0n;
+  let feeAccruedUnpaid = 0n;
   let lpEquity = 0n;
   let rcpEquity = 0n;
   let equityRequired = 0n;
@@ -265,11 +269,12 @@ export function projectModel(opts: {
   const yearLpOps = Array.from({ length: hold }, () => 0n);
   const yearRcp = Array.from({ length: hold }, () => 0n);
   const yearRcpOps = Array.from({ length: hold }, () => 0n);
+  const yearFee = Array.from({ length: hold }, () => 0n);
 
   const proformaDeals: DealProformaInput[] = [];
   for (const row of passing) {
     const metrics = metricsByCode.get(row.input.code)!;
-    if (metrics.feeAnnualCents != null) feeIncome += metrics.feeAnnualCents;
+    feeAccruedUnpaid += metrics.feeAccruedUnpaidCents;
     lpEquity += metrics.lpEquityCents;
     rcpEquity += metrics.rcpEquityCents;
     if (row.input.equityRequiredCents != null) {
@@ -283,15 +288,12 @@ export function projectModel(opts: {
       yearLpOps[index] = (yearLpOps[index] ?? 0n) + year.lpOperatingCents;
       yearRcp[index] = (yearRcp[index] ?? 0n) + year.rcpCents;
       yearRcpOps[index] = (yearRcpOps[index] ?? 0n) + year.rcpOperatingCents;
+      yearFee[index] = (yearFee[index] ?? 0n) + year.feePaidCents;
     }
-    const cap = exitEquityFromCap({
-      exitCapRateBps: opts.assumptions.exitCapRateBps,
-      year1NoiCents: row.input.annualizedNoiCents ?? row.input.returns.year1CfadsCents,
-      growthBps: opts.assumptions.growthBps,
-      holdYears: opts.assumptions.holdYears,
-      upbCents: row.input.upbCents,
-    });
-    if (cap.note) notes.push(`${row.input.code}: ${cap.note}`);
+    for (const note of dealCashNotes(metrics.notes)) {
+      const line = `${row.input.code}: ${note}`;
+      if (!notes.includes(line)) notes.push(line);
+    }
     proformaDeals.push({
       config: row.input.returns.config,
       lpContributedCents: row.input.returns.lpContributedCents,
@@ -301,7 +303,7 @@ export function projectModel(opts: {
       holdYears: opts.assumptions.holdYears,
       year1CfadsCents: row.input.returns.year1CfadsCents,
       cfadsGrowthBps: opts.assumptions.growthBps,
-      exitEquityProceedsCents: cap.proceedsCents,
+      exitEquityProceedsCents: metrics.exitEquityProceedsCents,
       europeanPromoteOpen: row.input.returns.europeanPromoteOpen,
       operationsDeductionCents: metrics.feeAnnualCents ?? 0n,
       debtServiceCents: row.input.returns.annualDebtServiceCents ?? 0n,
@@ -309,6 +311,7 @@ export function projectModel(opts: {
       entityName: row.input.name,
     });
   }
+  const feeIncome = yearFee[0] ?? 0n;
 
   let rcpByYear = yearRcp;
   const prefCapital = opts.assumptions.opcoPrefCapitalCents;
@@ -330,12 +333,12 @@ export function projectModel(opts: {
   }
 
   const years: ModelYear[] = feeBlocked
-    ? Array.from({ length: Math.max(hold, opts.assumptions.holdYears, 1) }, (_, index) => ({ year: index + 1, rcpCents: 0n, lpCents: 0n, feeIncomeCents: 0n }))
+    ? Array.from({ length: Math.max(hold, opts.assumptions.holdYears, 1) }, (_, index) => ({ year: index + 1, rcpCents: null, lpCents: null, feeIncomeCents: null }))
     : rcpByYear.map((rcp, index) => ({
         year: index + 1,
         rcpCents: rcp,
         lpCents: yearLp[index] ?? 0n,
-        feeIncomeCents: feeIncome,
+        feeIncomeCents: yearFee[index] ?? 0n,
       }));
 
   const includedFacts = passing.map((row) => row.input);
@@ -344,6 +347,7 @@ export function projectModel(opts: {
     notes: Array.from(new Set(notes)),
     years,
     feeIncomeCents: feeBlocked ? null : feeIncome,
+    feeAccruedUnpaidCents: feeBlocked ? null : feeAccruedUnpaid,
     gaCoverageBps: null,
     gaGap: null,
     rcpEquityCents: feeBlocked ? null : rcpEquity,
@@ -362,6 +366,7 @@ export function projectModel(opts: {
     lpAvgYieldBps: null,
     lpIrrMinBps: null,
     lpIrrMaxBps: null,
+    lpIrrGapDeals: [],
     lpGap: feeBlocked ? feeReason : otherGap,
     dscrBps: portfolioRatio(includedFacts, "dscr"),
     debtYieldBps: portfolioRatio(includedFacts, "debtYield"),
@@ -374,15 +379,17 @@ export function projectModel(opts: {
     return projection;
   }
 
-  if (opts.gaBudgetCents == null) projection.gaGap = FEE_NEEDED;
+  if (opts.gaBudgetCents == null) projection.gaGap = GA_BUDGET_NEEDED;
   else if (opts.gaBudgetCents === 0n) projection.gaGap = "G&A budget is zero";
   else projection.gaCoverageBps = Number((feeIncome * 10_000n) / opts.gaBudgetCents);
 
-  const exitUnset = opts.assumptions.exitCapRateBps == null;
+  const gapped = passing.filter((row) => metricsByCode.get(row.input.code)?.exitGap);
+  projection.lpIrrGapDeals = gapped.map((row) => row.input.code);
+  const exitNote = gapped.length ? exitValueNeededFor(gapped.length) : null;
   if (lpEquity > 0n) {
-    if (exitUnset) projection.lpIrrNote = EXIT_VALUE_NEEDED;
+    if (exitNote) projection.lpIrrNote = exitNote;
     else {
-      const flows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.lpCents), tYears: row.year }))];
+      const flows: IrrCashFlow[] = [{ amount: -Number(lpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.lpCents ?? 0n), tYears: row.year }))];
       const irr = solveIrr(flows);
       projection.lpNetIrrBps = rateToBps(irr.rate);
       if (irr.reason && projection.lpNetIrrBps == null) projection.lpIrrNote = IRR_NOT_AVAILABLE;
@@ -409,15 +416,15 @@ export function projectModel(opts: {
     const ops = yearRcpOps.reduce((sum, value) => sum + value, 0n);
     projection.rcpCashOnCashBps = yieldBps(yearRcpOps[0] ?? 0n, rcpEquity);
     projection.rcpAvgCashOnCashBps = yieldBps(ops / n, rcpEquity);
-    if (exitUnset) {
-      projection.rcpIrrNote = EXIT_VALUE_NEEDED;
-      projection.rcpMultipleNote = EXIT_VALUE_NEEDED;
+    if (exitNote) {
+      projection.rcpIrrNote = exitNote;
+      projection.rcpMultipleNote = exitNote;
     } else {
-      const flows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.rcpCents), tYears: row.year }))];
+      const flows: IrrCashFlow[] = [{ amount: -Number(rcpEquity), tYears: 0 }, ...years.map((row) => ({ amount: Number(row.rcpCents ?? 0n), tYears: row.year }))];
       const irr = solveIrr(flows);
       projection.rcpIrrBps = rateToBps(irr.rate);
       if (irr.reason && projection.rcpIrrBps == null) projection.rcpIrrNote = IRR_NOT_AVAILABLE;
-      const total = years.reduce((sum, row) => sum + row.rcpCents, 0n);
+      const total = years.reduce((sum, row) => sum + (row.rcpCents ?? 0n), 0n);
       projection.rcpEquityMultipleBps = yieldBps(total, rcpEquity);
     }
   } else {
