@@ -7,6 +7,7 @@ import {
   isPrismaDataLossAbort,
   isSqliteUrl,
   previewSchemaPushPlan,
+  sameDatabaseUrl,
   resolveDatabaseUrl,
   resolveDirectUrl,
   resolvePrismaProvider,
@@ -134,6 +135,31 @@ describe("prisma provider selection", () => {
       databaseUrl: "postgresql://preview-only/db",
       directUrl: "postgresql://preview-only/db",
     });
+  });
+
+  it("refuses a preview push when PREVIEW_DATABASE_URL is the production database", () => {
+    const plan = previewSchemaPushPlan({
+      VERCEL: "1",
+      VERCEL_ENV: "preview",
+      DATABASE_URL: "postgresql://prod.example/neondb",
+      DIRECT_URL: "postgresql://prod-direct.example/neondb/",
+      PREVIEW_DATABASE_URL: "postgresql://prod-direct.example/neondb",
+    });
+    expect(plan.push).toBe(false);
+    expect(plan.databaseUrl).toBeUndefined();
+    expect(plan.reason).toContain("production database");
+    expect(
+      sameDatabaseUrl(
+        "postgresql://user:secret@ep-abc-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
+        "postgresql://other:other@ep-abc.us-east-2.aws.neon.tech/neondb",
+      ),
+    ).toBe(true);
+    expect(
+      sameDatabaseUrl(
+        "postgresql://user:secret@ep-abc-pooler.us-east-2.aws.neon.tech/neondb",
+        "postgresql://user:secret@ep-abc.us-east-2.aws.neon.tech/otherdb",
+      ),
+    ).toBe(false);
   });
 
   it("skips prisma db push when VERCEL=1 and VERCEL_ENV is missing or unexpected", () => {

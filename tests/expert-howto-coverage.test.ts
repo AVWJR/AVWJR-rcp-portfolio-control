@@ -22,7 +22,7 @@ import {
   dealStatusArchivedMessage,
   permanentDemoStatusMessage,
 } from "@/lib/deal-status";
-import { EXPERT_HOWTOS, routeMatches } from "@/lib/expert/howtos";
+import { EXPERT_HOWTOS, howToById, routeMatches } from "@/lib/expert/howtos";
 import { PAGE_CATALOG, listPageCatalogPatterns } from "@/lib/expert/nav";
 import {
   ALREADY_REVERSED,
@@ -129,6 +129,19 @@ describe("Expert how-to coverage", () => {
     }
   });
 
+  it("gives each Models screen its own how-to", () => {
+    expect(howToById("models.list")?.routes).toContain("/models");
+    expect(howToById("models.detail")?.routes).toContain("/models/[id]");
+    expect(howToById("models.compare")?.routes).toContain("/models/compare");
+    expect(howToById("models.assumptions")?.routes).toContain("/models/[id]/assumptions");
+    expect(howToById("models.fees")?.routes).toContain("/models/fees");
+    const screens = ["/models", "/models/compare", "/models/fees", "/models/[id]", "/models/[id]/assumptions"];
+    for (const route of screens) {
+      const owners = EXPERT_HOWTOS.filter((entry) => entry.routes.includes(route));
+      expect(owners, route).toHaveLength(1);
+    }
+  });
+
   it("covers every PAGE_CATALOG pattern", () => {
     expect(listPageCatalogPatterns()).toEqual(PAGE_CATALOG.map((row) => row.pattern));
     const missing = listPageCatalogPatterns().filter((pattern) => !coveredByHowTo(pattern, "routes"));
@@ -219,6 +232,20 @@ describe("Expert how-to coverage", () => {
       );
       expect(linked, message).toBe(true);
     }
+  });
+
+  it("describes returns after debt service and the exit and fee notes", () => {
+    const prompt = readFileSync(path.join(ROOT, "src/lib/expert/system-prompt.ts"), "utf8");
+    const howtos = readFileSync(path.join(ROOT, "src/lib/expert/howtos.ts"), "utf8");
+    expect(prompt).not.toMatch(/after the AM fee/);
+    expect(prompt).toMatch(/after debt service and fees/);
+    expect(howtos).toMatch(/after debt service and fees/);
+    for (const phrase of ["exit value needed", "cash shortfall, no distribution", "fee accrued, unpaid", "loan exceeds exit value"]) {
+      expect(prompt, phrase).toContain(phrase);
+      expect(howtos, phrase).toContain(phrase);
+    }
+    expect(howtos).toContain("G&A budget needed");
+    expect(howtos).toContain("exit value needed for");
   });
 
   it("rejects the stale roll-up and naming phrases", () => {

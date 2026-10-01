@@ -496,7 +496,7 @@ Click **+ Add criterion**. Type to search. The list is grouped by Ratios, LP ret
 
 Read **X of Y deals pass**. A deal that fails shows **why excluded** tags. **Save preset** keeps the set.
 
-LP net IRR, LP cash yield, and RCP IRR say **Phase 2**. If the AM fee or other LP fees are blank, the cell also says **fee needed**. No percent is assumed.
+LP net IRR, LP cash yield, and RCP IRR are Phase 2 numbers after debt service and fees. If the AM fee or other LP fees are blank, the cell says **fee needed**. No percent is assumed. Gold nav **Models** is the what-if list. It does not move the OpCo dashboard.
 
 A snapshot turns amber at 90 days and red at 180. That flag never deletes a deal, a file, or a snapshot. Only Owned deals feed the OpCo roll-up.`;
 }

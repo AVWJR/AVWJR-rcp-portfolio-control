@@ -139,6 +139,16 @@ export function previewSchemaPushPlan(env = process.env) {
           "Skipping prisma db push. Preview and production share one database, so a preview build must not change the schema. Set PREVIEW_DATABASE_URL only if this preview has its own database.",
       };
     }
+    const productionUrls = [env.DATABASE_URL, env.DIRECT_URL, env.POSTGRES_PRISMA_URL, env.POSTGRES_URL]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    if (productionUrls.some((url) => sameDatabaseUrl(url, previewUrl))) {
+      return {
+        push: false,
+        reason:
+          "Skipping prisma db push. PREVIEW_DATABASE_URL points at the production database, so a preview build must not change the schema.",
+      };
+    }
     const direct = String(env.PREVIEW_DIRECT_URL ?? "").trim() || previewUrl;
     return {
       push: true,
@@ -153,6 +163,30 @@ export function previewSchemaPushPlan(env = process.env) {
     push: false,
     reason: `Skipping prisma db push. VERCEL=1 but VERCEL_ENV is ${envLabel}. A Vercel build pushes the schema only for production, or for a preview that has its own PREVIEW_DATABASE_URL.`,
   };
+}
+
+/**
+ * Same database when host (pooler suffix removed), database name, and nothing else match.
+ * User, password, port, and query parameters are ignored.
+ */
+export function sameDatabaseUrl(left, right) {
+  const identity = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    if (!isPostgresUrl(raw)) return raw.replace(/\/+$/, "");
+    try {
+      const url = new URL(deriveNeonUnpooledUrl(raw).replace(/^postgres(ql)?:/i, "http:"));
+      const host = url.hostname.toLowerCase();
+      const database = decodeURIComponent(url.pathname).replace(/^\/+/, "").replace(/\/+$/, "").split("/")[0]?.toLowerCase() ?? "";
+      if (!host || !database) return raw.replace(/\/+$/, "");
+      return `${host}|${database}`;
+    } catch {
+      return raw.replace(/\/+$/, "");
+    }
+  };
+  const a = identity(left);
+  const b = identity(right);
+  return a.length > 0 && a === b;
 }
 
 /**

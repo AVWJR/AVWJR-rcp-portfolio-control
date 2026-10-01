@@ -61,8 +61,6 @@ export type FieldDef = {
   operators: CriterionOperator[];
   defaultOperator: CriterionOperator;
   defaultValue: number | string[];
-  /** Phase 2 fields never have a number. A hard limit excludes every deal. */
-  phase?: 2;
   /** LP fields that also need a typed fee. */
   feeNeeded?: boolean;
 };
@@ -90,9 +88,9 @@ export const FIELD_CATALOG: FieldDef[] = [
   { field: "expenseRatio", group: "Ratios", label: "Expense ratio", kind: "percent", operators: NUMERIC, defaultOperator: "lte", defaultValue: 45 },
   { field: "pricePerUnit", group: "Ratios", label: "Price per unit", kind: "dollars", operators: NUMERIC, defaultOperator: "lte", defaultValue: 200000 },
   { field: "units", group: "Property", label: "Units", kind: "integer", operators: NUMERIC, defaultOperator: "gte", defaultValue: 100 },
-  { field: "lpNetIrr", group: "LP returns", label: "LP net IRR", kind: "percent", operators: NUMERIC, defaultOperator: "gte", defaultValue: 15, phase: 2, feeNeeded: true },
-  { field: "lpCashYield", group: "LP returns", label: "LP cash yield", kind: "percent", operators: NUMERIC, defaultOperator: "gte", defaultValue: 6, phase: 2, feeNeeded: true },
-  { field: "rcpIrr", group: "LP returns", label: "RCP IRR", kind: "percent", operators: NUMERIC, defaultOperator: "gte", defaultValue: 15, phase: 2 },
+  { field: "lpNetIrr", group: "LP returns", label: "LP net IRR", kind: "percent", operators: NUMERIC, defaultOperator: "gte", defaultValue: 15, feeNeeded: true },
+  { field: "lpCashYield", group: "LP returns", label: "LP cash yield", kind: "percent", operators: NUMERIC, defaultOperator: "gte", defaultValue: 6, feeNeeded: true },
+  { field: "rcpIrr", group: "LP returns", label: "RCP IRR", kind: "percent", operators: NUMERIC, defaultOperator: "gte", defaultValue: 15, feeNeeded: true },
   { field: "state", group: "Geography", label: "State", kind: "text", operators: MEMBER, defaultOperator: "in", defaultValue: ["GA", "NC", "TX"] },
   { field: "metro", group: "Geography", label: "Metro", kind: "text", operators: MEMBER, defaultOperator: "in", defaultValue: [] },
   { field: "msa", group: "Geography", label: "MSA", kind: "text", operators: MEMBER, defaultOperator: "in", defaultValue: [] },
@@ -146,6 +144,8 @@ export type LibraryFact = {
   equityRequiredCents: number | null;
   dealStatus: string;
   feeNeeded: boolean;
+  /** Shown when the number is missing. A hard limit does not pass. */
+  metricGaps?: Partial<Record<CriterionField, string>>;
 };
 
 export type Exclusion = { field: CriterionField; label: string; reason: string };
@@ -273,13 +273,12 @@ export function evaluateCriterion(fact: LibraryFact, criterion: Criterion): Excl
     };
   }
 
-  if (def.phase === 2) {
-    const fee = def.feeNeeded && fact.feeNeeded ? " · fee needed" : "";
-    return { field: criterion.field, label: def.label, reason: `${def.label} is Phase 2${fee}` };
-  }
-
   const actual = factNumber(fact, criterion.field);
   if (actual == null) {
+    const specific = fact.metricGaps?.[criterion.field];
+    if (specific) {
+      return { field: criterion.field, label: def.label, reason: `${def.label}: ${specific}` };
+    }
     const fee = def.feeNeeded && fact.feeNeeded ? " · fee needed" : "";
     return { field: criterion.field, label: def.label, reason: `${def.label} is not on file${fee}` };
   }

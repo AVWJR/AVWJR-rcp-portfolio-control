@@ -1,6 +1,6 @@
 /**
- * Saves the ratios the app already computes. Does not invent LP IRR, LP cash yield,
- * RCP IRR, or a fee. Those columns stay null and the screen says Phase 2 / fee needed.
+ * Saves the ratios the app already computes. LP net IRR, LP cash yield, and RCP IRR
+ * are filled only when the fee and the cash flows are on file. A missing fee stays null.
  * Each call inserts a new row. Older snapshots are kept. Age never deletes one.
  */
 
@@ -16,6 +16,9 @@ import { loadLoans } from "@/lib/loans";
 import { loadPostedLines, listPeriods } from "@/lib/queries";
 import { loadUnits } from "@/lib/rent-roll";
 import { loadSpeWaterfall } from "@/lib/waterfall";
+import { projectDealReturns, resolveEquityRequiredCents } from "@/lib/returns/project-deal";
+import { readAnnualCfadsCents, readAnnualDebtServiceCents } from "@/lib/returns/read-cash";
+import { dealFeesMissing } from "@/lib/library/fees";
 
 function bps(numerator: bigint, denominator: bigint): number | null {
   if (denominator <= 0n) return null;
@@ -155,10 +158,10 @@ export async function captureDealSnapshot(opts: {
   const waterfall = await loadSpeWaterfall(entity.id);
   const lpEquity = waterfall?.lpContributedCents ?? 0n;
   const gpBps = waterfall?.config.gpCoInvestBps ?? 0;
-  let equityRequired: bigint | null = null;
-  if (lpEquity > 0n && gpBps < 10_000) {
-    equityRequired = (lpEquity * 10_000n) / BigInt(10_000 - gpBps);
-  }
+  const equityRequired = resolveEquityRequiredCents({
+    lpContributedCents: lpEquity,
+    gpCoInvestBps: gpBps,
+  });
   const cashAfterDebt = noiReady ? annualizedNoi! - debtService * 12n : null;
   const cashOnCashBps =
     noiReady && cashAfterDebt != null && equityRequired != null && equityRequired > 0n
@@ -175,6 +178,52 @@ export async function captureDealSnapshot(opts: {
       : null;
 
   const expenseRatioBps = noiReady ? opexRatioBps(opex, egi) : null;
+  let lpNetIrrBps: number | null = null;
+  let lpAvgCashYieldBps: number | null = null;
+  let lpYear1CashYieldBps: number | null = null;
+  let rcpIrrBps: number | null = null;
+  if (waterfall && !dealFeesMissing(entity)) {
+    try {
+      let year1 = annualizedNoi != null && annualizedNoi > 0n ? annualizedNoi : 0n;
+      if (useBooks) {
+        const annual = await readAnnualCfadsCents(entity.id, opts.year, opts.month);
+        if (annual > 0n) year1 = annual;
+      }
+      const debt = await readAnnualDebtServiceCents({
+        entityId: entity.id,
+        owned,
+        year: opts.year,
+        month: opts.month,
+        snapshotNoiCents: periodNoi,
+        snapshotDscrBps: dscrBps,
+      });
+      const metrics = projectDealReturns({
+        config: waterfall.config,
+        lpContributedCents: waterfall.lpContributedCents,
+        unreturnedCapitalCents: waterfall.unreturnedCapitalCents,
+        unpaidPrefCents: waterfall.unpaidPrefCents,
+        prefPaidToDateCents: waterfall.prefPaidToDateCents,
+        year1CfadsCents: year1,
+        holdYears: entity.holdPeriodYears && entity.holdPeriodYears > 0 ? entity.holdPeriodYears : 5,
+        growthBps: 0,
+        exitEquityProceedsCents: 0n,
+        amFeeBps: entity.amFeeBps,
+        otherLpFeeCents: entity.otherLpFeeCents,
+        purchasePriceCents: entity.purchasePriceCents,
+        equityRequiredCents: equityRequired,
+        annualDebtServiceCents: debt,
+      });
+      if (!metrics.gap) {
+        lpNetIrrBps = metrics.lpNetIrrBps;
+        lpAvgCashYieldBps = metrics.lpAvgCashYieldBps;
+        lpYear1CashYieldBps = metrics.lpYear1CashYieldBps;
+        rcpIrrBps = metrics.rcpIrrBps;
+      }
+    } catch {
+      lpNetIrrBps = null;
+    }
+  }
+
   const asOfDate = new Date(Date.UTC(opts.year, opts.month - 1, 1, 16, 0, 0));
   const sourceFiles = JSON.stringify(
     entity.vaultDocuments.map((file) => ({ filename: file.filename, kind: file.kind })),
@@ -208,10 +257,10 @@ export async function captureDealSnapshot(opts: {
       lpEquityCents: lpEquity > 0n ? lpEquity : null,
       rcpShareBps,
       unitCount: units,
-      lpNetIrrBps: null,
-      lpAvgCashYieldBps: null,
-      lpYear1CashYieldBps: null,
-      rcpIrrBps: null,
+      lpNetIrrBps,
+      lpAvgCashYieldBps,
+      lpYear1CashYieldBps,
+      rcpIrrBps,
     },
   });
 }

@@ -35,7 +35,7 @@ export default async function DealProfilePage({
             <p className="text-[11px] uppercase tracking-[0.16em] text-gold-700">{profile.code}</p>
             <h1 className="font-display text-4xl text-navy-900">{profile.name}</h1>
             <p className="mt-2 text-sm text-ink-700">
-              Status {profile.statusLabel}. {profile.feeNeeded ? `LP returns need an AM fee and other LP fees — ${FEE_NEEDED}.` : "Deal fees are on file. LP returns are still Phase 2."}
+              Status {profile.statusLabel}. {profile.feeNeeded ? `LP returns need an AM fee and other LP fees — ${FEE_NEEDED}.` : "Deal fees are on file. LP net IRR is on the Library and in Models."}
             </p>
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
               <Link className="text-navy-800 underline" href={`/dashboard/${profile.code}?entity=${profile.code}&period=${period}`}>Dashboard</Link>

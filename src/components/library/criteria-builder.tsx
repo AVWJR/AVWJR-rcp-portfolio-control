@@ -166,9 +166,6 @@ export function CriteriaBuilder({
                                 onClick={() => addField(field.field)}
                               >
                                 <span>{field.label}</span>
-                                {field.phase === 2 ? (
-                                  <span className={active ? "text-gold-400" : "text-gold-700"}>Phase 2</span>
-                                ) : null}
                               </button>
                             </li>
                           );
@@ -348,7 +345,6 @@ function CriterionRow({
       )}
       {def.kind === "multiple" ? <span className="text-sm text-ink-600">x</span> : null}
       {def.kind === "percent" ? <span className="text-sm text-ink-600">%</span> : null}
-      {def.phase === 2 ? <span className="text-[11px] uppercase tracking-[0.12em] text-gold-700">Phase 2</span> : null}
       <div className="ml-auto flex items-center gap-1" role="group" aria-label="Hard limit or preference">
         <button
           type="button"

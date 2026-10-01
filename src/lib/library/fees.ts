@@ -5,6 +5,7 @@
  */
 
 export const FEE_NEEDED = "fee needed";
+export const GA_BUDGET_NEEDED = "G&A budget needed";
 
 export function dealFeesMissing(entity: {
   amFeeBps?: number | null;
