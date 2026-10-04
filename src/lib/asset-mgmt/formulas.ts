@@ -1,3 +1,4 @@
+import { perUnitCents, ratioBps as sharedRatioBps } from "@rcp/analytics";
 import { formatUsd } from "@rcp/ledger";
 import { formatRatioBps } from "@rcp/properties";
 
@@ -42,13 +43,12 @@ export const FORMULAS = {
 
 export function centsPerCount(amount: bigint | null, count: number): bigint | null {
   if (amount == null) return null;
-  if (!Number.isInteger(count) || count <= 0) return null;
-  return amount / BigInt(count);
+  return perUnitCents(amount, count);
 }
 
 export function ratioBps(numerator: bigint | null, denominator: bigint | null): number | null {
-  if (numerator == null || denominator == null || denominator === 0n) return null;
-  return Number((numerator * 10_000n) / denominator);
+  if (numerator == null || denominator == null) return null;
+  return sharedRatioBps(numerator, denominator);
 }
 
 export function revpauCents(revenueCents: bigint | null, rentableCount: number): bigint | null {
@@ -119,9 +119,9 @@ export function observationIsStale(asOfDate: string, referenceDate: string, stal
   return age > staleAfterDays;
 }
 
-/** Lost rent per day from a monthly rent-roll market rent, using a 30-day month. Not a lease term. */
+/** Lost rent per day from a monthly rent-roll market rent, using a 30-day month. Not a lease term. A zero market rent stays blank. */
 export function lostRentPerDayCents(monthlyMarketRent: bigint | null): bigint | null {
-  if (monthlyMarketRent == null) return null;
+  if (monthlyMarketRent == null || monthlyMarketRent <= 0n) return null;
   return monthlyMarketRent / 30n;
 }
 
@@ -149,6 +149,8 @@ export type ScoreSnapshot = {
   latestSource: string | null;
   latestAsOf: string | null;
   latestValueCents: string | null;
+  /** book-egi, rent-roll, or none. Older saved scores may omit it. */
+  revenueBase?: "book-egi" | "rent-roll" | "none" | null;
 };
 
 export type ChangeRow = {
@@ -161,6 +163,13 @@ export type ChangeRow = {
 function snapValue(value: string | number | null): string {
   if (value == null || value === "") return NOT_AVAILABLE;
   return String(value);
+}
+
+export function revenueBaseLabel(base: ScoreSnapshot["revenueBase"]): string {
+  if (base === "book-egi") return "Book EGI";
+  if (base === "rent-roll") return "Rent roll";
+  if (base === "none") return "Not available";
+  return "Base not labeled";
 }
 
 function observationLabel(snapshot: ScoreSnapshot): string {
@@ -192,12 +201,26 @@ export function whatChanged(previous: ScoreSnapshot | null, next: ScoreSnapshot)
     next.periodLabel,
     "The saved score follows the period selected when the update was entered.",
   );
-  pair(
-    "RevPAU",
-    presentCents(previous.revpauCents == null ? null : BigInt(previous.revpauCents)),
-    presentCents(next.revpauCents == null ? null : BigInt(next.revpauCents)),
-    "RevPAU uses this period's revenue and rentable units.",
-  );
+  const beforeRevpau = presentCents(previous.revpauCents == null ? null : BigInt(previous.revpauCents));
+  const afterRevpau = presentCents(next.revpauCents == null ? null : BigInt(next.revpauCents));
+  const beforeBase = revenueBaseLabel(previous.revenueBase);
+  const afterBase = revenueBaseLabel(next.revenueBase);
+  const basesDiffer = Boolean(previous.revenueBase && next.revenueBase && previous.revenueBase !== next.revenueBase);
+  if (basesDiffer) {
+    rows.push({
+      label: "RevPAU",
+      before: `${beforeRevpau} · ${beforeBase}`,
+      after: `${afterRevpau} · ${afterBase}`,
+      cause: "The revenue base changed, so these RevPAU figures are not compared.",
+    });
+  } else if (`${beforeRevpau} · ${beforeBase}` !== `${afterRevpau} · ${afterBase}`) {
+    rows.push({
+      label: "RevPAU",
+      before: `${beforeRevpau} · ${beforeBase}`,
+      after: `${afterRevpau} · ${afterBase}`,
+      cause: `RevPAU base: ${afterBase}.`,
+    });
+  }
   pair(
     "NOI margin",
     presentBps(previous.noiMarginBps),

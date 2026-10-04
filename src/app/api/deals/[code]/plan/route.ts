@@ -4,7 +4,9 @@ import {
   PLAN_ACTION,
   PLAN_NOT_OWNED,
   PLAN_PERIOD,
+  PLAN_PERIOD_RANGE,
   assertCanMutatePlan,
+  parsePlanPeriod,
   assertNoResidentKeys,
   validateDecision,
   validateIncomeIdea,
@@ -19,15 +21,6 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function parsePeriod(value: unknown): { year: number; month: number } | null {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}$/.test(value)) return null;
-  const [yearText, monthText] = value.split("-");
-  const year = Number(yearText);
-  const month = Number(monthText);
-  if (!year || month < 1 || month > 12) return null;
-  return { year, month };
-}
-
 export async function POST(request: Request, context: { params: Promise<{ code: string }> }) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
@@ -40,8 +33,11 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     if (!isOwnedSpe(entity)) return NextResponse.json({ error: PLAN_NOT_OWNED }, { status: 409 });
     const body = (await request.json()) as Record<string, unknown>;
     assertNoResidentKeys(body);
-    const period = parsePeriod(body.period);
-    if (!period) return NextResponse.json({ error: PLAN_PERIOD }, { status: 400 });
+    const period = parsePlanPeriod(body.period);
+    if (!period) {
+      const raw = typeof body.period === "string" ? body.period : "";
+      return NextResponse.json({ error: /^\d{4}-\d{2}$/.test(raw) ? PLAN_PERIOD_RANGE : PLAN_PERIOD }, { status: 400 });
+    }
     const actor = "principal";
     if (body.action === "weekly") {
       const input = validateWeeklyUpdate(body);

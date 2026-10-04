@@ -37,7 +37,7 @@ Amounts are integer cents. Ratios are integer basis points (10,000 = 100%). Divi
 | NOI margin | Period NOI ÷ period EGI. |
 | Utility recovery | 4110 ÷ (5310–5350). Blank when utilities are zero. |
 
-Ranking uses those dollar impacts, then the RevPAU effect. It does not rank by the occupancy rate. An illustrative RevPAU is shown only when every vacant unit has one sourced asking rent. Several rents for the same floor plan are not blended.
+Ranking uses those dollar impacts, then the RevPAU effect. It does not rank by the occupancy rate. An illustrative RevPAU is shown only when every vacant unit has one floor-plan asking rent. A property-level index, including ZORI, is context only and is not used as an asking rent. Several rents for the same floor plan are not blended.
 
 A market observation older than 45 days before the period end is marked stale. That is a display rule. Stale rents are not used in the illustrative comparison.
 
@@ -53,10 +53,12 @@ Listing sites whose terms bar automated access are rejected by name. This phase 
 
 ## Data and deployment
 
-New tables: `AssetPlan`, `MarketObservation`, `PlanRecommendation`, `IncomeOpportunity`, `PlanEvent`. Columns are additive. Old deals simply have no plan row until someone saves an update. Viewing the page does not create a plan.
+New tables: `AssetPlan`, `MarketObservation`, `PlanRecommendation`, `IncomeOpportunity`, `PlanEvent`. Columns are additive, including the optional specials note. Old deals simply have no plan row until someone saves an update.
 
-`MarketObservation` and `PlanEvent` are insert-only in the app. Recommendation status can move from open to superseded; the log keeps the prior text. Income-idea status can move from idea to approved or declined; the prior status is in the log.
+Viewing the plan does not create a plan row, a Period, or a close checklist. A month that is not already on file falls back to the latest closed or posted period. A plan action does not open a month either.
+
+`MarketObservation` and `PlanEvent` are insert-only in the app. Recommendation status can move from open to superseded; the log keeps the prior text. Income-idea status can move from idea to approved or declined only while the row is still an idea. The prior status is in the log.
 
 Do not drop, rename, or reset these tables. Do not seed or purge them. Demo SPEs `SPE-WBG`, `SPE-CVC`, and `SPE-HCR` stay in place. Plan writes do not touch units, journals, or the deal name.
 
-Vercel previews share the production database. Schema changes are safe for `prisma db push` because they only add tables and nullable or defaulted columns.
+The production Vercel build runs `scripts/vercel-schema-push.mjs`, which runs `prisma db push` only for production. That push adds these tables. Preview builds skip the push because they share the production database. Until that production deploy finishes, the plan page shows “Asset plan setup is pending. The plan tables are not on this database yet.” instead of an error. Opening the page does not create the tables.

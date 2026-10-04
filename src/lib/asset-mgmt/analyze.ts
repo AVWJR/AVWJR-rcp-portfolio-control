@@ -59,6 +59,7 @@ export type PlanObservation = {
   rangeLowCents: bigint | null;
   rangeHighCents: bigint | null;
   trendNote: string | null;
+  specialsNote?: string | null;
   asOfDate: string;
   vintageDate: string | null;
   retrievedAt: string;
@@ -106,6 +107,7 @@ export type PlanFacts = {
   otherIncomeLines: { code: string; label: string; cents: bigint }[] | null;
   utilityLines: { code: string; label: string; cents: bigint }[] | null;
   dealUnitCount: number | null;
+  rentRollAsOf: string | null;
   units: PlanUnit[] | null;
   peers: PlanPeer[];
   opportunities: PlanOpportunity[];
@@ -114,10 +116,14 @@ export type PlanFacts = {
     name: string;
     lenderName: string;
     reserveRequirementCents: bigint;
+    reserveAccountCode: string;
+    reserveRequirementNote: string;
     dscrBps: number | null;
     dscrThresholdBps: number;
+    dscrThresholdNote: string;
     debtYieldBps: number | null;
     debtYieldThresholdBps: number;
+    debtYieldThresholdNote: string;
     asOfLabel: string;
   };
   underwriting: null | {
@@ -165,17 +171,24 @@ function revenueOccupied(units: PlanUnit[]): PlanUnit[] {
 
 type ApplicableRent = { cents: bigint } | { unresolved: string };
 
+function isFloorplanAskingRent(row: PlanObservation): boolean {
+  if (row.sourceType === "ZORI") return false;
+  if (!row.floorplan) return false;
+  return row.valueCents != null;
+}
+
 function askingForFloorplan(floorplan: string, observations: PlanObservation[], periodEnd: string): ApplicableRent | null {
-  const fresh = observations.filter((row) => row.valueCents != null && !observationIsStale(row.asOfDate, periodEnd));
+  const fresh = observations.filter((row) => isFloorplanAskingRent(row) && !observationIsStale(row.asOfDate, periodEnd));
   const specific = fresh.filter((row) => row.floorplan && row.floorplan.toLowerCase() === floorplan.toLowerCase());
   if (specific.length > 1) return { unresolved: "More than one asking rent is on file for this floor plan, and this phase does not blend them." };
   if (specific.length === 1 && specific[0]?.valueCents != null) return { cents: specific[0].valueCents };
-  const propertyLevel = fresh.filter((row) => !row.floorplan);
-  if (propertyLevel.length > 1) {
-    return { unresolved: "More than one property-level asking rent is on file, and this phase does not blend them." };
-  }
-  if (propertyLevel.length === 1 && propertyLevel[0]?.valueCents != null) return { cents: propertyLevel[0].valueCents };
   return null;
+}
+
+function contextOnlyNote(observations: PlanObservation[]): string | null {
+  const context = observations.some((row) => row.valueCents != null && (row.sourceType === "ZORI" || !row.floorplan));
+  if (!context) return null;
+  return "A property-level figure, including a ZIP index such as ZORI, is context only. It is not used as a floor-plan asking rent.";
 }
 
 export function illustrativeRevpau(facts: {
@@ -195,7 +208,9 @@ export function illustrativeRevpau(facts: {
   let extra = 0n;
   for (const floorplan of facts.vacantFloorplans) {
     const asking = askingForFloorplan(floorplan, facts.observations, facts.periodEnd);
-    if (!asking) return { cents: null, note: "Not enough sourced asking rents to compare RevPAU." };
+    if (!asking) {
+      return { cents: null, note: contextOnlyNote(facts.observations) ?? "Not enough sourced asking rents to compare RevPAU." };
+    }
     if ("unresolved" in asking) return { cents: null, note: asking.unresolved };
     extra += asking.cents;
   }
@@ -219,10 +234,12 @@ export function describePlan(raw: PlanFacts) {
   const occupiedCount = roll?.occupiedCount ?? 0;
   const denominator = roll ? rentableCount : raw.dealUnitCount ?? 0;
   const revenueCents = raw.booksActive && raw.egiCents != null ? raw.egiCents : roll ? rentRollEgiAnalog(toSnapshot(units ?? [])) : null;
-  const revenueSource = raw.booksActive && raw.egiCents != null
+  const revenueBase: ScoreSnapshot["revenueBase"] = raw.booksActive && raw.egiCents != null ? "book-egi" : roll ? "rent-roll" : "none";
+  const rentRollDated = raw.rentRollAsOf ? `Rent roll as of ${raw.rentRollAsOf}` : "Rent roll as-of date not on file";
+  const revenueSource = revenueBase === "book-egi"
     ? "Book EGI for this period."
-    : roll
-      ? "Rent-roll in-place rent minus concessions. This period has no income-statement activity."
+    : revenueBase === "rent-roll"
+      ? `Rent-roll in-place rent minus concessions. Rent roll as of ${raw.rentRollAsOf ?? "date not on file"}. This period has no income-statement activity.`
       : "No income statement and no rent roll for this period.";
   const revpau = revpauCents(revenueCents, roll ? rentableCount : denominator);
   const margin = raw.booksActive ? noiMarginBps(raw.noiCents, raw.egiCents) : null;
@@ -277,7 +294,7 @@ export function describePlan(raw: PlanFacts) {
       impactCents: ltl,
       revpauDeltaCents: revpauDelta,
       confidence: confidence(ltl, ltl),
-      sourceLabel: roll ? `Rent roll · ${raw.periodLabel}` : "Rent roll not on file",
+      sourceLabel: roll ? rentRollDated : "Rent roll not on file",
       status: "Needs approval",
       reason: roll
         ? `Floored loss-to-lease is ${presentCents(ltl)} (in-place below the rent-roll market rent). Signed loss-to-lease is ${presentCents(signed)}. A negative signed figure is gain-to-lease. The rent-roll market rent is not overwritten. ${PRICING_BAND_NOTE}`
@@ -289,7 +306,7 @@ export function describePlan(raw: PlanFacts) {
       impactCents: vacancy,
       revpauDeltaCents: null,
       confidence: confidence(vacancy, vacancy),
-      sourceLabel: roll ? `Rent roll · ${raw.periodLabel}` : "Rent roll not on file",
+      sourceLabel: roll ? rentRollDated : "Rent roll not on file",
       status: "Needs approval",
       reason: roll
         ? `Vacant units carry ${presentCents(vacancy)} of rent-roll market rent. Physical occupancy is ${presentBps(physicalOccupancyBps(toSnapshot(units ?? [])))}. Ranking uses these dollars, not the occupancy rate. Notice and pre-lease inputs are not on file.`
@@ -348,6 +365,7 @@ export function describePlan(raw: PlanFacts) {
     latestSource: latest?.sourceName ?? null,
     latestAsOf: latest?.asOfDate ?? null,
     latestValueCents: centsToSnapshot(latest?.valueCents ?? null),
+    revenueBase,
   };
 
   return {
@@ -398,7 +416,8 @@ export function floorPlanRows(facts: PlanFacts) {
       const inPlace = occupied.reduce((acc, unit) => acc + unit.inPlaceRent, 0n);
       const marketRows = rows.filter((unit) => unit.status !== "DOWN");
       const market = marketRows.reduce((acc, unit) => acc + unit.marketRent, 0n);
-      const concessions = rows.reduce((acc, unit) => acc + unit.concessionCents, 0n);
+      const concessionUnits = rows.filter((unit) => unit.status === "OCCUPIED");
+      const concessions = concessionUnits.reduce((acc, unit) => acc + unit.concessionCents, 0n);
       const ltl = lossToLease(toSnapshot(rows));
       const ends = occupied.map((unit) => unit.leaseEnd).filter((value): value is string => Boolean(value)).sort();
       const observations = facts.observations.filter((row) => !row.floorplan || row.floorplan.toLowerCase() === floorplan.toLowerCase());

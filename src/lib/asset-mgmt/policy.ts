@@ -16,6 +16,11 @@ export const PLAN_IDEA_ONLY = "Only an idea can be approved or declined.";
 export const PLAN_AMOUNT = "Enter a dollar amount with at most two decimals, or leave it blank.";
 export const PLAN_ACTION = "Choose a weekly update, an income idea, or a decision.";
 export const PLAN_PERIOD = "Pick a period such as 2026-08.";
+export const PLAN_PERIOD_RANGE = "Pick a month from 1990 through 2100, such as 2026-08.";
+export const PLAN_DATE = "Use a real calendar date.";
+export const PLAN_FUTURE = "That date is in the future. Use the date on the source.";
+export const PLAN_RETRIEVED_ORDER = "The retrieved date cannot be earlier than the as-of date.";
+export const PLAN_SETUP = "Asset plan setup is pending. The plan tables are not on this database yet.";
 
 export const PRICING_BAND_NOTE =
   "Pricing band not supplied. This needs your approval. No recommended range is produced.";
@@ -67,7 +72,28 @@ export function assertNoResidentKeys(value: unknown): void {
   }
 }
 
-const BLOCKED_SOURCE = /apartments\.com|apartment\s*list|realtor\.com|zillow\s+listings?|hotpads|trulia/i;
+const BLOCKED_SOURCE_PATTERNS: RegExp[] = [
+  /apartments\.com/i,
+  /apartment\s*list/i,
+  /apartmentlist/i,
+  /realtor\.com/i,
+  /zumper/i,
+  /rent\.com/i,
+  /craigslist/i,
+  /facebook\s*marketplace/i,
+  /facebook\.com\/marketplace/i,
+  /hotpads/i,
+  /trulia/i,
+  /apartment\s*guide/i,
+  /forrent\.com/i,
+];
+
+/** Listing sites are blocked by name. A hand-uploaded ZORI file may name Zillow. */
+export function sourceIsBlocked(sourceName: string, termsNote: string, sourceType: string): boolean {
+  const hay = `${sourceName} ${termsNote}`;
+  if (sourceType !== "ZORI" && /zillow/i.test(hay)) return true;
+  return BLOCKED_SOURCE_PATTERNS.some((pattern) => pattern.test(hay));
+}
 
 export const SOURCE_TYPES = ["PM_COMP", "PUBLIC", "ZORI"] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
@@ -82,11 +108,31 @@ export type WeeklyInput = {
   rangeLowCents: bigint | null;
   rangeHighCents: bigint | null;
   trendNote: string | null;
+  specialsNote: string | null;
   vintageDate: string | null;
   asOfDate: string;
   retrievedAt: string;
   termsNote: string;
 };
+
+export const PLAN_YEAR_MIN = 1990;
+export const PLAN_YEAR_MAX = 2100;
+
+export function assertPlanPeriod(year: number, month: number): void {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || year < PLAN_YEAR_MIN || year > PLAN_YEAR_MAX || month < 1 || month > 12) {
+    throw new AssetPlanError(PLAN_PERIOD_RANGE);
+  }
+}
+
+export function parsePlanPeriod(value: unknown): { year: number; month: number } | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}$/.test(value)) return null;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || year < PLAN_YEAR_MIN || year > PLAN_YEAR_MAX || month < 1 || month > 12) {
+    return null;
+  }
+  return { year, month };
+}
 
 function text(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -108,12 +154,29 @@ export function parseOptionalDollars(value: unknown): bigint | null {
   return cents;
 }
 
+export function isRealCalendarDate(raw: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const year = Number(raw.slice(0, 4));
+  const month = Number(raw.slice(5, 7));
+  const day = Number(raw.slice(8, 10));
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
+
+export function todayIso(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
 function parseDate(value: unknown, missing: string): string {
   const raw = text(value, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(Date.parse(`${raw}T00:00:00Z`))) {
-    throw new AssetPlanError(missing);
-  }
+  if (!raw) throw new AssetPlanError(missing);
+  if (!isRealCalendarDate(raw)) throw new AssetPlanError(PLAN_DATE);
   return raw;
+}
+
+function assertNotFuture(isoDate: string): void {
+  if (isoDate > todayIso()) throw new AssetPlanError(PLAN_FUTURE);
 }
 
 function optionalDate(value: unknown): string | null {
@@ -129,12 +192,17 @@ export function validateWeeklyUpdate(body: Record<string, unknown>): WeeklyInput
   const asOfDate = text(body.asOfDate, 10);
   const retrievedAt = text(body.retrievedAt, 10);
   const termsNote = text(body.termsNote, 500);
-  if (!sourceName || !/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) throw new AssetPlanError(PLAN_SOURCE_DATE);
+  if (!sourceName || !asOfDate) throw new AssetPlanError(PLAN_SOURCE_DATE);
+  if (!isRealCalendarDate(asOfDate)) throw new AssetPlanError(PLAN_DATE);
   if (!geography) throw new AssetPlanError(PLAN_GEOGRAPHY);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(retrievedAt)) throw new AssetPlanError(PLAN_RETRIEVED);
+  if (!retrievedAt) throw new AssetPlanError(PLAN_RETRIEVED);
+  if (!isRealCalendarDate(retrievedAt)) throw new AssetPlanError(PLAN_DATE);
+  assertNotFuture(asOfDate);
+  assertNotFuture(retrievedAt);
+  if (retrievedAt < asOfDate) throw new AssetPlanError(PLAN_RETRIEVED_ORDER);
   if (!termsNote) throw new AssetPlanError(PLAN_TERMS);
   if (!SOURCE_TYPES.includes(sourceType as SourceType)) throw new AssetPlanError(PLAN_BLOCKED_SOURCE);
-  if (BLOCKED_SOURCE.test(sourceName) || BLOCKED_SOURCE.test(termsNote)) throw new AssetPlanError(PLAN_BLOCKED_SOURCE);
+  if (sourceIsBlocked(sourceName, termsNote, sourceType)) throw new AssetPlanError(PLAN_BLOCKED_SOURCE);
   if (sourceType === "ZORI" && !termsNote.includes("Data Provided by Zillow Group")) {
     throw new AssetPlanError(PLAN_ZORI_CREDIT);
   }
@@ -142,7 +210,8 @@ export function validateWeeklyUpdate(body: Record<string, unknown>): WeeklyInput
   const rangeLowCents = parseOptionalDollars(body.rangeLowCents ?? body.rangeLow);
   const rangeHighCents = parseOptionalDollars(body.rangeHighCents ?? body.rangeHigh);
   const trendNote = optionalText(body.trendNote, 300);
-  if (valueCents == null && rangeLowCents == null && rangeHighCents == null && !trendNote) {
+  const specialsNote = optionalText(body.specialsNote ?? body.specials, 300);
+  if (valueCents == null && rangeLowCents == null && rangeHighCents == null && !trendNote && !specialsNote) {
     throw new AssetPlanError(PLAN_NO_FIGURE);
   }
   let beds: number | null = null;
@@ -151,6 +220,8 @@ export function validateWeeklyUpdate(body: Record<string, unknown>): WeeklyInput
     if (!Number.isInteger(parsed) || parsed < 0 || parsed > 6) throw new AssetPlanError(PLAN_AMOUNT);
     beds = parsed;
   }
+  const vintageDate = optionalDate(body.vintageDate);
+  if (vintageDate) assertNotFuture(vintageDate);
   return {
     sourceName,
     sourceType: sourceType as SourceType,
@@ -161,7 +232,8 @@ export function validateWeeklyUpdate(body: Record<string, unknown>): WeeklyInput
     rangeLowCents,
     rangeHighCents,
     trendNote,
-    vintageDate: optionalDate(body.vintageDate),
+    specialsNote,
+    vintageDate,
     asOfDate,
     retrievedAt,
     termsNote,

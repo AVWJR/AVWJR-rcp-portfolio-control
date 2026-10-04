@@ -997,6 +997,8 @@ model MarketObservation {
   rangeLowCents  BigInt?
   rangeHighCents BigInt?
   trendNote      String?
+  /// Public specials or concessions named by the source. Not a resident concession.
+  specialsNote   String?
   vintageDate    DateTime?
   asOfDate       DateTime
   retrievedAt    DateTime

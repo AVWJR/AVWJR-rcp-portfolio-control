@@ -67,6 +67,11 @@
     "Enter the date you retrieved this figure.",
     "Only an idea can be approved or declined.",
     "Enter a dollar amount with at most two decimals, or leave it blank.",
-    "Choose a weekly update, an income idea, or a decision."
+    "Choose a weekly update, an income idea, or a decision.",
+    "Pick a month from 1990 through 2100, such as 2026-08.",
+    "Use a real calendar date.",
+    "That date is in the future. Use the date on the source.",
+    "The retrieved date cannot be earlier than the as-of date.",
+    "Asset plan setup is pending. The plan tables are not on this database yet."
   ]
 }

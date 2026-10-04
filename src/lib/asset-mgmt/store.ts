@@ -1,14 +1,15 @@
 import type { PlanEventKind } from "@prisma/client";
 import { prisma, type Db } from "@/lib/prisma";
-import { buildOperatingPackage } from "@/lib/operating";
 import { describePlan, type PlanFacts, type PlanRecommendation } from "./analyze";
 import { BLEND_METHOD } from "./formulas";
-import { booksAreActive, controllableBudget, loadPlanFacts, loadStoredPlan, periodEndIso } from "./load";
+import { isMissingPlanTable, loadStoredPlan, readPlanBooks } from "./load";
 import {
   AssetPlanError,
   PLAN_IDEA_ONLY,
   PLAN_NOT_OWNED,
+  PLAN_SETUP,
   PMS_NOTE,
+  assertPlanPeriod,
   dateAtNyNoon,
   decisionSideEffects,
   type DecisionInput,
@@ -32,30 +33,26 @@ async function requireOwned(entityId: string) {
 }
 
 async function factsFor(entityId: string, year: number, month: number): Promise<PlanFacts> {
+  assertPlanPeriod(year, month);
   const entity = await requireOwned(entityId);
-  const pack = await buildOperatingPackage({ entityId, year, month, consolidated: false });
-  const facts = await loadPlanFacts({
+  const books = await readPlanBooks({
     entityId,
     entityCode: entity.code,
     year,
     month,
-    periodEnd: periodEndIso(year, month),
-    booksActive: booksAreActive(pack.scope.inPeriod),
-    egiCents: pack.operating.actual.egi,
-    noiCents: pack.operating.actual.noi,
-    otherIncomeCents: pack.operating.actual.otherIncome,
-    inPeriod: pack.scope.inPeriod,
-    throughEnd: pack.scope.throughEnd,
-    throughStart: pack.scope.throughStart,
-    units: pack.units,
     dealUnitCount: entity.unitCountOverride ?? entity.unitCount,
     businessPlanNote: entity.businessPlan,
-    controllableBudgetCents: controllableBudget(pack.operating),
+    includePeers: true,
   });
-  const stored = await loadStoredPlan(entityId);
-  facts.observations = stored.observations;
-  facts.opportunities = stored.opportunities;
-  return facts;
+  let stored;
+  try {
+    stored = await loadStoredPlan(entityId);
+  } catch (error) {
+    missingTable(error);
+  }
+  books.facts.observations = stored.observations;
+  books.facts.opportunities = stored.opportunities;
+  return books.facts;
 }
 
 async function persistScore(db: Db, opts: {
@@ -160,6 +157,11 @@ async function persistScore(db: Db, opts: {
   });
 }
 
+function missingTable(error: unknown): never {
+  if (isMissingPlanTable(error)) throw new AssetPlanError(PLAN_SETUP, 503);
+  throw error;
+}
+
 export async function saveWeeklyUpdate(opts: {
   entityId: string;
   year: number;
@@ -167,6 +169,7 @@ export async function saveWeeklyUpdate(opts: {
   actor: string;
   input: WeeklyInput;
 }) {
+  assertPlanPeriod(opts.year, opts.month);
   decisionSideEffects();
   const facts = await factsFor(opts.entityId, opts.year, opts.month);
   const draft = {
@@ -179,6 +182,7 @@ export async function saveWeeklyUpdate(opts: {
     rangeLowCents: opts.input.rangeLowCents,
     rangeHighCents: opts.input.rangeHighCents,
     trendNote: opts.input.trendNote,
+    specialsNote: opts.input.specialsNote,
     asOfDate: opts.input.asOfDate,
     vintageDate: opts.input.vintageDate,
     retrievedAt: opts.input.retrievedAt,
@@ -186,7 +190,9 @@ export async function saveWeeklyUpdate(opts: {
   };
   facts.observations = [...facts.observations, draft];
   const analysis = describePlan(facts);
-  const observationId = await prisma.$transaction(async (tx) => {
+  let observationId: string;
+  try {
+    observationId = await prisma.$transaction(async (tx) => {
     const plan = await tx.assetPlan.upsert({
       where: { entityId: opts.entityId },
       update: {},
@@ -204,6 +210,7 @@ export async function saveWeeklyUpdate(opts: {
         rangeLowCents: opts.input.rangeLowCents,
         rangeHighCents: opts.input.rangeHighCents,
         trendNote: opts.input.trendNote,
+        specialsNote: opts.input.specialsNote,
         vintageDate: opts.input.vintageDate ? dateAtNyNoon(opts.input.vintageDate) : null,
         asOfDate: dateAtNyNoon(opts.input.asOfDate),
         retrievedAt: dateAtNyNoon(opts.input.retrievedAt),
@@ -223,6 +230,9 @@ export async function saveWeeklyUpdate(opts: {
     });
     return observation.id;
   });
+  } catch (error) {
+    missingTable(error);
+  }
   return { external: false as const, observationId };
 }
 
@@ -233,9 +243,12 @@ export async function saveIncomeIdea(opts: {
   actor: string;
   input: IncomeInput;
 }) {
+  assertPlanPeriod(opts.year, opts.month);
   decisionSideEffects();
-  await factsFor(opts.entityId, opts.year, opts.month);
-  const createdId = await prisma.$transaction(async (tx) => {
+  await requireOwned(opts.entityId);
+  let createdId: string;
+  try {
+    createdId = await prisma.$transaction(async (tx) => {
     const plan = await tx.assetPlan.upsert({
       where: { entityId: opts.entityId },
       update: {},
@@ -271,6 +284,9 @@ export async function saveIncomeIdea(opts: {
     });
     return created.id;
   });
+  } catch (error) {
+    missingTable(error);
+  }
   return { id: createdId, external: false as const };
 }
 
@@ -281,6 +297,7 @@ export async function decideIncomeIdea(opts: {
   actor: string;
   input: DecisionInput;
 }) {
+  assertPlanPeriod(opts.year, opts.month);
   const effects = decisionSideEffects();
   if (effects.deletesHistory || effects.external || effects.pmsWrite) {
     throw new AssetPlanError("Plan actions cannot leave RCP.");
@@ -292,7 +309,6 @@ export async function decideIncomeIdea(opts: {
     ? await prisma.incomeOpportunity.findFirst({ where: { id: opts.input.opportunityId, planId: plan.id } })
     : null;
   if (!opportunity || !plan) throw new AssetPlanError(PLAN_IDEA_ONLY, 404);
-  if (opportunity.status !== "IDEA") throw new AssetPlanError(PLAN_IDEA_ONLY, 409);
   const nextStatus = opts.input.decision === "APPROVE" ? "APPROVED" : "DECLINED";
   const facts = await factsFor(opts.entityId, opts.year, opts.month);
   facts.opportunities = facts.opportunities.map((row) => (row.id === opportunity.id ? { ...row, status: nextStatus } : row));
@@ -303,7 +319,11 @@ export async function decideIncomeIdea(opts: {
       : null;
 
   await prisma.$transaction(async (tx) => {
-    await tx.incomeOpportunity.update({ where: { id: opportunity.id }, data: { status: nextStatus } });
+    const updated = await tx.incomeOpportunity.updateMany({
+      where: { id: opportunity.id, planId: plan.id, status: "IDEA" },
+      data: { status: nextStatus },
+    });
+    if (updated.count !== 1) throw new AssetPlanError(PLAN_IDEA_ONLY, 409);
     await tx.planEvent.create({
       data: {
         planId: plan.id,

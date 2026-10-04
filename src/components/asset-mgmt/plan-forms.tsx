@@ -36,6 +36,7 @@ export function WeeklyUpdateForm({ code, period }: { code: string; period: strin
         rangeLow: formData.get("rangeLow"),
         rangeHigh: formData.get("rangeHigh"),
         trendNote: formData.get("trendNote"),
+        specials: formData.get("specials"),
         vintageDate: formData.get("vintageDate"),
         asOfDate: formData.get("asOfDate"),
         retrievedAt: formData.get("retrievedAt"),
@@ -90,6 +91,10 @@ export function WeeklyUpdateForm({ code, period }: { code: string; period: strin
       <label className="text-sm text-ink-700 md:col-span-2">
         Trend note
         <input name="trendNote" className={inputClass} />
+      </label>
+      <label className="text-sm text-ink-700 md:col-span-2">
+        Specials or concessions, if the source names them
+        <input name="specials" className={inputClass} placeholder="Optional. Public specials only." />
       </label>
       <label className="text-sm text-ink-700">
         Vintage or release date

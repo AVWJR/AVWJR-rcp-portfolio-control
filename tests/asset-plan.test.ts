@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { describePlan, type PlanFacts, type PlanUnit } from "@/lib/asset-mgmt/analyze";
+import { describePlan, floorPlanRows, type PlanFacts, type PlanUnit } from "@/lib/asset-mgmt/analyze";
 import {
   centsPerCount,
   dollarsAtStake,
@@ -13,14 +13,20 @@ import {
   rankByMarginImpact,
   revpauCents,
   utilityRecoveryBps,
+  lostRentPerDayCents,
   whatChanged,
   type ScoreSnapshot,
 } from "@/lib/asset-mgmt/formulas";
 import {
   PLAN_BLOCKED_SOURCE,
+  PLAN_DATE,
+  PLAN_FUTURE,
+  PLAN_PERIOD_RANGE,
   PLAN_RESIDENT,
+  PLAN_RETRIEVED_ORDER,
   PLAN_VIEWER,
   PLAN_ZORI_CREDIT,
+  assertPlanPeriod,
   assertCanMutatePlan,
   assertNoResidentKeys,
   decisionSideEffects,
@@ -54,6 +60,7 @@ function facts(partial: Partial<PlanFacts> = {}): PlanFacts {
     otherIncomeLines: null,
     utilityLines: null,
     dealUnitCount: null,
+    rentRollAsOf: "2026-08-16",
     units: null,
     peers: [],
     opportunities: [],
@@ -96,6 +103,8 @@ describe("asset plan formulas", () => {
     expect(utilityRecoveryBps(null, 400n)).toBeNull();
     expect(presentCents(null)).toBe(NOT_AVAILABLE);
     expect(presentCents(0n)).toBe("$0.00");
+    expect(lostRentPerDayCents(0n)).toBeNull();
+    expect(lostRentPerDayCents(30_000n)).toBe(1_000n);
   });
 
   it("ranks by margin dollars and RevPAU, not by an occupancy rate", () => {
@@ -143,8 +152,12 @@ describe("asset plan formulas", () => {
     expect(first[0]?.cause).toMatch(/first saved score/);
     expect(first[0]?.after).toContain("PM weekly comp");
     expect(first[0]?.after).toContain("2026-08-20");
-    const prior = { ...next, observationCount: 0, latestSource: null, latestAsOf: null, latestValueCents: null, revpauCents: "20000" };
-    const delta = whatChanged(prior, next);
+    const prior = { ...next, observationCount: 0, latestSource: null, latestAsOf: null, latestValueCents: null, revpauCents: "20000", revenueBase: "book-egi" as const };
+    const nextLabeled = { ...next, revenueBase: "book-egi" as const };
+    const delta = whatChanged(prior, nextLabeled);
+    expect(delta.find((row) => row.label === "RevPAU")?.cause).toMatch(/Book EGI/);
+    const switched = whatChanged({ ...prior, revenueBase: "rent-roll" }, nextLabeled);
+    expect(switched.find((row) => row.label === "RevPAU")?.cause).toMatch(/not compared/);
     expect(delta.some((row) => row.label === "RevPAU" && row.before !== NOT_AVAILABLE)).toBe(true);
     expect(delta.some((row) => row.label === "Latest market observation" && row.after.includes("2026-08-20"))).toBe(true);
   });
@@ -235,6 +248,28 @@ describe("asset plan analysis", () => {
     expect(plan.blend.version).toBe("phase1-no-blend-v1");
   });
 
+  it("keeps a property-level index out of illustrative RevPAU and ignores a zero market rent", () => {
+    const plan = describePlan(facts({
+      units: [
+        unit({ unitCode: "101", status: "OCCUPIED", inPlaceRent: 50_000n, marketRent: 50_000n, concessionCents: 1_000n }),
+        unit({ unitCode: "102", status: "VACANT", marketRent: 0n, floorplan: "A1", concessionCents: 9_000n }),
+      ],
+      observations: [
+        { id: "z", sourceName: "ZORI", sourceType: "ZORI", geography: "30301", floorplan: null, valueCents: 150_000n, rangeLowCents: null, rangeHighCents: null, trendNote: null, asOfDate: "2026-08-20", vintageDate: null, retrievedAt: "2026-08-21", termsNote: "Data Provided by Zillow Group." },
+      ],
+    }));
+    expect(plan.illustrative.cents).toBeNull();
+    expect(plan.illustrative.note).toMatch(/context only/);
+    expect(plan.recommendations.find((row) => row.code === "RENT")?.sourceLabel).toContain("2026-08-16");
+    const rows = floorPlanRows(facts({
+      units: [
+        unit({ unitCode: "101", status: "OCCUPIED", concessionCents: 1_000n, floorplan: "A1" }),
+        unit({ unitCode: "102", status: "VACANT", concessionCents: 9_000n, floorplan: "A1" }),
+      ],
+    }));
+    expect(rows[0]?.concessionCents).toBe(1_000n);
+  });
+
   it("keeps a gain-to-lease in the signed figure and out of the floored figure", () => {
     const plan = describePlan(facts({
       units: [unit({ unitCode: "101", status: "OCCUPIED", marketRent: 80_000n, inPlaceRent: 90_000n })],
@@ -297,6 +332,78 @@ describe("asset plan boundaries", () => {
     expect(route).not.toMatch(/fetch\(/);
     expect(store).toContain("SPE");
     expect(store).toContain("external: false");
+    expect(store).not.toMatch(/buildOperatingPackage|openPeriod/);
+    expect(store).toContain('status: "IDEA"');
+    const page = readFileSync("src/app/deals/[code]/plan/page.tsx", "utf8");
+    expect(page).not.toMatch(/ReportShell|buildAllStatements|buildOperatingPackage|openPeriod/);
+    expect(page).toContain("readPlanBooks");
+  });
+
+  it("rejects impossible dates, future dates, retrieved-before-as-of, and listing-site names", () => {
+    expect(() => assertPlanPeriod(1800, 1)).toThrow(PLAN_PERIOD_RANGE);
+    expect(() => assertPlanPeriod(2026, 13)).toThrow(PLAN_PERIOD_RANGE);
+    expect(() => assertPlanPeriod(2026, 8)).not.toThrow();
+    const base = {
+      sourceType: "PUBLIC",
+      geography: "30301",
+      asOfDate: "2026-08-20",
+      retrievedAt: "2026-08-21",
+      termsNote: "This use is permitted.",
+      value: "10",
+    };
+    expect(() => validateWeeklyUpdate({ ...base, sourceName: "PM survey", asOfDate: "2026-02-31" })).toThrow(PLAN_DATE);
+    expect(() => validateWeeklyUpdate({ ...base, sourceName: "PM survey", asOfDate: "2099-01-01", retrievedAt: "2099-01-02" })).toThrow(PLAN_FUTURE);
+    expect(() => validateWeeklyUpdate({ ...base, sourceName: "PM survey", retrievedAt: "2026-08-19" })).toThrow(PLAN_RETRIEVED_ORDER);
+    for (const sourceName of ["Zumper feed", "Craigslist post", "Facebook Marketplace", "www.rent.com", "Realtor.com", "Apartment List"]) {
+      expect(() => validateWeeklyUpdate({ ...base, sourceName })).toThrow(PLAN_BLOCKED_SOURCE);
+    }
+    expect(() => validateWeeklyUpdate({ ...base, sourceName: "Zillow listings", sourceType: "PUBLIC" })).toThrow(PLAN_BLOCKED_SOURCE);
+    const zori = validateWeeklyUpdate({
+      ...base,
+      sourceName: "Zillow ZORI ZIP 30301",
+      sourceType: "ZORI",
+      termsNote: "Data Provided by Zillow Group. Uploaded by hand.",
+      floorplan: "",
+    });
+    expect(zori.sourceType).toBe("ZORI");
+    expect(zori.floorplan).toBeNull();
+  });
+});
+
+describe("opening balance is not income-statement activity", () => {
+  it("leaves book figures blank when the only lines are balance-sheet accounts", async () => {
+    const { booksAreActive, controllableBudget, expensePerUnit } = await import("@/lib/asset-mgmt/load");
+    const opening = [
+      { accountCode: "1010", debit: 100n, credit: 0n },
+      { accountCode: "3010", debit: 0n, credit: 100n },
+    ];
+    expect(booksAreActive(opening)).toBe(false);
+    expect(booksAreActive([{ accountCode: "4010", debit: 0n, credit: 50n }])).toBe(true);
+    expect(expensePerUnit(opening, ["5110", "5120"], 10)).toBeNull();
+    expect(expensePerUnit([{ accountCode: "5110", debit: 0n, credit: 0n }, { accountCode: "4010", debit: 0n, credit: 1n }], ["5110"], 10)).toBeNull();
+    const budget = new Map<string, bigint>([["5110", 1n]]);
+    expect(controllableBudget(budget)).toBeNull();
+    const full = new Map<string, bigint>([
+      ["5110", 1n],
+      ["5120", 1n],
+      ["5210", 1n],
+      ["5220", 1n],
+      ["5410", 1n],
+      ["5510", 1n],
+      ["5610", 1n],
+      ["5910", 1n],
+      ["5990", 1n],
+    ]);
+    expect(controllableBudget(full)).toBe(9n);
+    const quiet = describePlan(facts({
+      booksActive: false,
+      egiCents: null,
+      payrollCents: null,
+      dealUnitCount: 3,
+      units: [unit({ unitCode: "101", status: "OCCUPIED", inPlaceRent: 50_000n, marketRent: 50_000n })],
+    }));
+    expect(quiet.revenueSource).not.toMatch(/Book EGI/);
+    expect(presentCents(quiet.payrollPer)).toBe(NOT_AVAILABLE);
   });
 });
 
@@ -325,6 +432,7 @@ describe.skipIf(isPostgresUrl(process.env.DATABASE_URL))("asset plan on the loca
           rangeLowCents: null,
           rangeHighCents: null,
           trendNote: null,
+          specialsNote: null,
           vintageDate: "2026-08-01",
           asOfDate: "2026-08-20",
           retrievedAt: "2026-08-21",
@@ -372,6 +480,115 @@ describe.skipIf(isPostgresUrl(process.env.DATABASE_URL))("asset plan on the loca
       await prisma.planRecommendation.deleteMany({ where: { plan: { entityId: spe.id }, createdAt: { gte: stamp } } });
       await prisma.marketObservation.deleteMany({ where: { plan: { entityId: spe.id }, sourceName: "EXAMPLE phase 1 test" } });
       await prisma.incomeOpportunity.deleteMany({ where: { plan: { entityId: spe.id }, title: "EXAMPLE pet rent" } });
+      const remaining = await prisma.planEvent.count({ where: { plan: { entityId: spe.id } } });
+      if (remaining === 0) await prisma.assetPlan.deleteMany({ where: { entityId: spe.id } });
+    }
+  }, 60_000);
+
+  it("does not open a period when the plan is viewed or updated", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    const { readPlanBooks } = await import("@/lib/asset-mgmt/load");
+    const { saveIncomeIdea, saveWeeklyUpdate, decideIncomeIdea } = await import("@/lib/asset-mgmt/store");
+    const spe = await prisma.entity.findUnique({ where: { code: "SPE-WBG" } });
+    if (!spe) throw new Error("Seed SPE-WBG before running this test (npx tsx prisma/seed.ts)");
+    const beforePeriods = (await prisma.period.findMany({
+      where: { entityId: spe.id },
+      select: { id: true, year: true, month: true },
+      orderBy: [{ year: "asc" }, { month: "asc" }],
+    })).map((row) => `${row.id}:${row.year}-${row.month}`);
+    const beforeChecks = await prisma.closeChecklistItem.count({ where: { period: { entityId: spe.id } } });
+    const stamp = new Date();
+    try {
+      const july = await readPlanBooks({
+        entityId: spe.id,
+        entityCode: spe.code,
+        year: 2026,
+        month: 7,
+        dealUnitCount: spe.unitCount,
+        businessPlanNote: spe.businessPlan,
+        includePeers: false,
+      });
+      expect(july.fellBack).toBe(false);
+      expect(july.facts.booksActive).toBe(false);
+      expect(july.facts.egiCents).toBeNull();
+      expect(july.facts.payrollCents).toBeNull();
+      expect(july.facts.rentRollAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const missing = await readPlanBooks({
+        entityId: spe.id,
+        entityCode: spe.code,
+        year: 2031,
+        month: 6,
+        dealUnitCount: spe.unitCount,
+        businessPlanNote: spe.businessPlan,
+        includePeers: true,
+      });
+      expect(missing.fellBack).toBe(true);
+      expect(missing.year).not.toBe(2031);
+      const weekly = await saveWeeklyUpdate({
+        entityId: spe.id,
+        year: 2031,
+        month: 6,
+        actor: "principal",
+        input: {
+          sourceName: "EXAMPLE no period",
+          sourceType: "PM_COMP",
+          geography: "30301",
+          floorplan: "A1",
+          beds: null,
+          valueCents: 100n,
+          rangeLowCents: null,
+          rangeHighCents: null,
+          trendNote: null,
+          specialsNote: "one month free",
+          vintageDate: null,
+          asOfDate: "2026-08-20",
+          retrievedAt: "2026-08-21",
+          termsNote: "Example only. Public asking rents.",
+        },
+      });
+      expect(weekly.external).toBe(false);
+      const idea = await saveIncomeIdea({
+        entityId: spe.id,
+        year: 2031,
+        month: 6,
+        actor: "principal",
+        input: {
+          category: "Parking",
+          title: "EXAMPLE no period idea",
+          currentCaptureCents: 1n,
+          fullRolloutCents: 2n,
+          setupCostCents: null,
+          ownerName: null,
+          steps: null,
+          legalNote: null,
+        },
+      });
+      await decideIncomeIdea({
+        entityId: spe.id,
+        year: 2031,
+        month: 6,
+        actor: "principal",
+        input: { opportunityId: idea.id, decision: "APPROVE", reason: "Example only.", ownerName: null, dueDate: null },
+      });
+      await expect(decideIncomeIdea({
+        entityId: spe.id,
+        year: 2031,
+        month: 6,
+        actor: "principal",
+        input: { opportunityId: idea.id, decision: "APPROVE", reason: "Again.", ownerName: null, dueDate: null },
+      })).rejects.toThrow(/Only an idea/);
+      const stillThere = await prisma.period.findMany({
+        where: { id: { in: beforePeriods.map((row) => row.slice(0, row.indexOf(":"))) } },
+        select: { id: true },
+      });
+      expect(stillThere).toHaveLength(beforePeriods.length);
+      expect(await prisma.closeChecklistItem.count({ where: { periodId: { in: beforePeriods.map((row) => row.slice(0, row.indexOf(":"))) } } })).toBe(beforeChecks);
+      expect(await prisma.period.findUnique({ where: { entityId_year_month: { entityId: spe.id, year: 2031, month: 6 } } })).toBeNull();
+    } finally {
+      await prisma.planEvent.deleteMany({ where: { plan: { entityId: spe.id }, createdAt: { gte: stamp } } });
+      await prisma.planRecommendation.deleteMany({ where: { plan: { entityId: spe.id }, createdAt: { gte: stamp } } });
+      await prisma.marketObservation.deleteMany({ where: { plan: { entityId: spe.id }, sourceName: "EXAMPLE no period" } });
+      await prisma.incomeOpportunity.deleteMany({ where: { plan: { entityId: spe.id }, title: "EXAMPLE no period idea" } });
       const remaining = await prisma.planEvent.count({ where: { plan: { entityId: spe.id } } });
       if (remaining === 0) await prisma.assetPlan.deleteMany({ where: { entityId: spe.id } });
     }

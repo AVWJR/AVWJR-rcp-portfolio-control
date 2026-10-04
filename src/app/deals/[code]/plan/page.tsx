@@ -1,10 +1,15 @@
 import { DecisionButtons, IncomeIdeaForm, WeeklyUpdateForm } from "@/components/asset-mgmt/plan-forms";
-import { ReportShell, type ReportSearch } from "@/components/report-frame";
-import { booksAreActive, controllableBudget, loadPlanFacts, loadStoredPlan, periodEndIso } from "@/lib/asset-mgmt/load";
+import { PeriodBanner } from "@/components/period-banner";
+import { Shell } from "@/components/shell";
+import { PLAN_NOT_OWNED, PLAN_SETUP, parsePlanPeriod } from "@/lib/asset-mgmt/policy";
+import { isMissingPlanTable, loadStoredPlan, readPlanBooks } from "@/lib/asset-mgmt/load";
 import { buildPageModel } from "@/lib/asset-mgmt/view";
 import { currentAccessRole } from "@/lib/access-server";
+import { listPeriodLabels } from "@/lib/deals/periods";
 import { isOwnedSpe } from "@/lib/owned-spe";
 import { prisma } from "@/lib/prisma";
+import { listEntities } from "@/lib/queries";
+import { resolveReportingPeriod } from "@/lib/period-default";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -31,85 +36,116 @@ export default async function AssetPlanPage({
   searchParams,
 }: {
   params: Promise<{ code: string }>;
-  searchParams: Promise<ReportSearch & { section?: string }>;
+  searchParams: Promise<{ period?: string; section?: string }>;
 }) {
   const { code } = await params;
   const query = await searchParams;
   const entity = await prisma.entity.findUnique({ where: { code: code.toUpperCase() } });
   if (!entity || entity.type !== "SPE") notFound();
   const section: Section = isSection(query.section) ? query.section : "plan";
+  const requestedLabel = query.period?.trim() ? query.period.trim() : await resolveReportingPeriod(entity.code);
+  const requested = parsePlanPeriod(requestedLabel);
+  const [entities, periodLabels, role] = await Promise.all([
+    listEntities({ includeArchived: true }),
+    listPeriodLabels(),
+    currentAccessRole(),
+  ]);
+  const owned = isOwnedSpe(entity);
+  const year = requested?.year ?? 2026;
+  const month = requested?.month ?? 8;
+  const books = owned && requested
+    ? await readPlanBooks({
+        entityId: entity.id,
+        entityCode: entity.code,
+        year,
+        month,
+        dealUnitCount: entity.unitCountOverride ?? entity.unitCount,
+        businessPlanNote: entity.businessPlan,
+        includePeers: true,
+      })
+    : null;
+  let stored = await emptyStored();
+  let setupPending = false;
+  if (owned) {
+    try {
+      stored = await loadStoredPlan(entity.id);
+    } catch (error) {
+      if (!isMissingPlanTable(error)) throw error;
+      setupPending = true;
+    }
+  }
+  if (books) {
+    books.facts.observations = stored.observations;
+    books.facts.opportunities = stored.opportunities;
+  }
+  const shownYear = books?.year ?? year;
+  const shownMonth = books?.month ?? month;
+  const period = `${shownYear}-${String(shownMonth).padStart(2, "0")}`;
+  const dealUnits = entity.unitCountOverride ?? entity.unitCount;
+  const model = books
+    ? buildPageModel({
+        name: entity.name,
+        code: entity.code,
+        owned,
+        canEdit: role === "principal" && !setupPending,
+        facts: books.facts,
+        stored,
+        dealUnitCountLabel: dealUnits == null ? "Not on the deal record" : String(dealUnits),
+        budgetRows: books.budgetRows,
+      })
+    : null;
+  const href = (next: Section) => `/deals/${entity.code}/plan?entity=${entity.code}&period=${period}&section=${next}`;
 
   return (
-    <ReportShell searchParams={{ entity: entity.code, period: query.period }} pathname={`/deals/${entity.code}/plan`}>
-      {(ctx) => (
-        <PlanBody code={entity.code} year={ctx.year} month={ctx.month} section={section} statements={ctx.statements} />
-      )}
-    </ReportShell>
+    <Shell
+      entities={entities.map((row) => ({ code: row.code, name: row.name, type: row.type, unitCount: row.unitCount, strategy: row.strategy }))}
+      activeEntity={entity.code}
+      year={shownYear}
+      month={shownMonth}
+      consolidated={false}
+      pathname={`/deals/${entity.code}/plan`}
+      periodLabels={periodLabels}
+    >
+      {books?.periodStatus ? <PeriodBanner status={books.periodStatus} entityCode={entity.code} period={period} /> : null}
+      {books?.fellBack ? (
+        <p className="mb-4 border border-cream-300 bg-white px-5 py-4 text-sm text-ink-700">
+          {requestedLabel} is not on file. Showing {period}. This page does not open a month.
+        </p>
+      ) : null}
+      {!requested ? (
+        <p className="mb-4 border border-cream-300 bg-white px-5 py-4 text-sm text-ink-700">Pick a month from 1990 through 2100, such as 2026-08.</p>
+      ) : null}
+      {setupPending ? <p className="mb-4 border border-cream-300 bg-white px-5 py-4 text-sm text-ink-700">{PLAN_SETUP}</p> : null}
+      {!owned ? (
+        <div className="space-y-4">
+          <h1 className="font-display text-4xl text-navy-900">Asset plan</h1>
+          <p className="border border-cream-300 bg-white px-5 py-4 text-sm text-ink-700">{PLAN_NOT_OWNED} Peer figures and recommendations are not shown for a Pipeline, Test, or Archived deal.</p>
+        </div>
+      ) : model ? (
+        <PlanSections model={model} entityCode={entity.code} period={period} section={section} href={href} />
+      ) : null}
+    </Shell>
   );
 }
 
-async function PlanBody({
-  code,
-  year,
-  month,
+async function emptyStored(): Promise<Awaited<ReturnType<typeof loadStoredPlan>>> {
+  return { status: null, lastAnalyzedAt: null, blendMethodVersion: null, observations: [], opportunities: [], events: [] };
+}
+
+function PlanSections({
+  model,
+  entityCode,
+  period,
   section,
-  statements,
+  href,
 }: {
-  code: string;
-  year: number;
-  month: number;
+  model: ReturnType<typeof buildPageModel>;
+  entityCode: string;
+  period: string;
   section: Section;
-  statements: {
-    inPeriod: { accountCode: string; debit: bigint; credit: bigint }[];
-    throughEnd: { accountCode: string; debit: bigint; credit: bigint }[];
-    throughStart: { accountCode: string; debit: bigint; credit: bigint }[];
-    units: Parameters<typeof loadPlanFacts>[0]["units"];
-    os: Parameters<typeof controllableBudget>[0];
-  };
+  href: (next: Section) => string;
 }) {
-  const entity = await prisma.entity.findUnique({ where: { code } });
-  if (!entity) notFound();
-  const role = await currentAccessRole();
-  const owned = isOwnedSpe(entity);
-  const books = booksAreActive(statements.inPeriod);
-  const dealUnits = entity.unitCountOverride ?? entity.unitCount;
-  const facts = await loadPlanFacts({
-    entityId: entity.id,
-    entityCode: entity.code,
-    year,
-    month,
-    periodEnd: periodEndIso(year, month),
-    booksActive: books,
-    egiCents: statements.os?.actual.egi ?? 0n,
-    noiCents: statements.os?.actual.noi ?? 0n,
-    otherIncomeCents: statements.os?.actual.otherIncome ?? 0n,
-    inPeriod: statements.inPeriod,
-    throughEnd: statements.throughEnd,
-    throughStart: statements.throughStart,
-    units: statements.units,
-    dealUnitCount: entity.unitCountOverride ?? entity.unitCount,
-    businessPlanNote: entity.businessPlan,
-    controllableBudgetCents: controllableBudget(statements.os),
-  });
-  const stored = await loadStoredPlan(entity.id);
-  facts.observations = stored.observations;
-  facts.opportunities = stored.opportunities;
-  const period = `${year}-${String(month).padStart(2, "0")}`;
-  const model = buildPageModel({
-    name: entity.name,
-    code: entity.code,
-    owned,
-    canEdit: role === "principal",
-    facts,
-    stored,
-    dealUnitCountLabel: dealUnits == null ? "Not on the deal record" : String(dealUnits),
-    budgetRows: books
-      ? (statements.os?.rows ?? [])
-          .filter((row) => row.amount != null && row.emphasis !== "section" && row.emphasis !== "rule")
-          .map((row) => ({ label: row.label, code: row.code ?? null, actual: row.actual, budget: row.budget }))
-      : [],
-  });
-  const href = (next: Section) => `/deals/${entity.code}/plan?entity=${entity.code}&period=${period}&section=${next}`;
+  const entity = { code: entityCode };
 
   return (
     <div className="space-y-6">
@@ -133,8 +169,6 @@ async function PlanBody({
           </Link>
         ))}
       </nav>
-
-      {!owned ? <p className="border border-cream-300 bg-white px-5 py-4 text-sm text-ink-700">Asset management is for Owned deals only.</p> : null}
 
       {section === "plan" ? <Overview model={model} /> : null}
       {section === "pricing" ? <Pricing model={model} code={entity.code} period={period} /> : null}
@@ -242,7 +276,7 @@ function Pricing({ model, code, period }: { model: ReturnType<typeof buildPageMo
         {model.observations.map((row) => (
           <article key={row.id} className="border-t border-cream-200 pt-3">
             <p className="text-navy-900">{row.source} · {row.geography} · {row.floorplan}</p>
-            <p>Value {row.value}. Range {row.range}. Trend {row.trend}.</p>
+            <p>Value {row.value}. Range {row.range}. Trend {row.trend}. Specials {row.specials}.</p>
             <p>As of {row.asOf}. {row.vintage}. Retrieved {row.retrieved}. {row.stale ? "Stale." : "Current for this period."}</p>
             <p>{row.terms}</p>
           </article>

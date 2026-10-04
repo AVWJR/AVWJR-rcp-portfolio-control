@@ -87,8 +87,8 @@ export function buildPageModel(opts: {
     illustrative: presentCents(analysis.illustrative.cents),
     illustrativeNote: analysis.illustrative.note,
     levers: [
-      { title: "Occupancy", dollars: presentCents(analysis.vacancy), source: analysis.roll ? `Vacancy loss on the rent roll · ${opts.facts.periodLabel}` : "Rent roll not on file", detail: analysis.occupancyBps == null ? NOT_AVAILABLE : `Physical occupancy ${presentBps(analysis.occupancyBps)}` },
-      { title: "Rent versus market", dollars: presentCents(analysis.ltl), source: analysis.roll ? `Floored loss-to-lease · ${opts.facts.periodLabel}` : "Rent roll not on file", detail: `Signed ${presentCents(analysis.signed)}` },
+      { title: "Occupancy", dollars: presentCents(analysis.vacancy), source: analysis.roll ? `Vacancy loss on the rent roll as of ${opts.facts.rentRollAsOf ?? "date not on file"}` : "Rent roll not on file", detail: analysis.occupancyBps == null ? NOT_AVAILABLE : `Physical occupancy ${presentBps(analysis.occupancyBps)}` },
+      { title: "Rent versus market", dollars: presentCents(analysis.ltl), source: analysis.roll ? `Floored loss-to-lease on the rent roll as of ${opts.facts.rentRollAsOf ?? "date not on file"}` : "Rent roll not on file", detail: `Signed ${presentCents(analysis.signed)}` },
       { title: "Other income", dollars: presentCents(analysis.otherPerOccupied), source: opts.facts.booksActive ? `Other income per occupied unit · ${opts.facts.periodLabel}` : "No income-statement activity this period", detail: "Per occupied unit" },
       { title: "Payroll and controllable expenses", dollars: presentCents(analysis.payrollPer), source: opts.facts.booksActive ? `Payroll per unit · ${opts.facts.periodLabel}` : "No income-statement activity this period", detail: `Controllable opex per unit ${presentCents(analysis.opexPer)}` },
     ],
@@ -113,6 +113,7 @@ export function buildPageModel(opts: {
       value: presentCents(row.valueCents),
       range: row.rangeLowCents == null && row.rangeHighCents == null ? NOT_AVAILABLE : `${presentCents(row.rangeLowCents)} to ${presentCents(row.rangeHighCents)}`,
       trend: row.trendNote ?? NOT_AVAILABLE,
+      specials: row.specialsNote ?? NOT_AVAILABLE,
       asOf: row.asOfDate || NOT_AVAILABLE,
       vintage: row.vintageDate ?? "Release date not supplied",
       retrieved: row.retrievedAt || NOT_AVAILABLE,
@@ -202,13 +203,13 @@ export function buildPageModel(opts: {
     loan: opts.facts.loan
       ? {
           name: `${opts.facts.loan.name} · ${opts.facts.loan.lenderName}`,
-          reserveRequirement: `${presentCents(opts.facts.loan.reserveRequirementCents)} — stored on the loan file`,
-          reserveCash: presentCents(opts.facts.reserveCashCents),
+          reserveRequirement: `${presentCents(opts.facts.loan.reserveRequirementCents)} — ${opts.facts.loan.reserveRequirementNote}`,
+          reserveCash: `${presentCents(opts.facts.reserveCashCents)} on account ${opts.facts.loan.reserveAccountCode}`,
           dscr: formatMultiple(opts.facts.loan.dscrBps),
-          dscrThreshold: `${(opts.facts.loan.dscrThresholdBps / 10_000).toFixed(2)}x from the loan file`,
+          dscrThreshold: `${(opts.facts.loan.dscrThresholdBps / 10_000).toFixed(2)}x — ${opts.facts.loan.dscrThresholdNote}`,
           debtYield: presentBps(opts.facts.loan.debtYieldBps),
-          debtYieldThreshold: `${(opts.facts.loan.debtYieldThresholdBps / 100).toFixed(2)}% from the loan file`,
-          note: "Thresholds are the numbers stored on the loan file. This page does not invent a covenant. Debt yield uses annualized period NOI, not a trailing twelve.",
+          debtYieldThreshold: `${(opts.facts.loan.debtYieldThresholdBps / 100).toFixed(2)}% — ${opts.facts.loan.debtYieldThresholdNote}`,
+          note: "A schema default is labeled loan file default – confirm. A different stored number is from the loan file. This page does not invent a covenant. Debt yield uses annualized period NOI, not a trailing twelve.",
         }
       : null,
     loanMissing: "No loan on file. Threshold not supplied.",
