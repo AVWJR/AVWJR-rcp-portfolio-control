@@ -182,6 +182,7 @@ model Entity {
   analysisSnapshots  DealAnalysisSnapshot[]
   statusEvents       DealStatusEvent[]
   modelMemberships   PortfolioModelDeal[]
+  assetPlan          AssetPlan?
 
   @@index([dealStatus])
 }
@@ -960,4 +961,132 @@ model PortfolioModelDeal {
 
   @@unique([modelId, entityId])
   @@index([entityId])
+}
+
+/// One asset-management plan per deal. Header only. History lives on PlanEvent.
+model AssetPlan {
+  id                 String   @id @default(cuid())
+  entityId           String   @unique
+  entity             Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  /// OPEN until the first saved score. ANALYZED after that.
+  status             String   @default("OPEN")
+  lastAnalyzedAt     DateTime?
+  /// Visible method id. Phase 1 stores observations and does not blend them.
+  blendMethodVersion String   @default("phase1-no-blend-v1")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  observations    MarketObservation[]
+  recommendations PlanRecommendation[]
+  opportunities   IncomeOpportunity[]
+  events          PlanEvent[]
+}
+
+/// Insert-only market or PM comp observation. No update and no delete in the app.
+model MarketObservation {
+  id             String    @id @default(cuid())
+  planId         String
+  plan           AssetPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  sourceName     String
+  /// PM_COMP, PUBLIC, or ZORI.
+  sourceType     String
+  geography      String
+  floorplan      String?
+  beds           Int?
+  valueCents     BigInt?
+  rangeLowCents  BigInt?
+  rangeHighCents BigInt?
+  trendNote      String?
+  vintageDate    DateTime?
+  asOfDate       DateTime
+  retrievedAt    DateTime
+  termsNote      String
+  createdAt      DateTime  @default(now())
+
+  @@index([planId, createdAt])
+}
+
+/// Current recommendation pointer. Supersede by inserting a PlanEvent. Never deleted here.
+model PlanRecommendation {
+  id               String    @id @default(cuid())
+  planId           String
+  plan             AssetPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  code             String
+  title            String
+  reason           String
+  impactCents      BigInt?
+  revpauDeltaCents BigInt?
+  confidence       String
+  /// OPEN or SUPERSEDED.
+  status           String    @default("OPEN")
+  sourceLabel      String
+  sourceAsOf       DateTime?
+  supersededAt     DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([planId, status])
+}
+
+enum IncomeOpportunityStatus {
+  IDEA
+  APPROVED
+  DECLINED
+  LIVE
+  MEASURED
+}
+
+/// Manual income idea. Status changes are also written to PlanEvent.
+model IncomeOpportunity {
+  id                   String                  @id @default(cuid())
+  planId               String
+  plan                 AssetPlan               @relation(fields: [planId], references: [id], onDelete: Cascade)
+  category             String
+  title                String
+  currentCaptureCents  BigInt?
+  fullRolloutCents     BigInt?
+  setupCostCents       BigInt?
+  ownerName            String?
+  steps                String?
+  legalNote            String?
+  status               IncomeOpportunityStatus @default(IDEA)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  @@index([planId, createdAt])
+}
+
+enum PlanEventKind {
+  PLAN_ANALYZED
+  WEEKLY_UPDATE
+  RECOMMENDATION_CREATED
+  RECOMMENDATION_SUPERSEDED
+  DECISION
+  ACTION
+  RESULT
+}
+
+/// Append-only tracking log. The app has no delete path for these rows.
+model PlanEvent {
+  id                   String        @id @default(cuid())
+  planId               String
+  plan                 AssetPlan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  kind                 PlanEventKind
+  actor                String
+  reason               String
+  subjectType          String
+  subjectId            String?
+  beforeJson           String?
+  afterJson            String?
+  ownerName            String?
+  dueDate              DateTime?
+  status               String?
+  completedAt          DateTime?
+  note                 String?
+  kpiBeforeJson        String?
+  kpiAfterJson         String?
+  expectedEffectCents  BigInt?
+  sourceAsOf           DateTime?
+  createdAt            DateTime      @default(now())
+
+  @@index([planId, createdAt])
 }

@@ -52,6 +52,21 @@
     "This SPE is soft-archived. Restore it from Deal Archive before uploading a month-end package.",
     "Drop at least one file.",
     "Pick a waterfall template (including 100% look-through).",
-    "Waterfall is per property SPE, not HoldCo or OpCo."
+    "Waterfall is per property SPE, not HoldCo or OpCo.",
+    "Asset management is for Owned deals only.",
+    "Partner view is read-only. Unlock to update the asset plan.",
+    "Name the source and the as-of date.",
+    "Add a terms note that says this use is permitted.",
+    "Zillow ZORI needs the credit Data Provided by Zillow Group in the terms note.",
+    "This plan does not accept resident names or balances.",
+    "Say why you are approving or declining.",
+    "Enter a category and a short name for the income idea.",
+    "That source is not permitted for a market feed in this phase.",
+    "Enter a value, a range, or a trend note. Do not leave the observation blank.",
+    "Name the geography, such as a ZIP, county, or metro.",
+    "Enter the date you retrieved this figure.",
+    "Only an idea can be approved or declined.",
+    "Enter a dollar amount with at most two decimals, or leave it blank.",
+    "Choose a weekly update, an income idea, or a decision."
   ]
 }
