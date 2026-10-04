@@ -83,12 +83,17 @@ export async function loadMoveDates(entityId: string, year: number, month: numbe
   return moves;
 }
 
+/** No posted line for these codes is missing, not $0. A posted zero stays zero. */
+export function postedExpenseCents(lines: PostedLine[], codes: readonly string[]): bigint | null {
+  if (!lines.some((line) => codes.includes(line.accountCode))) return null;
+  return sumByCodes(new Map(codes.map((code) => [code, debitOf(lines, code)])), codes);
+}
+
 /** A peer with no posted payroll or controllable expense is left out of the median. Zero is not a peer. */
 export function expensePerUnit(lines: PostedLine[], codes: readonly string[], rentable: number): bigint | null {
   if (!booksAreActive(lines) || rentable <= 0) return null;
-  if (!lines.some((line) => codes.includes(line.accountCode))) return null;
-  const amount = sumByCodes(new Map(codes.map((code) => [code, debitOf(lines, code)])), codes);
-  if (amount <= 0n) return null;
+  const amount = postedExpenseCents(lines, codes);
+  if (amount == null || amount <= 0n) return null;
   return perUnitCents(amount, rentable);
 }
 
@@ -176,9 +181,6 @@ export async function loadPlanFacts(opts: {
     orderBy: { recordedAt: "desc" },
   });
 
-  const payrollMap = new Map(PAYROLL_CODES.map((code) => [code, debitOf(opts.inPeriod, code)]));
-  const controllableMap = new Map(CONTROLLABLE_OPEX_CODES.map((code) => [code, debitOf(opts.inPeriod, code)]));
-
   return {
     entityCode: opts.entityCode,
     periodLabel: `${opts.year}-${String(opts.month).padStart(2, "0")}`,
@@ -187,9 +189,9 @@ export async function loadPlanFacts(opts: {
     egiCents: books ? opts.egiCents : null,
     noiCents: books ? opts.noiCents : null,
     otherIncomeCents: books ? opts.otherIncomeCents : null,
-    payrollCents: books ? sumByCodes(payrollMap, PAYROLL_CODES) : null,
-    pmFeeCents: books ? debitOf(opts.inPeriod, "5910") : null,
-    controllableOpexCents: books ? sumByCodes(controllableMap, CONTROLLABLE_OPEX_CODES) : null,
+    payrollCents: books ? postedExpenseCents(opts.inPeriod, PAYROLL_CODES) : null,
+    pmFeeCents: books ? postedExpenseCents(opts.inPeriod, ["5910"]) : null,
+    controllableOpexCents: books ? postedExpenseCents(opts.inPeriod, CONTROLLABLE_OPEX_CODES) : null,
     controllableBudgetCents: opts.controllableBudgetCents,
     makeReadyCents: books ? debitOf(opts.inPeriod, "5220") : null,
     badDebtCents: books ? debitOf(opts.inPeriod, "4050") : null,

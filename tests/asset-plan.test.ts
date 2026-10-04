@@ -9,6 +9,7 @@ import {
   observationIsStale,
   paybackMonths,
   peerGapPerUnit,
+  presentBps,
   presentCents,
   rankByMarginImpact,
   revpauCents,
@@ -404,6 +405,31 @@ describe("opening balance is not income-statement activity", () => {
     }));
     expect(quiet.revenueSource).not.toMatch(/Book EGI/);
     expect(presentCents(quiet.payrollPer)).toBe(NOT_AVAILABLE);
+  });
+
+  it("leaves payroll, the PM fee, and controllable opex blank when revenue is posted and those accounts are not", async () => {
+    const { postedExpenseCents } = await import("@/lib/asset-mgmt/load");
+    const { CONTROLLABLE_OPEX_CODES } = await import("@rcp/analytics");
+    const revenueOnly = [{ accountCode: "4010", debit: 0n, credit: 120_000n }];
+    const payrollCents = postedExpenseCents(revenueOnly, ["5110", "5120"]);
+    const pmFeeCents = postedExpenseCents(revenueOnly, ["5910"]);
+    const controllableOpexCents = postedExpenseCents(revenueOnly, CONTROLLABLE_OPEX_CODES);
+    expect(payrollCents).toBeNull();
+    expect(pmFeeCents).toBeNull();
+    expect(controllableOpexCents).toBeNull();
+    expect(postedExpenseCents([...revenueOnly, { accountCode: "5110", debit: 5_000n, credit: 0n }], ["5110", "5120"])).toBe(5_000n);
+    const view = describePlan(facts({
+      booksActive: true,
+      egiCents: 120_000n,
+      noiCents: 80_000n,
+      payrollCents,
+      pmFeeCents,
+      controllableOpexCents,
+      dealUnitCount: 10,
+    }));
+    expect(presentCents(view.payrollPer)).toBe(NOT_AVAILABLE);
+    expect(presentBps(view.pmFeeBps)).toBe(NOT_AVAILABLE);
+    expect(presentCents(view.opexPer)).toBe(NOT_AVAILABLE);
   });
 });
 
