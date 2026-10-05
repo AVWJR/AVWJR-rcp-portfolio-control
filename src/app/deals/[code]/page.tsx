@@ -39,6 +39,7 @@ export default async function DealProfilePage({
             </p>
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
               <Link className="text-navy-800 underline" href={`/dashboard/${profile.code}?entity=${profile.code}&period=${period}`}>Dashboard</Link>
+              <Link className="text-navy-800 underline" href={`/deals/${profile.code}/plan?entity=${profile.code}&period=${period}`}>Asset plan</Link>
               <Link className="text-navy-800 underline" href={`/deals/${profile.code}/waterfall?entity=${profile.code}&period=${period}`}>Waterfall</Link>
               <Link className="text-navy-800 underline" href={`/library?period=${period}`}>Deal Library</Link>
               <SaveSnapshotButton code={profile.code} period={period} />

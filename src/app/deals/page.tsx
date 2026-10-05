@@ -138,6 +138,12 @@ async function DealIndex({
                 Month-end close
               </Link>
               <Link
+                href={`/deals/${spe.code}/plan?entity=${spe.code}&period=${period}`}
+                className="text-sm text-navy-800 underline"
+              >
+                Asset plan
+              </Link>
+              <Link
                 href={`/deals/${spe.code}/proforma?entity=${spe.code}&period=${period}`}
                 className="text-sm text-navy-800 underline"
               >

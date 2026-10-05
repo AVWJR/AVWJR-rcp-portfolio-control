@@ -202,6 +202,15 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
     hints: ["Create, copy, or delete a Model. Add or remove a deal. Compare up to four. Owner only, same gate as Library."],
   },
   {
+    pattern: "/deals/[code]/plan",
+    test: /^\/deals\/[^/]+\/plan$/,
+    title: "Asset plan",
+    hints: [
+      "Owned deal plan from the rent roll and this period's books. Save a weekly update or approve an income idea. Nothing is sent to a property manager.",
+      "Pricing bands and monthly targets stay blank until supplied. Resident names and balances are not on this page.",
+    ],
+  },
+  {
     pattern: "/deals/[code]",
     test: /^\/deals\/SPE-[A-Z0-9]+$/,
     title: "Deal profile",
@@ -319,6 +328,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { id: "models", href: "/models", label: "Models", hint: "What-if deal lists. Create, copy, compare up to four. Projection, not books." },
   { id: "waterfall", href: "/deals", label: "Deal waterfall", hint: "LP/GP waterfall and Co-GP on a live SPE card — how do I set the deal waterfall?" },
   { id: "distributions", href: "/deals", label: "Distribution ledger", hint: "Record a distribution and see how much pref is still owed on /deals/{SPE}/distributions" },
+  { id: "asset_plan", href: "/deals", label: "Asset plan", hint: "Property plan, weekly comp update, and income-idea log on /deals/{SPE}/plan" },
   { id: "deal_proforma", href: "/deals", label: "Deal proforma", hint: "Forward-looking Deal LP / Deal GP (RCP + Co-GP) on a live SPE" },
   { id: "opco_proforma", href: "/opco/proforma", label: "OpCo proforma", hint: "OpCo LPs and OpCo GPs after each SPE waterfall" },
   { id: "add_deal", href: "/deals/new", label: "Add Deal", hint: "Guided SPE intake" },
@@ -369,7 +379,7 @@ export function listNavTargets(): NavTarget[] {
 export function entityFromPathname(pathname: string): string | null {
   const dash = pathname.match(/^\/dashboard\/(SPE-[A-Z0-9]+|RCP-OPCO)$/);
   if (dash) return dash[1];
-  const wf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/(?:waterfall|distributions|proforma)$/);
+  const wf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/(?:waterfall|distributions|proforma|close|plan)$/);
   if (wf) return wf[1];
   const pf = pathname.match(/^\/deals\/(SPE-[A-Z0-9]+)\/proforma$/);
   if (pf) return pf[1];
