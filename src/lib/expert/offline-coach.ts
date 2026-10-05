@@ -523,6 +523,11 @@ function howToClearlyMatches(question: string): boolean {
   return EXPERT_HOWTOS.some((entry) => entry.keywords.some((keyword) => keyword.test(stripped)));
 }
 
+function marketsHowToMatches(question: string): boolean {
+  const entry = EXPERT_HOWTOS.find((row) => row.id === "markets.ranks");
+  return Boolean(entry?.keywords.some((keyword) => keyword.test(question)));
+}
+
 function navHelp(text: string, ctx: ExpertClientContext): string {
   const q = text.toLowerCase();
   const targets = listNavTargets().filter(
@@ -564,7 +569,7 @@ export function answerOffline(
     content = tour(ctx);
   } else if (/what does |what is |mean\b|explain /.test(q) && /noi/.test(q)) {
     content = explainNoi(ctx, bundle);
-  } else if (/what.?s missing|missing for|missing data|completeness|gaps? for|score/.test(q)) {
+  } else if (/what.?s missing|missing for|missing data|completeness|gaps? for|score/.test(q) && !marketsHowToMatches(userText)) {
     content = completenessCopy(ctx, bundle, userText);
   } else if (/import rent roll|rent-?roll csv|xlsx|map columns|workbook/.test(q)) {
     content = rentRollImportCopy(ctx);

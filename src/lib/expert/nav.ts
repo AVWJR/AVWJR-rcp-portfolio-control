@@ -18,8 +18,9 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
     test: /^\/markets\/\d+$/,
     title: "Metro score",
     hints: [
-      "Viability Score, rank, and pillar bars for one metro.",
-      "A missing pillar says data needed. It is not zero.",
+      "Viability Score is the presentation number (Boise City is 91.9), plus rank, band, confidence, and pillar bars.",
+      "A missing pillar says data needed. New Haven and Waterbury-Shelton are demand-only.",
+      "Rank interval overlaps are treated as ties. Confidence is a data-quality grade, not a second viability score.",
     ],
   },
   {
@@ -27,8 +28,9 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
     test: /^\/markets$/,
     title: "Market Ranks",
     hints: [
-      "Scoreboard, Metrics, Weightings, and Data sources.",
-      "Free public data v1. Registering a paid source does not change scores.",
+      "Scoreboard, Metrics, Weightings, and Data sources. Nov 1, 2025 presentation scores for about 200 metros.",
+      "Five pillars at 20%. SUP-20 is all of Supply. Backtest on Weightings is not statistically confirmed.",
+      "Registering a paid source does not change scores. Partner view cannot open this page.",
     ],
   },
   {
@@ -330,7 +332,7 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
 export const NAV_TARGETS: NavTarget[] = [
   { id: "overview", href: "/", label: "Overview", hint: "Home tiles and product map" },
   { id: "dashboard", href: "/dashboard", label: "Dashboard", hint: "OpCo / property KPI tiles" },
-  { id: "markets", href: "/markets", label: "Market Ranks", hint: "200-metro Viability Scores from free public data. Paid sources can be registered and do not change the score." },
+  { id: "markets", href: "/markets", label: "Market Ranks", hint: "Nov 1, 2025 presentation Viability Scores for about 200 metros. Paid registration does not change the score. Principal only." },
   { id: "ratios", href: "/dashboard/ratios", label: "Ratios", hint: "Live formula dictionary" },
   { id: "narratives", href: "/narratives", label: "Narratives", hint: "Five audience tones" },
   { id: "lp_pack", href: "/narratives/packs/monthly_investor", label: "Monthly Investor Pack", hint: "LP PDF / PPTX" },

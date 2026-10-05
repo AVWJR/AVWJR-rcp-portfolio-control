@@ -57,9 +57,9 @@ function countsTowardPass(pattern: string, question: string): boolean {
 }
 
 describe("Expert offline eval set", () => {
-  it("loads the 45-question set", () => {
-    expect(items).toHaveLength(45);
-    expect(new Set(items.map((item) => item.id)).size).toBe(45);
+  it("loads the 49-question set", () => {
+    expect(items).toHaveLength(49);
+    expect(new Set(items.map((item) => item.id)).size).toBe(49);
   });
 
   it("matches how-to haystacks for every question", () => {
@@ -100,7 +100,7 @@ describe("Expert offline eval set", () => {
     console.log(`OFFLINE_STRICT ${passed}/${items.length}`);
     expect(failures.filter((row) => row.includes("forbidden")), failures.join("\n")).toEqual([]);
     // PK-1 and PK-3 only repeat patterns already in the question (or the trivial token "owned"), so they do not pass.
-    expect(passed, failures.filter((row) => !row.includes("forbidden")).join("\n")).toBe(43);
+    expect(passed, failures.filter((row) => !row.includes("forbidden")).join("\n")).toBe(47);
   });
 
   it("routes the four former misroutes to the right how-to", () => {
@@ -189,6 +189,10 @@ describe("Expert offline eval set", () => {
       { question: "how do I restore a deal I archived", id: "archive.lifecycle" },
       { question: "stop counting this deal in OpCo without deleting it", id: "library.statuses" },
       { question: "I left unreturned capital empty", id: "waterfall.deal" },
+      { question: "What is the viability score?", id: "markets.ranks" },
+      { question: "Does registering Yardi change scores?", id: "markets.ranks" },
+      { question: "What is SUP-20?", id: "markets.ranks" },
+      { question: "Can partners open Market Ranks?", id: "markets.ranks" },
     ];
     for (const row of keywordCases) {
       const best = findHowTos(row.question, "/", 8).find((entry) =>
