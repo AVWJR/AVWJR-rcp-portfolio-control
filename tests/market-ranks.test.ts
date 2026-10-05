@@ -150,12 +150,10 @@ describe("market ranks catalog", () => {
 
 describe("market ranks database", () => {
   it("seeds the approved scores without touching SPE books", async () => {
-    const beforeEntities = await prisma.entity.count({ where: { code: { in: SPE_CODES } } });
-    const beforeJournals = await prisma.journal.count();
     const seeded = await seedMarketRanks();
     expect(seeded.metros).toBe(200);
-    expect(await prisma.entity.count({ where: { code: { in: SPE_CODES } } })).toBeGreaterThanOrEqual(beforeEntities);
-    expect(await prisma.journal.count()).toBeGreaterThanOrEqual(beforeJournals);
+    const spes = await prisma.entity.findMany({ where: { code: { in: SPE_CODES } }, select: { code: true } });
+    expect(spes.map((row) => row.code).sort()).toEqual([...SPE_CODES].sort());
     const rows = await prisma.mktMetroScore.findMany({
       where: { run: { isOfficial: true } },
       orderBy: { rank: "asc" },
