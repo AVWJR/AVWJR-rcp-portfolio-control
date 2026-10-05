@@ -72,6 +72,16 @@
     "Use a real calendar date.",
     "That date is in the future. Use the date on the source.",
     "The retrieved date cannot be earlier than the as-of date.",
-    "Asset plan setup is pending. The plan tables are not on this database yet."
+    "Asset plan setup is pending. The plan tables are not on this database yet.",
+    "Partner view is read-only. Unlock to open Market Ranks.",
+    "Name the source.",
+    "Name the publisher.",
+    "LoopNet is excluded. It is not registered and it does not enter the score.",
+    "This form does not store credentials or API keys.",
+    "Market ranks setup is pending. The score tables are not on this database yet.",
+    "The official scores are not on this database yet. They load on the production deploy, which is the only deploy that adds these tables.",
+    "That name is already a public or commentary source. This form only registers a paid source.",
+    "Use an http or https link, or leave the box blank.",
+    "This preview does not register a source. Registration writes on production, after the score tables are there."
   ]
 }

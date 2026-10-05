@@ -71,12 +71,21 @@ export function isArchiveApi(pathname: string): boolean {
   return /^\/api\/deals\/[^/]+\/(archive|delete)\/?$/.test(pathname);
 }
 
+export function isMarketsPath(pathname: string): boolean {
+  return pathname === "/markets" || pathname.startsWith("/markets/");
+}
+
+export function isMarketsApi(pathname: string): boolean {
+  return pathname === "/api/markets" || pathname.startsWith("/api/markets/");
+}
+
 export function isViewerBlockedPath(pathname: string): boolean {
   if (pathname === "/deals/new" || pathname.startsWith("/deals/new/")) return true;
   if (pathname === "/admin/seed" || pathname.startsWith("/admin/")) return true;
   if (pathname === "/archive" || pathname.startsWith("/archive/")) return true;
   if (pathname === "/library" || pathname.startsWith("/library/")) return true;
   if (pathname === "/models" || pathname.startsWith("/models/")) return true;
+  if (isMarketsPath(pathname)) return true;
   return false;
 }
 
@@ -88,6 +97,7 @@ export function viewerForbiddenApi(pathname: string, method: string): boolean {
   if (isArchiveApi(pathname)) return true;
   if (pathname === "/api/library" || pathname.startsWith("/api/library/")) return true;
   if (pathname === "/api/models" || pathname.startsWith("/api/models/")) return true;
+  if (isMarketsApi(pathname)) return true;
   if (!isMutatingMethod(method)) return false;
   if (isViewerAllowedMutation(pathname)) return false;
   return true;

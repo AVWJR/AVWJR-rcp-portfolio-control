@@ -60,6 +60,9 @@ export default async function HomePage({
                   ? [{ href: "/archive", title: "Deal Archive", copy: "Study deleted SPEs and restore them. Not a tab under Deals. Books and vault stay intact." }]
                   : []),
                 { href: "/dashboard", title: "OpCo / property dashboards", copy: "Live ratio tiles with formula drill-down. Combined roll-up is not GAAP consolidation." },
+                ...(role === "principal"
+                  ? [{ href: "/markets", title: "Market Ranks", copy: "Viability Scores for 200 metros from the Nov 1, 2025 free public data run. A paid source can be registered and does not change the score." }]
+                  : []),
                 { href: "/narratives", title: "Narratives / report packs", copy: "Five audience tones plus Monthly Investor, Lender, IC Memo, and Management Flash PDF/PPTX." },
                 { href: "/dashboard/ratios", title: "Ratio dictionary", copy: "Formulas, units, and NOI definition labels (period vs T12 vs annualized period)." },
                 { href: "/reports/operating-statement", title: "Operating Statement", copy: "NOI bridge with budget variance and prior-period (MoM) columns." },

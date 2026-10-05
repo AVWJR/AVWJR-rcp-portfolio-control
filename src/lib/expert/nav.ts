@@ -14,6 +14,24 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
     ],
   },
   {
+    pattern: "/markets/[cbsa]",
+    test: /^\/markets\/\d+$/,
+    title: "Metro score",
+    hints: [
+      "Viability Score, rank, and pillar bars for one metro.",
+      "A missing pillar says data needed. It is not zero.",
+    ],
+  },
+  {
+    pattern: "/markets",
+    test: /^\/markets$/,
+    title: "Market Ranks",
+    hints: [
+      "Scoreboard, Metrics, Weightings, and Data sources.",
+      "Free public data v1. Registering a paid source does not change scores.",
+    ],
+  },
+  {
     pattern: "/dashboard/ratios/[ratioId]",
     test: /^\/dashboard\/ratios\/[^/]+$/,
     title: "Ratio drill-down",
@@ -312,6 +330,7 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
 export const NAV_TARGETS: NavTarget[] = [
   { id: "overview", href: "/", label: "Overview", hint: "Home tiles and product map" },
   { id: "dashboard", href: "/dashboard", label: "Dashboard", hint: "OpCo / property KPI tiles" },
+  { id: "markets", href: "/markets", label: "Market Ranks", hint: "200-metro Viability Scores from free public data. Paid sources can be registered and do not change the score." },
   { id: "ratios", href: "/dashboard/ratios", label: "Ratios", hint: "Live formula dictionary" },
   { id: "narratives", href: "/narratives", label: "Narratives", hint: "Five audience tones" },
   { id: "lp_pack", href: "/narratives/packs/monthly_investor", label: "Monthly Investor Pack", hint: "LP PDF / PPTX" },

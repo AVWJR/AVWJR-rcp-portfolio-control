@@ -59,10 +59,19 @@ export function middleware(request: NextRequest) {
     const dest = request.nextUrl.clone();
     const library = pathname.startsWith("/library");
     const models = pathname.startsWith("/models");
-    dest.pathname = pathname.startsWith("/archive") || library || models ? "/" : "/deals";
+    const markets = pathname.startsWith("/markets");
+    dest.pathname = pathname.startsWith("/archive") || library || models || markets ? "/" : "/deals";
     dest.searchParams.set(
       "denied",
-      pathname.startsWith("/archive") ? "archive" : library ? "library" : models ? "models" : "add_deal",
+      pathname.startsWith("/archive")
+        ? "archive"
+        : library
+          ? "library"
+          : models
+            ? "models"
+            : markets
+              ? "markets"
+              : "add_deal",
     );
     if (pathname.startsWith("/admin")) dest.pathname = "/";
     return NextResponse.redirect(dest);

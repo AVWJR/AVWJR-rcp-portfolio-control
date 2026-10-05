@@ -40,6 +40,11 @@ describe("partner viewer access", () => {
     expect(isViewerBlockedPath("/models")).toBe(true);
     expect(isViewerBlockedPath("/models/compare")).toBe(true);
     expect(isViewerBlockedPath("/models/fees")).toBe(true);
+    expect(isViewerBlockedPath("/markets")).toBe(true);
+    expect(isViewerBlockedPath("/markets/24220")).toBe(true);
+    expect(viewerForbiddenApi("/api/markets", "GET")).toBe(true);
+    expect(viewerForbiddenApi("/api/markets/export", "GET")).toBe(true);
+    expect(viewerForbiddenApi("/api/markets/sources", "POST")).toBe(true);
     expect(isViewerBlockedPath("/dashboard/SPE-WBG")).toBe(false);
     expect(isViewerBlockedPath("/narratives")).toBe(false);
     expect(viewerForbiddenApi("/api/deals/SPE-WBG/delete", "POST")).toBe(true);
