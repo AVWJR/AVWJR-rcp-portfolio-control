@@ -1092,3 +1092,147 @@ model PlanEvent {
 
   @@index([planId, createdAt])
 }
+
+// --- Market Ranks (free public data v1). Additive. Not ledger, journal, close, or budget. ---
+
+/// A data publisher or series. Paid rows may be registered later and stay inactive.
+model MktSource {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  publisher         String
+  url               String   @default("")
+  termsUrl          String   @default("")
+  /// public | manual_only | license_required | excluded
+  licenseBasis      String
+  automationAllowed Boolean  @default(false)
+  costNotes         String   @default("")
+  /// active | inactive | pending_license
+  status            String
+  paywalled         Boolean  @default(false)
+  notes             String   @default("")
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  variables         MktVariableSource[]
+
+  @@index([status, licenseBasis])
+}
+
+/// One model input. inScoreToday is true only when the approved source list says yes.
+model MktVariable {
+  id              String   @id
+  name            String
+  plainDefinition String
+  pillar          String
+  /// Short unit when the definition names one. Otherwise "data needed".
+  unit            String
+  /// higher_is_worse when the source list says so. Otherwise not_stated.
+  expectedSign    String
+  whyItMatters    String
+  inScoreToday    Boolean
+  /// The source-list cell, unchanged: yes, eligible but weight 0, or no.
+  inScoreLabel    String
+  /// Source cell from the approved list. An em dash means no source was named.
+  sourceLabel     String
+  weightNotes     String
+  sortOrder       Int      @default(0)
+  sources         MktVariableSource[]
+
+  @@index([pillar, sortOrder])
+}
+
+model MktVariableSource {
+  variableId String
+  sourceId   String
+  variable   MktVariable @relation(fields: [variableId], references: [id], onDelete: Cascade)
+  source     MktSource   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@id([variableId, sourceId])
+}
+
+/// One approved scoring method. Scores stay on the official version until a new one is approved.
+model MktModelVersion {
+  id                     String   @id
+  code                   String   @unique
+  name                   String
+  derivationPlainEnglish String
+  isOfficial             Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  weightSets             MktWeightSet[]
+  scoreRuns              MktScoreRun[]
+}
+
+/// Pillar weight or within-pillar weight. Fractions stay exact (numerator / denominator).
+model MktWeightSet {
+  id                String          @id
+  modelVersionId    String
+  modelVersion      MktModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  /// PILLAR or VARIABLE
+  scope             String
+  pillar            String
+  variableId        String?
+  weightNumerator   Int
+  weightDenominator Int
+  notes             String
+  sortOrder         Int             @default(0)
+
+  @@index([modelVersionId, sortOrder])
+}
+
+/// A point-in-time score run. Rows are kept. Nothing here is deleted because of age.
+model MktScoreRun {
+  id             String             @id
+  modelVersionId String
+  modelVersion   MktModelVersion    @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  asOf           DateTime
+  isOfficial     Boolean            @default(false)
+  label          String
+  notes          String
+  createdAt      DateTime           @default(now())
+  scores         MktMetroScore[]
+  backtest       MktBacktestResult?
+
+  @@index([isOfficial])
+}
+
+model MktMetro {
+  cbsaCode String          @id
+  name     String
+  scores   MktMetroScore[]
+}
+
+/// Official viability, rank, and pillar subscores for one metro on one run.
+model MktMetroScore {
+  id               String      @id
+  runId            String
+  run              MktScoreRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  metroId          String
+  metro            MktMetro    @relation(fields: [metroId], references: [cbsaCode], onDelete: Cascade)
+  rank             Int
+  /// Viability Score × 10. 919 is 91.9. Never a guessed zero.
+  viabilityTenths  Int
+  band             String
+  tiedWithinBand   String
+  tiedCount        Int
+  /// Rank interval × 1000. 1000 is 1.
+  rankP5Milli      Int
+  rankP95Milli     Int
+  confidenceTenths Int
+  momentum         String
+  flags            String      @default("")
+  /// JSON of pillar name to the Phase 5 subscore string. Missing pillars are omitted, not zero.
+  pillarScoresJson String      @default("{}")
+  createdAt        DateTime    @default(now())
+
+  @@unique([runId, metroId])
+  @@index([runId, rank])
+}
+
+/// The one honest backtest limitation stored with the official run.
+model MktBacktestResult {
+  id                     String      @id
+  runId                  String      @unique
+  run                    MktScoreRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  limitationPlainEnglish String
+  createdAt              DateTime    @default(now())
+}

@@ -1395,6 +1395,78 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     sourceRefs: ["src/app/deals/[code]/plan/page.tsx:1", "src/lib/asset-mgmt/formulas.ts:1", "docs/RCP_ASSET_MANAGEMENT.md:1"],
   },
+  {
+    id: "markets.ranks",
+    feature: "Market Ranks",
+    routes: ["/markets", "/markets/[cbsa]"],
+    apiRoutes: ["/api/markets/sources"],
+    navPath: "Market Ranks (/markets)",
+    keywords: [/market ranks|viability score|paid source|register a paid source|\/markets/i],
+    steps: [
+      "Unlock as Principal, then open gold nav Market Ranks.",
+      "Read the Scoreboard. Export CSV if you want the 200 rows.",
+      "Open Metrics to see which variables are in the score today, and Weightings for the five equal pillars.",
+      "Open Data sources. To register a paid source, enter the name and publisher and click Register paid source.",
+    ],
+    facts: [
+      "The official score is the Nov 1, 2025 free public data run. Five pillars are 20% each. Within Supply, SUP-20 is 100%.",
+      "Registering a paid source saves a license-required inactive row. Scores stay the same until a new model version is approved. The form does not store a key and does not fetch.",
+      "A missing pillar or a missing metro variable value says data needed. It is not zero. Local news never enters the score.",
+    ],
+    troubleshooting: [
+      {
+        symptom: "Partner view is read-only. Unlock to open Market Ranks.",
+        cause: "The session is a viewer, or the unlock cookie is missing.",
+        fix: "Open /unlock and enter the Principal password.",
+      },
+      {
+        symptom: "Name the source.",
+        cause: "The paid-source form has no name.",
+        fix: "Type the source name, then click Register paid source.",
+      },
+      {
+        symptom: "Name the publisher.",
+        cause: "The paid-source form has no publisher.",
+        fix: "Type the publisher, then click Register paid source.",
+      },
+      {
+        symptom: "LoopNet is excluded. It is not registered and it does not enter the score.",
+        cause: "The name, publisher, or URL names LoopNet.",
+        fix: "Leave LoopNet out. It is not a source in this score.",
+      },
+      {
+        symptom: "This form does not store credentials or API keys.",
+        cause: "The request included a key, token, secret, or password field.",
+        fix: "Send only the name, publisher, URLs, cost notes, and license status.",
+      },
+      {
+        symptom: "Market ranks setup is pending. The score tables are not on this database yet.",
+        cause: "The score tables have not been added to this database.",
+        fix: "Wait for the production deploy. A preview does not add them.",
+      },
+      {
+        symptom: "The official scores are not on this database yet. They load on the production deploy, which is the only deploy that adds these tables.",
+        cause: "This preview shares the production database and does not write the score rows.",
+        fix: "Open Market Ranks on production after that deploy.",
+      },
+      {
+        symptom: "That name is already a public or commentary source. This form only registers a paid source.",
+        cause: "The name matches a source already in the free-data list.",
+        fix: "Use the paid vendor's own name. The public series stays as it is.",
+      },
+      {
+        symptom: "Use an http or https link, or leave the box blank.",
+        cause: "A URL is not a plain http or https link.",
+        fix: "Paste an https link, or leave the box blank.",
+      },
+      {
+        symptom: "This preview does not register a source. Registration writes on production, after the score tables are there.",
+        cause: "The request came from a preview deploy.",
+        fix: "Register the source on production.",
+      },
+    ],
+    sourceRefs: ["src/app/markets/page.tsx:1", "src/lib/markets/policy.ts:1", "docs/market-ranks/methodology.md:1"],
+  },
 ];
 
 export function howToById(id: string): ExpertHowTo | undefined {

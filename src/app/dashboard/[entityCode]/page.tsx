@@ -1,13 +1,16 @@
 import { ArchivedSpeBanner } from "@/components/archived-spe-banner";
 import { BrokerOverlayStrip } from "@/components/broker-overlay-strip";
 import { DashboardTiles } from "@/components/dashboard-tiles";
+import { MarketRanksTile } from "@/components/markets/market-ranks-tile";
 import { NoiConcentration } from "@/components/noi-concentration";
 import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { DistributionCharts } from "@/components/deals/distribution-charts";
 import { chartModelFromBoard } from "@/lib/distribution-chart-model";
 import { loadDistributionBoard, type DistributionBoard } from "@/lib/distribution-ledger";
+import { currentAccessRole } from "@/lib/access-server";
 import { buildDashboardForEntity, type OpCoDashboard, type PropertyDashboard } from "@/lib/dashboards";
+import { loadMarketRanksTile, type MarketTileModel } from "@/lib/markets/read";
 import { formatUsd } from "@rcp/ledger";
 import { formatRatioBps } from "@rcp/properties";
 import Link from "next/link";
@@ -44,11 +47,19 @@ export default async function EntityDashboardPage({
           year: ctx.year,
           month: ctx.month,
         });
+        const role = await currentAccessRole();
+        const marketTile: MarketTileModel = role === "principal" ? await loadMarketRanksTile() : { state: "locked" };
         const distribution = ctx.entity.type === "SPE" ? await loadDistributionBoard(ctx.entity.id) : null;
         return dash.kind === "opco" ? (
-          <OpCoView ctxLabel={reportSubtitle(ctx)} dash={dash} />
+          <OpCoView ctxLabel={reportSubtitle(ctx)} dash={dash} marketTile={marketTile} />
         ) : (
-          <PropertyView ctxLabel={reportSubtitle(ctx)} dash={dash} archived={ctx.archived} distribution={distribution} />
+          <PropertyView
+            ctxLabel={reportSubtitle(ctx)}
+            dash={dash}
+            archived={ctx.archived}
+            distribution={distribution}
+            marketTile={marketTile}
+          />
         );
       }}
     </ReportShell>
@@ -60,11 +71,13 @@ function PropertyView({
   dash,
   archived,
   distribution,
+  marketTile,
 }: {
   ctxLabel: string;
   dash: PropertyDashboard;
   archived: boolean;
   distribution: DistributionBoard | null;
+  marketTile: MarketTileModel;
 }) {
   const q = `entity=${dash.entityCode}&period=${dash.period}`;
   return (
@@ -117,6 +130,9 @@ function PropertyView({
         </div>
       </div>
       {dash.unitCount === 0 ? <ReapplyRentRollButton entityCode={dash.entityCode} hasUnits={false} /> : null}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MarketRanksTile model={marketTile} />
+      </div>
       <BrokerOverlayStrip overlay={dash.brokerOverlay} />
       {distribution ? <DistributionCharts model={chartModelFromBoard(distribution)} /> : null}
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} />
@@ -124,7 +140,15 @@ function PropertyView({
   );
 }
 
-function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard }) {
+function OpCoView({
+  ctxLabel,
+  dash,
+  marketTile,
+}: {
+  ctxLabel: string;
+  dash: OpCoDashboard;
+  marketTile: MarketTileModel;
+}) {
   const q = `entity=${dash.entityCode}&period=${dash.period}&view=combined`;
   return (
     <div className="space-y-8">
@@ -156,6 +180,9 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
             OpCo proforma
           </Link>
         </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MarketRanksTile model={marketTile} />
       </div>
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} view="combined" />
       <NoiConcentration rows={dash.concentration} period={dash.period} />

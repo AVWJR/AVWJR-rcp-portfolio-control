@@ -5,6 +5,7 @@ import { EntitySwitcher } from "./entity-switcher";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/markets", label: "Market Ranks" },
   { href: "/dashboard/ratios", label: "Ratios" },
   { href: "/narratives", label: "Narratives" },
   { href: "/", label: "Overview" },
@@ -89,6 +90,8 @@ export function Shell({
               const active =
                 item.href === "/dashboard"
                   ? pathname === "/dashboard" || /^\/dashboard\/SPE-/.test(pathname) || pathname === "/dashboard/RCP-OPCO"
+                  : item.href === "/markets"
+                    ? pathname.startsWith("/markets")
                   : item.href === "/dashboard/ratios"
                     ? pathname.startsWith("/dashboard/ratios")
                     : item.href === "/narratives"
