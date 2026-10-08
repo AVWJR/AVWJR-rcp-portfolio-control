@@ -688,5 +688,70 @@
     "must_not_include": [
       "combined.{0,40}eliminat"
     ]
+  },
+  {
+    "id": "MR-1",
+    "feature": "Market Ranks",
+    "route": "/markets",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "What is the viability score?",
+    "must_include": [
+      "grand forks",
+      "91\\.9",
+      "presentation|1–100|1-100",
+      "not the scoreboard"
+    ],
+    "must_not_include": [
+      "boise city, id is 100",
+      "investment advice you should buy"
+    ]
+  },
+  {
+    "id": "MR-2",
+    "feature": "Market Ranks",
+    "route": "/markets",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Does registering Yardi change scores?",
+    "must_include": [
+      "yardi matrix",
+      "inactive",
+      "stay the same|unchanged|does not change"
+    ],
+    "must_not_include": [
+      "api key is stored",
+      "scores are recalculated"
+    ]
+  },
+  {
+    "id": "MR-3",
+    "feature": "Market Ranks",
+    "route": "/",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "What is SUP-20?",
+    "must_include": [
+      "permits",
+      "100%",
+      "weight 0"
+    ],
+    "must_not_include": []
+  },
+  {
+    "id": "MR-4",
+    "feature": "Market Ranks",
+    "route": "/",
+    "entity": "RCP-OPCO",
+    "period": "2026-08",
+    "question": "Can partners open Market Ranks?",
+    "must_include": [
+      "principal",
+      "/markets",
+      "cannot open|read-only"
+    ],
+    "must_not_include": [
+      "partners can open /markets"
+    ]
   }
 ]
