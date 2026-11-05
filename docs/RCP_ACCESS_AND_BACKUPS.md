@@ -83,7 +83,7 @@ The backup workflow runs every day around 3:00 or 4:00 a.m. Eastern. It asks Neo
 
 ## Restore drill and a real restore
 
-A drill already runs on every pull request (the **backup-drill** job). It creates two empty Postgres databases, writes a row, encrypts a dump, restores it, and checks the row. It never touches Neon.
+A drill already runs on every pull request (the **backup-drill** job). It creates two empty Postgres databases, writes a row, encrypts a dump, restores it, and checks the row. It never touches Neon. The dump uses a `pg_dump` of the same major version as that server. A newer client writes `SET transaction_timeout`, which an older server rejects.
 
 To practice on your own computer you need Postgres installed and two empty databases:
 

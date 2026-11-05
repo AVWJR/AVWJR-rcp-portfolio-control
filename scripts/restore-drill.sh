@@ -19,6 +19,21 @@ export BACKUP_ENCRYPTION_KEY="${BACKUP_ENCRYPTION_KEY:-drill-only-passphrase}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
+# Dump and restore with the server's major. A newer pg_dump writes session
+# settings the older server does not have, and ON_ERROR_STOP then aborts.
+# Ignore DATABASE_URL here. A laptop often has the SQLite demo URL, and the
+# nightly job's variable must not steer this drill at a different server.
+client_bin="$(
+  env -u DATABASE_URL -u DIRECT_URL \
+    SOURCE_DATABASE_URL="$SOURCE_DATABASE_URL" \
+    bash "$ROOT/scripts/install-matching-pg-client.sh" --print-bin
+)"
+if [[ -z "$client_bin" || ! -x "$client_bin/pg_dump" || ! -x "$client_bin/psql" ]]; then
+  echo "Could not select a Postgres client that matches the source server." >&2
+  exit 1
+fi
+export PATH="$client_bin:$PATH"
+
 psql "$SOURCE_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP TABLE IF EXISTS backup_drill;
 CREATE TABLE backup_drill (id int primary key, note text not null);

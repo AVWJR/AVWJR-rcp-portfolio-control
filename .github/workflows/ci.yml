@@ -47,8 +47,10 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - name: Install Postgres client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install the pg_dump that matches the scratch server
+        env:
+          SOURCE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: bash scripts/install-matching-pg-client.sh
       - name: Create scratch databases
         env:
           PGPASSWORD: postgres

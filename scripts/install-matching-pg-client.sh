@@ -1,11 +1,42 @@
 #!/usr/bin/env bash
 # Install the pg_dump major version that matches the database server.
-# Neon may be Postgres 16 or 17. A dump from an older client can fail or warn.
+# A newer plain dump sets GUCs the older server rejects. Postgres 18 writes
+# "SET transaction_timeout = 0", and Postgres 16 then aborts the restore.
+#
+#   bash scripts/install-matching-pg-client.sh
+#   bash scripts/install-matching-pg-client.sh --print-bin
+#
+# --print-bin writes only the directory that contains the matching pg_dump
+# and psql. Other messages go to stderr. The nightly backup reads neither.
 set -euo pipefail
+
+PRINT_BIN=0
+if [[ "${1:-}" == "--print-bin" ]]; then
+  PRINT_BIN=1
+fi
+
+log() {
+  echo "$@" >&2
+}
+
+publish() {
+  local dir="$1"
+  if [[ ! -x "$dir/pg_dump" || ! -x "$dir/psql" ]]; then
+    log "pg_dump and psql were not both found in $dir."
+    exit 1
+  fi
+  if [[ -n "${GITHUB_PATH:-}" ]]; then
+    echo "$dir" >> "$GITHUB_PATH"
+  fi
+  if [[ "$PRINT_BIN" == "1" ]]; then
+    printf '%s\n' "$dir"
+  fi
+  log "Using $("$dir/pg_dump" --version)"
+}
 
 URL="${DIRECT_URL:-${DATABASE_URL:-${SOURCE_DATABASE_URL:-}}}"
 if [[ -z "$URL" ]]; then
-  echo "No database URL. Skipping Postgres client install." >&2
+  log "No database URL. Skipping Postgres client install."
   exit 0
 fi
 
@@ -16,13 +47,14 @@ fi
 
 raw="$(psql "$URL" -tAc "SHOW server_version_num;" | tr -d '[:space:]')"
 if [[ ! "$raw" =~ ^[0-9]+$ ]]; then
-  echo "Could not read the server version from SHOW server_version_num (got [$raw])." >&2
+  log "Could not read the server version from SHOW server_version_num (got [$raw])."
   exit 1
 fi
 major=$((raw / 10000))
 have="$(pg_dump --version | grep -oE '[0-9]+' | head -1 || true)"
-echo "Database server is Postgres $major. This machine's pg_dump major is ${have:-missing}."
+log "Database server is Postgres $major. This machine's pg_dump major is ${have:-missing}."
 if [[ "$have" == "$major" ]]; then
+  publish "$(dirname "$(command -v pg_dump)")"
   exit 0
 fi
 
@@ -40,12 +72,4 @@ fi
 
 sudo apt-get install -y "postgresql-client-${major}"
 bin="/usr/lib/postgresql/${major}/bin"
-if [[ ! -x "$bin/pg_dump" ]]; then
-  echo "postgresql-client-${major} did not install pg_dump at $bin." >&2
-  exit 1
-fi
-if [[ -n "${GITHUB_PATH:-}" ]]; then
-  echo "$bin" >> "$GITHUB_PATH"
-fi
-export PATH="$bin:$PATH"
-echo "Using $(pg_dump --version)"
+publish "$bin"
