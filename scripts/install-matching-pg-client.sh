@@ -58,12 +58,17 @@ if [[ "$have" == "$major" ]]; then
   exit 0
 fi
 
-if [[ ! -f /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc ]]; then
+# Ubuntu ships the PGDG signing key with postgresql-common, but not the
+# apt source. The key file alone does not make postgresql-client-16 installable
+# on a release whose own archive only has a newer client.
+if [[ ! -f /etc/apt/sources.list.d/pgdg.list ]]; then
   sudo apt-get update
   sudo apt-get install -y curl ca-certificates
-  sudo install -d /usr/share/postgresql-common/pgdg
-  sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-    https://www.postgresql.org/media/keys/ACCC4CF8.asc
+  if [[ ! -f /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc ]]; then
+    sudo install -d /usr/share/postgresql-common/pgdg
+    sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc
+  fi
   codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
   echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${codename}-pgdg main" \
     | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
