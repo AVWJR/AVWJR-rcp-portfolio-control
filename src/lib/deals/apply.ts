@@ -11,6 +11,7 @@ import { getIntake, updateIntake } from "./intake";
 import type { DealGoal } from "./types";
 import { bytesToImportCsv, isSpreadsheetFilename, parseT12WorkbookBytes } from "./workbook";
 import { t12ParseToBudgetRows } from "@rcp/properties";
+import { isOwnedSpe } from "@/lib/owned-spe";
 import { BROKER_T12_SOURCE, overlayNoteFromParse, postBrokerT12OverlayJournals } from "@/lib/t12-overlay";
 
 function coachStructuredImportError(filename: string, error: unknown): never {
@@ -37,6 +38,7 @@ export async function applyCreateEntity(intakeId: string) {
     throw new Error("Fill the SPE legal name and code before creating the entity.");
   }
   try {
+    const requested = intake.requestedDealStatus;
     const { entity } = await createSpeDeal({
       name: intake.speName,
       code: intake.speCode,
@@ -45,6 +47,10 @@ export async function applyCreateEntity(intakeId: string) {
       strategy: intake.strategy,
       goal: (intake.goal as DealGoal | null) ?? null,
       targetPeriod: intake.targetPeriod,
+      dealStatus:
+        requested === "PIPELINE" || requested === "SCREENED" || requested === "TEST" || requested === "OWNED"
+          ? requested
+          : "OWNED",
     });
     await updateIntake(intake.id, { entityId: entity.id, status: "READY", lastError: null, currentStep: 6 });
     await promoteIntakeFilesToVault(intake.id, entity.id);
@@ -217,13 +223,20 @@ export async function applyStructuredData(opts: {
             rows,
             source: BROKER_T12_SOURCE,
           });
-          const postedLines = await postBrokerT12OverlayJournals({
-            entityId: intake.entityId,
-            year: period.year,
-            month: period.month,
-            parsed,
-            filename: loaded.file.filename,
+          const owner = await prisma.entity.findUnique({
+            where: { id: intake.entityId },
+            select: { type: true, code: true, lifecycleStatus: true, dealStatus: true },
           });
+          const postsToBooks = owner ? isOwnedSpe(owner) : false;
+          const postedLines = postsToBooks
+            ? await postBrokerT12OverlayJournals({
+                entityId: intake.entityId,
+                year: period.year,
+                month: period.month,
+                parsed,
+                filename: loaded.file.filename,
+              })
+            : 0;
           if (t12File.vaultDocumentId) {
             await prisma.vaultDocument.update({
               where: { id: t12File.vaultDocumentId },
@@ -241,7 +254,13 @@ export async function applyStructuredData(opts: {
             where: { id: t12File.id },
             data: { status: "imported", lastError: null },
           });
-          results.push({ kind: "t12_overlay", imported: rows.length });
+          results.push({
+            kind: "t12_overlay",
+            imported: rows.length,
+            skipped: postsToBooks
+              ? undefined
+              : `${owner?.code ?? "This deal"} is not Owned. The T12 was stored as analysis. No journals were posted.`,
+          });
         } catch (error) {
           if (error instanceof ReplaceRequiresConfirmError) throw error;
           const message = error instanceof Error ? error.message : String(error);

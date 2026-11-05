@@ -87,6 +87,7 @@ export type DealIntakePatch = {
   loanMaturity?: Date | null;
   dscrThresholdBps?: number | null;
   debtYieldThresholdBps?: number | null;
+  requestedDealStatus?: "PIPELINE" | "SCREENED" | "OWNED" | "TEST" | null;
   lastError?: string | null;
   entityId?: string | null;
 };

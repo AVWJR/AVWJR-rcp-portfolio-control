@@ -5,6 +5,8 @@ import type { ChartId, ChartSuite } from "@rcp/reporting";
 import { CHART_IDS, formatBpsAsPercent } from "@rcp/reporting";
 import { useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -302,6 +304,92 @@ export function ChartSuiteView({
       {show("decision_posture") ? <DecisionStrip suite={suite} themeName={themeName} /> : null}
       {show("close_control") ? <CloseControlStrip suite={suite} themeName={themeName} /> : null}
       {show("portfolio_heatmap") ? <HeatmapTable suite={suite} themeName={themeName} /> : null}
+      {show("dist_capital_returned") ? (
+        <ChartFrame title={suite.distribution.capital.title} footnote={suite.distribution.capital.footnote} themeName={themeName}>
+          <ResponsiveContainer>
+            <BarChart
+              data={[
+                { name: "Returned", usd: suite.distribution.capital.returnedUsd },
+                { name: "Still out", usd: suite.distribution.capital.unreturnedUsd },
+              ]}
+            >
+              <CartesianGrid stroke={theme.grid} vertical={false} />
+              <XAxis dataKey="name" tick={{ fill: theme.axis, fontSize: 12 }} />
+              <YAxis tick={{ fill: theme.axis, fontSize: 12 }} />
+              <Tooltip />
+              <Bar dataKey="usd">
+                <Cell fill={theme.gold} />
+                <Cell fill={theme.navy} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartFrame>
+      ) : null}
+      {show("dist_pref_over_time") ? (
+        <ChartFrame title={suite.distribution.pref.title} footnote={suite.distribution.pref.footnote} themeName={themeName}>
+          <ResponsiveContainer>
+            <ComposedChart data={suite.distribution.pref.points}>
+              <CartesianGrid stroke={theme.grid} />
+              <XAxis dataKey="period" tick={{ fill: theme.axis, fontSize: 12 }} />
+              <YAxis tick={{ fill: theme.axis, fontSize: 12 }} />
+              <Tooltip />
+              <Legend />
+              <Area dataKey="accruedUsd" name="Accrued" stroke={theme.navy} fill={theme.navy} fillOpacity={0.15} />
+              <Area dataKey="paidUsd" name="Paid" stroke={theme.gold} fill={theme.gold} fillOpacity={0.35} />
+              <Line dataKey="unpaidUsd" name="Unpaid" stroke={theme.series[2]} strokeWidth={2} dot />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </ChartFrame>
+      ) : null}
+      {show("dist_by_party") ? (
+        <ChartFrame title={suite.distribution.parties.title} footnote={suite.distribution.parties.footnote} themeName={themeName}>
+          <ResponsiveContainer>
+            <AreaChart data={suite.distribution.parties.points}>
+              <CartesianGrid stroke={theme.grid} />
+              <XAxis dataKey="period" tick={{ fill: theme.axis, fontSize: 12 }} />
+              <YAxis tick={{ fill: theme.axis, fontSize: 12 }} />
+              <Tooltip />
+              <Legend />
+              <Area dataKey="lpUsd" name="Deal LPs" stackId="party" stroke={theme.navy} fill={theme.navy} />
+              <Area dataKey="rcpUsd" name="RCP" stackId="party" stroke={theme.gold} fill={theme.gold} />
+              <Area dataKey="coGpUsd" name="Co-GP" stackId="party" stroke={theme.series[2]} fill={theme.series[2]} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartFrame>
+      ) : null}
+      {show("dist_tier_gauge") ? (
+        <figure className="border px-4 py-3" style={{ background: theme.surface, borderColor: theme.grid, color: theme.text }}>
+          <figcaption className="font-display text-xl" style={{ color: theme.navy }}>
+            {suite.distribution.tier.title}
+          </figcaption>
+          <ol className="mt-3 space-y-2 text-sm">
+            {suite.distribution.tier.tiers.map((tier) => (
+              <li key={tier.id} className="flex items-center justify-between gap-3">
+                <span style={{ color: tier.state === "current" ? theme.gold : theme.navy, fontWeight: tier.state === "current" ? 700 : 500 }}>
+                  {tier.label}
+                </span>
+                <span className="text-xs uppercase tracking-[0.12em]">{tier.state === "current" ? "Here" : tier.state === "done" ? "Done" : "Ahead"}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2 text-xs" style={{ color: theme.muted }}>
+            {suite.distribution.tier.footnote}
+          </p>
+        </figure>
+      ) : null}
+      {show("dist_dpi") ? (
+        <figure className="border px-4 py-3" style={{ background: theme.surface, borderColor: theme.grid, color: theme.text }}>
+          <figcaption className="font-display text-xl" style={{ color: theme.navy }}>
+            {suite.distribution.dpi.title}
+          </figcaption>
+          <p className="mt-3 font-display text-5xl" style={{ color: theme.gold }}>
+            {suite.distribution.dpi.display}
+          </p>
+          <p className="mt-2 text-xs" style={{ color: theme.muted }}>
+            {suite.distribution.dpi.footnote}
+          </p>
+        </figure>
+      ) : null}
     </div>
   );
 }

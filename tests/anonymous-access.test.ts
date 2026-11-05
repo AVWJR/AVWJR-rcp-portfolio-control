@@ -7,7 +7,13 @@ import { GET as capexGet } from "@/app/api/capex/route";
 import { GET as auditGet } from "@/app/api/close/audit/route";
 import { GET as closeGet } from "@/app/api/close/route";
 import { GET as dashboardGet } from "@/app/api/dashboard/route";
+import { GET as distributionsGet } from "@/app/api/deals/[code]/distributions/route";
 import { GET as waterfallGet } from "@/app/api/deals/[code]/waterfall/route";
+import { GET as picksGet } from "@/app/api/library/picks/route";
+import { GET as presetsGet } from "@/app/api/library/presets/route";
+import { GET as marketsGet } from "@/app/api/markets/route";
+import { GET as modelGet } from "@/app/api/models/[id]/route";
+import { GET as modelsGet } from "@/app/api/models/route";
 import { GET as dealsGet } from "@/app/api/deals/route";
 import { GET as dropboxGet } from "@/app/api/deals/intake/from-dropbox/route";
 import { GET as emailGet } from "@/app/api/deals/intake/from-email/route";
@@ -88,6 +94,12 @@ describe("anonymous access without the legacy partner flag", () => {
       ["vault", vaultGet(new Request("http://localhost/api/vault"))],
       ["vault-file", vaultFileGet(new Request("http://localhost/api/vault/missing"), { params: Promise.resolve({ id: "missing" }) })],
       ["waterfall", waterfallGet(new Request("http://localhost/api/deals/SPE-WBG/waterfall"), { params: Promise.resolve({ code: "SPE-WBG" }) })],
+      ["distributions", distributionsGet(new Request("http://localhost/api/deals/SPE-WBG/distributions"), { params: Promise.resolve({ code: "SPE-WBG" }) })],
+      ["library-picks", picksGet(new Request("http://localhost/api/library/picks"))],
+      ["library-presets", presetsGet(new Request("http://localhost/api/library/presets"))],
+      ["markets", marketsGet()],
+      ["models", modelsGet(new Request("http://localhost/api/models"))],
+      ["model", modelGet(new Request("http://localhost/api/models/missing"), { params: Promise.resolve({ id: "missing" }) })],
       ["seed", seedGet()],
     ];
     for (const [name, pending] of calls) {

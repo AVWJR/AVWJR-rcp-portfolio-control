@@ -47,7 +47,9 @@ OpCo’s multi-SPE presentation is a **combined roll-up** (IC `1310`/`2310` and 
 | `ltv` | Loan-to-value / loan-to-cost | UPB ÷ appraised value | gated | — | gated | appraisal missing |
 | `delinquency` | Delinquency / AR aging | Tenant charge/receipt aging | gated | — | gated | no subledger |
 | `fee_income` | Fee income | GL `7010` period credit-net | usd_cents | period | ready | OpCo GL |
-| `ga_ratio` | G&A % | (`5110+5610+5990`) ÷ `7010` | bps | period | ready | OpCo GL |
+| `ga_ratio` | OpCo G&A ÷ AM fee income | (`5110+5610+5990`) ÷ `7010` | bps | period | ready | OpCo GL |
+| `am_fee_coverage` | AM fee coverage | `7010` ÷ (`5110+5610+5990`) | multiple_bps | period | ready | OpCo GL |
+| `rcp_distributions_received` | RCP distributions received | Σ SPE cumulative RCP share of posted distribution-ledger events | usd_cents | — | ready | mixed |
 | `liquidity_months` | Liquidity (months of OpEx) | Ending cash ÷ period OpEx | months_hundredths | period | ready | GL |
 | `look_through_upb` | Look-through UPB | Σ SPE loan-file UPB | usd_cents | — | ready | loan |
 | `properties_units` | Properties / units | Count of SPEs and Σ unitCount | count | — | ready | entity |

@@ -63,6 +63,7 @@ type Intake = {
   loanMaturity: string | null;
   dscrThresholdBps: number | null;
   debtYieldThresholdBps: number | null;
+  requestedDealStatus: string | null;
   lastError: string | null;
   files: IntakeFile[];
 };
@@ -150,6 +151,7 @@ export function AddDealWizard({
     loanMaturity: "",
     dscrThreshold: "1.25",
     debtYieldThresholdPercent: "8",
+    requestedDealStatus: "OWNED",
   });
 
   const hydrate = useCallback((row: Intake) => {
@@ -179,6 +181,7 @@ export function AddDealWizard({
       dscrThreshold: row.dscrThresholdBps != null ? (row.dscrThresholdBps / 10_000).toFixed(2) : prev.dscrThreshold,
       debtYieldThresholdPercent:
         row.debtYieldThresholdBps != null ? (row.debtYieldThresholdBps / 100).toFixed(2) : prev.debtYieldThresholdPercent,
+      requestedDealStatus: row.requestedDealStatus || prev.requestedDealStatus || "OWNED",
     }));
   }, []);
 
@@ -233,6 +236,7 @@ export function AddDealWizard({
       loanMaturity: form.loanMaturity || null,
       dscrThreshold: form.dscrThreshold || null,
       debtYieldThresholdPercent: form.debtYieldThresholdPercent || null,
+      requestedDealStatus: form.requestedDealStatus || "OWNED",
       currentStep: step,
     }),
     [form, step],
@@ -922,8 +926,22 @@ export function AddDealWizard({
             <p className="text-sm text-ink-700">
               This creates <strong>{form.speCode || "SPE-…"}</strong> ({form.speName || "name pending"}) under{" "}
               {form.parentOpCoCode}, clones the master chart of accounts, and opens the target period plus the
-              demo months so the header switcher still works.
+              demo months so the header switcher still works. Owned is the default and enters the OpCo books.
+              Pipeline, Screened, and Test store the analysis and do not post T12 journals.
             </p>
+            <label className="block max-w-sm text-sm text-ink-700">
+              Deal status
+              <select
+                className={fieldClass()}
+                value={form.requestedDealStatus}
+                onChange={(e) => setForm((f) => ({ ...f, requestedDealStatus: e.target.value }))}
+              >
+                <option value="OWNED">Owned — in the OpCo books</option>
+                <option value="PIPELINE">Pipeline — not in the books</option>
+                <option value="SCREENED">Screened — not in the books</option>
+                <option value="TEST">Test — not in the books</option>
+              </select>
+            </label>
             {intake?.entityCode ? (
               <p className="border border-gold-300 bg-cream-50 px-4 py-3 text-sm">
                 Already created: <strong>{intake.entityCode}</strong>. Continue to apply rent-roll / budget / loan.

@@ -11,8 +11,13 @@ import {
   viewerForbiddenApi,
 } from "@/lib/access";
 import { legacyFlagMode } from "@/lib/auth/policy";
-import { readValidSessionUserId } from "@/lib/auth/session-cookie";
+import { readValidSession } from "@/lib/auth/session-cookie";
 import { NextResponse, type NextRequest } from "next/server";
+
+const SCOPED_VIEWER_ROLES = new Set(["LP_VIEWER", "LENDER_VIEWER"]);
+const PARTNER_API_DENIAL =
+  "Partner view is read-only. Add Deal, delete/restore, seed, and uploads are disabled on this link.";
+const SCOPED_API_DENIAL = "This account is read-only and cannot open that.";
 
 export const runtime = "nodejs";
 
@@ -35,12 +40,47 @@ function withRoleCookie(response: NextResponse, role: "principal" | "viewer") {
   return response;
 }
 
+function viewerWall(request: NextRequest, apiError: string): NextResponse | null {
+  const { pathname } = request.nextUrl;
+  if (isViewerBlockedPath(pathname)) {
+    const dest = request.nextUrl.clone();
+    const library = pathname.startsWith("/library");
+    const models = pathname.startsWith("/models");
+    const markets = pathname.startsWith("/markets");
+    dest.pathname = pathname.startsWith("/archive") || library || models || markets ? "/" : "/deals";
+    dest.searchParams.set(
+      "denied",
+      pathname.startsWith("/archive")
+        ? "archive"
+        : library
+          ? "library"
+          : models
+            ? "models"
+            : markets
+              ? "markets"
+              : "add_deal",
+    );
+    if (pathname.startsWith("/admin")) dest.pathname = "/";
+    return NextResponse.redirect(dest);
+  }
+
+  if (pathname.startsWith("/api/") && viewerForbiddenApi(pathname, request.method)) {
+    return NextResponse.json({ error: apiError }, { status: 403 });
+  }
+  return null;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
-  const sessionUserId = await readValidSessionUserId(request);
+  const session = await readValidSession(request);
+  if (session && session.role && SCOPED_VIEWER_ROLES.has(session.role)) {
+    const blocked = viewerWall(request, SCOPED_API_DENIAL);
+    if (blocked) return blocked;
+    return nextWithPath(request, "viewer");
+  }
   if (
     legacyFlagMode() === "off" ||
-    sessionUserId ||
+    session ||
     !accessControlEnabled() ||
     pathname === "/login" ||
     pathname.startsWith("/api/auth")
@@ -74,23 +114,8 @@ export async function middleware(request: NextRequest) {
   const role = readAccessRole(request.cookies.get(ACCESS_COOKIE)?.value) ?? defaultRoleWhenGated();
   if (role === "principal") return nextWithPath(request, "principal");
 
-  if (isViewerBlockedPath(pathname)) {
-    const dest = request.nextUrl.clone();
-    dest.pathname = pathname.startsWith("/archive") ? "/" : "/deals";
-    dest.searchParams.set("denied", pathname.startsWith("/archive") ? "archive" : "add_deal");
-    if (pathname.startsWith("/admin")) dest.pathname = "/";
-    return NextResponse.redirect(dest);
-  }
-
-  if (pathname.startsWith("/api/") && viewerForbiddenApi(pathname, request.method)) {
-    return NextResponse.json(
-      {
-        error:
-          "Partner view is read-only. Add Deal, delete/restore, seed, and uploads are disabled on this link.",
-      },
-      { status: 403 },
-    );
-  }
+  const blocked = viewerWall(request, PARTNER_API_DENIAL);
+  if (blocked) return blocked;
 
   return nextWithPath(request, "viewer");
 }

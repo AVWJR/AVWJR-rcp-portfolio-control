@@ -5,8 +5,10 @@ export type DealProformaSeed = {
   entityName: string;
   config: WaterfallConfig;
   lpContributedCents: string;
-  unreturnedCapitalCents: string;
-  unpaidPrefCents: string;
+  /** null = blank unreturned capital (use contributed). */
+  unreturnedCapitalCents: string | null;
+  /** null = blank unpaid pref (none carried in). */
+  unpaidPrefCents: string | null;
   prefPaidToDateCents: string;
   periodCfadsCents: string;
   europeanPromoteOpen: boolean;

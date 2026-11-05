@@ -89,7 +89,7 @@ export function buildPostgresqlSchema(sqliteSchema) {
 /**
  * Ensure Prisma CLI sees DATABASE_URL / DIRECT_URL for the selected provider.
  * `prisma generate` does not need a live database.
- * @param {AppEnv} [env]
+ * @param {AppEnv} env
  */
 export function applyPrismaEnv(env = process.env) {
   const provider = resolvePrismaProvider(env);
@@ -105,6 +105,91 @@ export function applyPrismaEnv(env = process.env) {
 }
 
 /**
+ * Preview deployments share the production Neon database.
+ * A preview `prisma db push` can drop columns the live app still reads.
+ *
+ * Push only when:
+ * - this is not a Vercel build (local and CI keep today's `db push`), or
+ * - `VERCEL_ENV` is `production`, or
+ * - `VERCEL_ENV` is `preview` and `PREVIEW_DATABASE_URL` is set — then only that database.
+ *
+ * When `VERCEL=1` and `VERCEL_ENV` is missing or any other value, skip.
+ *
+ * @param {AppEnv} [env]
+ * @returns {{ push: boolean, reason: string, databaseUrl?: string, directUrl?: string }}
+ */
+export function previewSchemaPushPlan(env = process.env) {
+  const onVercel = String(env.VERCEL ?? "").trim() === "1";
+  const vercelEnv = String(env.VERCEL_ENV ?? "").trim();
+
+  if (!onVercel) {
+    return { push: true, reason: "local" };
+  }
+
+  if (vercelEnv === "production") {
+    return { push: true, reason: "production" };
+  }
+
+  if (vercelEnv === "preview") {
+    const previewUrl = String(env.PREVIEW_DATABASE_URL ?? "").trim();
+    if (!previewUrl) {
+      return {
+        push: false,
+        reason:
+          "Skipping prisma db push. Preview and production share one database, so a preview build must not change the schema. Set PREVIEW_DATABASE_URL only if this preview has its own database.",
+      };
+    }
+    const productionUrls = [env.DATABASE_URL, env.DIRECT_URL, env.POSTGRES_PRISMA_URL, env.POSTGRES_URL]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    if (productionUrls.some((url) => sameDatabaseUrl(url, previewUrl))) {
+      return {
+        push: false,
+        reason:
+          "Skipping prisma db push. PREVIEW_DATABASE_URL points at the production database, so a preview build must not change the schema.",
+      };
+    }
+    const direct = String(env.PREVIEW_DIRECT_URL ?? "").trim() || previewUrl;
+    return {
+      push: true,
+      reason: "separate preview database",
+      databaseUrl: previewUrl,
+      directUrl: direct,
+    };
+  }
+
+  const envLabel = vercelEnv ? `"${vercelEnv}"` : "missing";
+  return {
+    push: false,
+    reason: `Skipping prisma db push. VERCEL=1 but VERCEL_ENV is ${envLabel}. A Vercel build pushes the schema only for production, or for a preview that has its own PREVIEW_DATABASE_URL.`,
+  };
+}
+
+/**
+ * Same database when host (pooler suffix removed), database name, and nothing else match.
+ * User, password, port, and query parameters are ignored.
+ */
+export function sameDatabaseUrl(left, right) {
+  const identity = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    if (!isPostgresUrl(raw)) return raw.replace(/\/+$/, "");
+    try {
+      const url = new URL(deriveNeonUnpooledUrl(raw).replace(/^postgres(ql)?:/i, "http:"));
+      const host = url.hostname.toLowerCase();
+      const database = decodeURIComponent(url.pathname).replace(/^\/+/, "").replace(/\/+$/, "").split("/")[0]?.toLowerCase() ?? "";
+      if (!host || !database) return raw.replace(/\/+$/, "");
+      return `${host}|${database}`;
+    } catch {
+      return raw.replace(/\/+$/, "");
+    }
+  };
+  const a = identity(left);
+  const b = identity(right);
+  return a.length > 0 && a === b;
+}
+
+/**
  * `prisma db push` in CI exits instead of dropping columns. Sibling preview
  * branches (e.g. SPE archive) can add unused columns to a shared Neon DB.
  * This branch must not `--accept-data-loss` (that would wipe those columns).
@@ -112,31 +197,6 @@ export function applyPrismaEnv(env = process.env) {
  *
  * @param {string} output
  */
-/**
- * Preview deployments share the production Neon database.
- * A preview `prisma db push` drops columns the live app still reads.
- * Push on production and on a laptop (VERCEL_ENV unset).
- * A preview pushes only when PREVIEW_DATABASE_URL is a separate database.
- * @param {AppEnv} [env]
- * @returns {{ push: boolean, reason: string, databaseUrl?: string, directUrl?: string }}
- */
-export function previewSchemaPushPlan(env = process.env) {
-  const vercelEnv = String(env.VERCEL_ENV ?? "").trim();
-  if (vercelEnv !== "preview") {
-    return { push: true, reason: vercelEnv === "production" ? "production" : "local" };
-  }
-  const previewUrl = String(env.PREVIEW_DATABASE_URL ?? "").trim();
-  if (!previewUrl) {
-    return {
-      push: false,
-      reason:
-        "Skipping prisma db push. Preview and production share one database, so a preview build must not change the schema. Set PREVIEW_DATABASE_URL only if this preview has its own database.",
-    };
-  }
-  const direct = String(env.PREVIEW_DIRECT_URL ?? "").trim() || previewUrl;
-  return { push: true, reason: "separate preview database", databaseUrl: previewUrl, directUrl: direct };
-}
-
 export function isPrismaDataLossAbort(output = "") {
   const text = String(output);
   return (

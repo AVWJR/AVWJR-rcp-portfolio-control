@@ -34,6 +34,17 @@ export function centsToUsdNumber(cents: bigint): number {
   return Number(cents) / 100;
 }
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** 2026-08 → Aug 26. Other labels are left as written. */
+export function shortPeriodLabel(period: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!match) return period;
+  const name = SHORT_MONTHS[Number(match[2]) - 1];
+  if (!name) return period;
+  return `${name} ${match[1]!.slice(-2)}`;
+}
+
 export function periodLabel(period: string): string {
   const [year, month] = period.split("-");
   const names = [

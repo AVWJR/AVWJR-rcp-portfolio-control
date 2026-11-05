@@ -1,35 +1,45 @@
 export type PeriodCloseStatus = "OPEN" | "SOFT_CLOSED" | "CLOSED";
 
+export const CANNOT_POST_LOCKED = "Cannot post to a locked period";
+export const PERIOD_SOFT_CLOSED = "Period is soft-closed; only controller adjustments are allowed";
+export const REOPEN_REASON_AND_TICKET = "Reopen requires a non-empty reason and ticket";
+export const SUSPENSE_1999_ZERO = "Suspense 1999 must be zero before a hard lock";
+export const CHECKLIST_EVERY_ITEM = "Hard lock requires every checklist item to be DONE or N/A";
+export const CHECKLIST_REQUIRED = "Hard lock requires a controller checklist";
+export const SOFT_CLOSE_FROM_OPEN = "Soft close is allowed only from OPEN";
+export const HARD_LOCK_REQUIRES_SOFT = "Hard lock requires a soft-closed period";
+export const PERIOD_ALREADY_OPEN = "Period is already open";
+
 export class PeriodLockedError extends Error {
-  constructor(message = "Cannot post to a locked period") {
+  constructor(message = CANNOT_POST_LOCKED) {
     super(message);
     this.name = "PeriodLockedError";
   }
 }
 
 export class PeriodSoftClosedError extends Error {
-  constructor(message = "Period is soft-closed; only controller adjustments are allowed") {
+  constructor(message = PERIOD_SOFT_CLOSED) {
     super(message);
     this.name = "PeriodSoftClosedError";
   }
 }
 
 export class ReopenRequiresReasonError extends Error {
-  constructor(message = "Reopen requires a non-empty reason and ticket") {
+  constructor(message = REOPEN_REASON_AND_TICKET) {
     super(message);
     this.name = "ReopenRequiresReasonError";
   }
 }
 
 export class SuspenseOpenError extends Error {
-  constructor(message = "Suspense 1999 must be zero before a hard lock") {
+  constructor(message = SUSPENSE_1999_ZERO) {
     super(message);
     this.name = "SuspenseOpenError";
   }
 }
 
 export class ChecklistIncompleteError extends Error {
-  constructor(message = "Hard lock requires every checklist item to be DONE or N/A") {
+  constructor(message = CHECKLIST_EVERY_ITEM) {
     super(message);
     this.name = "ChecklistIncompleteError";
   }
@@ -120,7 +130,7 @@ export function assertReopenReason(reason?: string | null, ticket?: string | nul
 
 export function assertChecklistComplete(items: { status: string }[]) {
   if (items.length === 0) {
-    throw new ChecklistIncompleteError("Hard lock requires a controller checklist");
+    throw new ChecklistIncompleteError(CHECKLIST_REQUIRED);
   }
   const open = items.filter((item) => item.status !== "DONE" && item.status !== "NA");
   if (open.length > 0) {
@@ -130,7 +140,7 @@ export function assertChecklistComplete(items: { status: string }[]) {
 
 export function assertSoftClose(status: PeriodCloseStatus) {
   if (status !== "OPEN") {
-    throw new InvalidCloseTransitionError("Soft close is allowed only from OPEN");
+    throw new InvalidCloseTransitionError(SOFT_CLOSE_FROM_OPEN);
   }
 }
 
@@ -142,12 +152,12 @@ export function assertSuspenseClear(suspenseNetCents: bigint) {
 
 export function assertHardLock(status: PeriodCloseStatus) {
   if (status !== "SOFT_CLOSED") {
-    throw new InvalidCloseTransitionError("Hard lock requires a soft-closed period");
+    throw new InvalidCloseTransitionError(HARD_LOCK_REQUIRES_SOFT);
   }
 }
 
 export function assertCanReopen(status: PeriodCloseStatus) {
   if (status === "OPEN") {
-    throw new InvalidCloseTransitionError("Period is already open");
+    throw new InvalidCloseTransitionError(PERIOD_ALREADY_OPEN);
   }
 }

@@ -9,6 +9,7 @@ import {
   cfadsDscrBps,
   formatMonthsHundredths,
   formatNoiDefinition,
+  amFeeCoverageBps,
   gaRatioBps,
   getRatioDefinition,
   liquidityMonthsHundredths,
@@ -43,6 +44,8 @@ import { prisma } from "./prisma";
 import { listPeriods, loadPostedLines } from "./queries";
 import { resolveReportScope } from "./reports-server";
 import { loadBrokerT12Overlay, type BrokerT12OverlaySummary } from "./t12-overlay";
+import { ledgerCapitalByEntity } from "./distribution-read";
+import { isOwnedSpe } from "./deal-status";
 import { loadLiveSpeWaterfalls, rollupWaterfallPools, europeanPromoteOpen, applyWaterfallToPools, loadSpeWaterfall } from "./waterfall";
 
 export type LiveRatio = {
@@ -104,6 +107,7 @@ export type OpCoDashboard = {
     cfadsRcpCents: bigint;
     cfadsCoGpCents: bigint;
     afterWaterfall: boolean;
+    rcpDistributionsCents: bigint;
   }[];
   t12: TrailingNoi;
   combinedNote: string;
@@ -571,7 +575,7 @@ export async function buildOpCoDashboard(opts: {
     where: { id: opts.opcoId },
     include: { children: true },
   });
-  const spes = opco.children.filter((c) => c.type === "SPE" && c.lifecycleStatus !== "ARCHIVED").sort((a, b) => a.code.localeCompare(b.code));
+  const spes = opco.children.filter((c) => isOwnedSpe(c)).sort((a, b) => a.code.localeCompare(b.code));
   const spePacks = (
     await Promise.all(
       spes.map(async (spe) => {
@@ -650,6 +654,7 @@ export async function buildOpCoDashboard(opts: {
       cfadsRcpCents: 0n,
       cfadsCoGpCents: 0n,
       afterWaterfall: false,
+      rcpDistributionsCents: 0n,
     });
   }
 
@@ -661,7 +666,8 @@ export async function buildOpCoDashboard(opts: {
       unitCount: p.unitCount,
     })),
   );
-  const loans = await loadPortfolioDebt(opts.year, opts.month);
+  const ownedCodes = new Set(spes.map((spe) => spe.code));
+  const loans = (await loadPortfolioDebt(opts.year, opts.month)).filter((loan) => ownedCodes.has(loan.entityCode));
   const lookThroughUpb = loans.reduce((acc, l) => acc + l.currentUpbCents, 0n);
   const lookThroughDs = loans.reduce((acc, l) => acc + l.interestCents + l.principalCents, 0n);
   const lookThroughCapex = spePacks.reduce((acc, row) => {
@@ -698,6 +704,15 @@ export async function buildOpCoDashboard(opts: {
     row.cfadsRcpCents = speWf.cfadsRcpCents;
     row.cfadsCoGpCents = speWf.cfadsCoGpCents;
     row.afterWaterfall = !speWf.lookThrough;
+  }
+  const ledgerById = await ledgerCapitalByEntity(spePacks.map((row) => row.spe.id));
+  const idByCode = new Map(spePacks.map((row) => [row.spe.code, row.spe.id]));
+  let rcpDistributionsTotal = 0n;
+  for (const row of propertyRows) {
+    const posted = ledgerById.get(idByCode.get(row.entityCode) ?? "");
+    if (!posted?.hasEvents) continue;
+    row.rcpDistributionsCents = posted.cumulativeRcpCents;
+    rcpDistributionsTotal += posted.cumulativeRcpCents;
   }
   const displayCash = waterfall.cashRcpCents;
   const displayCfads = waterfall.cfadsRcpCents;
@@ -847,13 +862,37 @@ export async function buildOpCoDashboard(opts: {
     live({
       id: "ga_ratio",
       display: formatRatioBps(gaRatioBps(ga, feeIncome)),
-      hint: "OpCo (5110+5610+5990) ÷ 7010",
+      hint: "Over 100% means AM fees don't cover OpCo overhead",
       contributors: [
         contributor({ kind: "account", code: "5110", label: "Payroll", statement: "os" }, opco.code, period, opcoPeriod.get("5110") ?? 0n),
         contributor({ kind: "account", code: "5610", label: "Administrative", statement: "os" }, opco.code, period, opcoPeriod.get("5610") ?? 0n),
         contributor({ kind: "account", code: "5990", label: "Other Operating Expenses", statement: "os" }, opco.code, period, opcoPeriod.get("5990") ?? 0n),
         contributor({ kind: "account", code: "7010", label: "Asset Management Fee Income", statement: "os" }, opco.code, period, feeIncome),
       ],
+    }),
+    live({
+      id: "am_fee_coverage",
+      display: formatMultipleBps(amFeeCoverageBps(feeIncome, ga)),
+      hint: "7010 ÷ (5110+5610+5990), shown as a multiple",
+      contributors: [
+        contributor({ kind: "account", code: "7010", label: "Asset Management Fee Income", statement: "os" }, opco.code, period, feeIncome),
+        contributor({ kind: "account", code: "5110", label: "Payroll", statement: "os" }, opco.code, period, opcoPeriod.get("5110") ?? 0n),
+        contributor({ kind: "account", code: "5610", label: "Administrative", statement: "os" }, opco.code, period, opcoPeriod.get("5610") ?? 0n),
+        contributor({ kind: "account", code: "5990", label: "Other Operating Expenses", statement: "os" }, opco.code, period, opcoPeriod.get("5990") ?? 0n),
+      ],
+    }),
+    live({
+      id: "rcp_distributions_received",
+      display: formatUsd(rcpDistributionsTotal),
+      hint: "Cumulative RCP cash received on posted deal distributions. Separate from the after-waterfall tiles.",
+      contributors: propertyRows.map((p) =>
+        contributor(
+          { kind: "entity", field: "rcpDistributions", label: `${p.entityCode} RCP distributions received` },
+          p.entityCode,
+          period,
+          p.rcpDistributionsCents,
+        ),
+      ),
     }),
     ...(waterfall.applied
       ? [

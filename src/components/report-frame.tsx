@@ -3,6 +3,7 @@ import { PeriodBanner } from "@/components/period-banner";
 import { resolveReportingPeriod, spesStillOpen } from "@/lib/period-default";
 import { Shell } from "@/components/shell";
 import { isArchivedSpe } from "@/lib/archive";
+import { closePickerNote } from "@/lib/period-close";
 import { listPeriodLabels } from "@/lib/deals/periods";
 import { getEntityByCode, listEntities } from "@/lib/queries";
 import { buildAllStatements } from "@/lib/reports-server";
@@ -122,7 +123,11 @@ export async function ReportShell({
   }
   return (
     <Shell
-      entities={entities}
+      entities={
+        pathname === "/close"
+          ? entities.map((entity) => ({ ...entity, disabledReason: closePickerNote(entity) }))
+          : entities
+      }
       activeEntity={ctx.entity.code}
       year={ctx.year}
       month={ctx.month}

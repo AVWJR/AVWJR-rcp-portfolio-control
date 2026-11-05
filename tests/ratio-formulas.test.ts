@@ -6,6 +6,7 @@ import {
   RATIO_IDS,
   annualizePeriodNoi,
   cashBreakdown,
+  distributableOperatingCashCents,
   cfadsCents,
   cfadsDscrBps,
   concentrationBps,
@@ -75,6 +76,20 @@ describe("ratio helpers", () => {
     expect(
       periodPpeAdditionsCents(new Map([["1460", dollars(10)]]), new Map([["1460", dollars(45)], ["1430", dollars(12)]])),
     ).toBe(dollars(47));
+  });
+
+  it("bases cash-if-distributed-today on operating cash and excludes reserve, escrow, and deposits", () => {
+    const amounts = new Map([
+      ["1010", dollars(80)],
+      ["1020", dollars(10)],
+      ["1030", dollars(5)],
+      ["1040", dollars(5)],
+    ]);
+    const cash = cashBreakdown(amounts);
+    expect(cash.total).toBe(dollars(100));
+    expect(distributableOperatingCashCents(amounts)).toBe(dollars(80));
+    expect(distributableOperatingCashCents(amounts)).toBe(cash.operating);
+    expect(distributableOperatingCashCents(amounts) + cash.reserve + cash.escrow + cash.deposits).toBe(cash.total);
   });
 
   it("computes G&A% and liquidity months in hundredths", () => {

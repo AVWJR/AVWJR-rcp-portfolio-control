@@ -8,6 +8,7 @@ type EntityOption = {
   type: string;
   unitCount: number | null;
   strategy: string | null;
+  disabledReason?: string | null;
 };
 
 export function EntitySwitcher({
@@ -68,9 +69,10 @@ export function EntitySwitcher({
         onChange={(e) => go({ entity: e.target.value })}
       >
         {entities.map((entity) => (
-          <option key={entity.code} value={entity.code}>
+          <option key={entity.code} value={entity.code} disabled={Boolean(entity.disabledReason)}>
             {entity.name}
             {entity.unitCount ? ` · ${entity.unitCount} units` : ""}
+            {entity.disabledReason ? ` — ${entity.disabledReason}` : ""}
           </option>
         ))}
       </select>

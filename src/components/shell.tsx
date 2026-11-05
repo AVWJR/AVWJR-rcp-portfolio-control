@@ -5,11 +5,14 @@ import { EntitySwitcher } from "./entity-switcher";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/markets", label: "Market Ranks" },
   { href: "/dashboard/ratios", label: "Ratios" },
   { href: "/narratives", label: "Narratives" },
   { href: "/", label: "Overview" },
   { href: "/reports/operating-statement", label: "Operating Statement" },
   { href: "/deals", label: "Deals" },
+  { href: "/library", label: "Library" },
+  { href: "/models", label: "Models" },
   { href: "/archive", label: "Deal Archive" },
   { href: "/properties", label: "Properties" },
   { href: "/debt", label: "Debt" },
@@ -43,6 +46,7 @@ export function Shell({
     type: string;
     unitCount: number | null;
     strategy: string | null;
+    disabledReason?: string | null;
   }[];
   activeEntity: string;
   year: number;
@@ -88,6 +92,8 @@ export function Shell({
               const active =
                 item.href === "/dashboard"
                   ? pathname === "/dashboard" || /^\/dashboard\/SPE-/.test(pathname) || pathname === "/dashboard/RCP-OPCO"
+                  : item.href === "/markets"
+                    ? pathname.startsWith("/markets")
                   : item.href === "/dashboard/ratios"
                     ? pathname.startsWith("/dashboard/ratios")
                     : item.href === "/narratives"
@@ -96,6 +102,10 @@ export function Shell({
                       ? pathname.startsWith("/tax")
                     : item.href === "/deals"
                       ? pathname.startsWith("/deals")
+                    : item.href === "/library"
+                      ? pathname.startsWith("/library")
+                    : item.href === "/models"
+                      ? pathname.startsWith("/models")
                     : item.href === "/archive"
                       ? pathname.startsWith("/archive")
                     : pathname === item.href;

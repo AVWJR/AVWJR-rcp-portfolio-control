@@ -1,5 +1,5 @@
 import { AuthzError, assertCan, resolveActor, visibleEntityCodes } from "@/lib/auth/actor";
-import { isLiveSpe } from "@/lib/archive";
+import { isOwnedSpe } from "@/lib/owned-spe";
 import { getIntake, publicIntake } from "@/lib/deals/intake";
 import { buildDashboardForEntity, type LiveRatio } from "@/lib/dashboards";
 import { loadPortfolioDebt } from "@/lib/debt-view";
@@ -10,6 +10,7 @@ import { buildAllStatements } from "@/lib/reports-server";
 import { isJournalBalanced } from "@rcp/ledger";
 import { formatMultipleBps, formatPercentBps } from "@rcp/debt";
 import { formatRatioBps } from "@rcp/reporting";
+import { findHowTos, howToById, publicHowTo } from "./howtos";
 import { listNavTargets, withContext } from "./nav";
 import { parsePeriodLabel } from "./period";
 import type {
@@ -58,7 +59,7 @@ export async function getEntitySummary(entityCode: string): Promise<EntitySummar
     lifecycleStatus: entity.lifecycleStatus,
     archivedAt: entity.archivedAt?.toISOString() ?? null,
     children: entity.children
-      .filter((child) => child.type !== "SPE" || isLiveSpe(child))
+      .filter((child) => child.type !== "SPE" || isOwnedSpe(child))
       .slice()
       .sort((a, b) => a.code.localeCompare(b.code))
       .map((child) => ({
@@ -321,7 +322,7 @@ export async function getDataCompleteness(
   });
 
   if (opco) {
-    const spes = entity.children.filter((c) => isLiveSpe(c));
+    const spes = entity.children.filter((c) => isOwnedSpe(c));
     for (const speChild of spes) {
       const [speUnits, speBudget, speLoan] = await Promise.all([
         prisma.unit.count({ where: { entityId: speChild.id } }),
@@ -668,6 +669,19 @@ export async function getDealIntakeStatus(intakeId: string) {
 }
 
 export { listNavTargets };
+
+export function getHowTo(input: { query?: string; id?: string } = {}) {
+  if (input.id?.trim()) {
+    const entry = howToById(input.id.trim());
+    return entry
+      ? { ok: true as const, entries: [publicHowTo(entry)] }
+      : { ok: false as const, error: `Unknown how-to ${input.id}`, entries: [] };
+  }
+  return {
+    ok: true as const,
+    entries: findHowTos(input.query ?? "", undefined, 3).map(publicHowTo),
+  };
+}
 
 export async function runExpertTools(entityCode: string, periodLabel: string) {
   const [entity, period, completeness, anomalies, kpis, nav] = await Promise.all([

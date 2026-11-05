@@ -12,7 +12,10 @@
  * - ROC: pay unreturned capital pari passu (LP + GP co-invest).
  * - Pref (none): capital × prefRate × months / (10_000 × 12).
  * - Pref (annual): capital × ((1 + r)^years − 1) − pref already paid, years = floor(months/12) (min 1 when months ≥ 12).
- * - Catch-up (100%): GP receives min(remaining, LP_pref_paid × gpSplit / lpSplit) until GP has its promote share of profits above ROC.
+ * - Catch-up: GP is paid until it holds the residual row's GP share of profits above ROC.
+ *   Each catch-up dollar is split by Catch-up % (100% = all to GP). A rate below 100%
+ *   distributes more dollars so the GP still reaches that same target. 0% stays 0%
+ *   (it does not fall back to 80/20). The catch-up row's own LP/GP percents are not the split.
  * - Residual / promote: remaining × (lpSplit : gpSplit). LP-class residual is then pari passu with GP co-invest.
  * - European: while the OpCo/portfolio capital+pref gate is closed, CATCH_UP and promote residual are 100% LP-class (no GP promote).
  * - Look-through 100%: entire pool is RCP/GP (legacy demo; no LP).
@@ -97,6 +100,18 @@ export type WaterfallRunInput = WaterfallCapitalState & {
    * Ignored for non-European templates.
    */
   europeanPromoteOpen?: boolean;
+  /**
+   * LP pref already paid on earlier distributions. Omitted means this run
+   * stands alone (existing single-period behavior).
+   */
+  priorLpPrefPaidCents?: bigint;
+  /** GP catch-up already paid on earlier distributions. Omitted means $0. */
+  priorCatchUpGpCents?: bigint;
+  /**
+   * Prior catch-up gross (LP + GP). Omitted means $0 so a single run is unchanged.
+   * Used as C0 in X = (g·(P + C0) − G0) / (c − g).
+   */
+  priorCatchUpGrossCents?: bigint;
 };
 
 export type WaterfallStep = {
@@ -143,7 +158,7 @@ export const WATERFALL_FORMULAS = [
   "Pref accrual (NONE): (capital × prefRateBps × months) / (10_000 × 12), truncating.",
   "Pref accrual (ANNUAL): capital × ((1 + prefRate)^years − 1) − pref already paid; years = max(1, floor(months/12)) when months ≥ 12, else 1 if months > 0.",
   "Pref pay: take min(pool, unpaid pref including this run's accrual); pari passu LP / GP co-invest.",
-  "Catch-up 100%: GP_target = LP_pref_paid × gpSplit / lpSplit; take min(pool, remaining target) × catchUpBps to GP.",
+  "Catch-up: target GP share g comes from the residual promote row (gp / (lp + gp)), not from the catch-up row. A 0 on that row does not reset to 80/20. Gross catch-up dollars X = (g × LP_pref_paid − GP_promote_already) / (c − g) when catch-up rate c > g; else $0. GP receives c × X and the LP receives the rest of X. Then the residual row continues at g, so a 50% catch-up still reaches a 20% GP share, and a 70/30 residual moves the target to 30%.",
   "Promote / residual: remaining × (lpSplitBps : gpSplitBps). LP-class residual is pari passu with GP co-invest; GP promote is extra to GP/RCP.",
   "Multi-hurdle: after ROC, successive promote bands sized as Δhurdle × capital (8% then +4% then +3% on $ capital) then leftover at the last split.",
   "American: deal-level hurdles (same math as simple pref+promote unless edited) with clawback/lookback stored for later true-up — this run does not reverse prior promote.",
@@ -260,6 +275,71 @@ function take(remaining: bigint, want: bigint): { taken: bigint; remaining: bigi
   return { taken, remaining: remaining - taken };
 }
 
+/** Blank unreturned capital (null) uses LP contributed. A typed 0 stays 0. */
+export function resolveUnreturnedCapitalCents(
+  unreturned: bigint | null | undefined,
+  lpContributedCents: bigint,
+): bigint {
+  const lp = lpContributedCents > 0n ? lpContributedCents : 0n;
+  if (unreturned == null) return lp;
+  return unreturned > 0n ? unreturned : 0n;
+}
+
+/** Blank unpaid pref (null) means none carried in. A typed 0 stays 0. */
+export function resolveUnpaidPrefCents(unpaid: bigint | null | undefined): bigint {
+  if (unpaid == null || unpaid <= 0n) return 0n;
+  return unpaid;
+}
+
+/** Last promote / residual row. The catch-up target follows this split, including 0. */
+export function residualPromoteSplit(tiers: WaterfallTier[]): { lpSplitBps: number; gpSplitBps: number } | null {
+  const residual = [...tiers].reverse().find((tier) => tier.kind === "PROMOTE");
+  if (!residual) return null;
+  return {
+    lpSplitBps: Math.max(0, Math.round(residual.lpSplitBps)),
+    gpSplitBps: Math.max(0, Math.round(residual.gpSplitBps)),
+  };
+}
+
+export function catchUpRowLabel(catchUpBps: number, lpSplitBps: number, gpSplitBps: number): string {
+  const rate = clampBps(catchUpBps) / 100;
+  const total = Math.max(0, lpSplitBps) + Math.max(0, gpSplitBps);
+  const target = total <= 0 ? 0 : (Math.max(0, gpSplitBps) * 100) / total;
+  const rateLabel = Number.isInteger(rate) ? String(rate) : String(Math.round(rate * 100) / 100);
+  const targetLabel = Number.isInteger(target) ? String(target) : String(Math.round(target * 100) / 100);
+  return `GP catch-up (${rateLabel}% to GP until ${targetLabel}% target)`;
+}
+
+/**
+ * Gross catch-up dollars so the GP reaches residual share g.
+ * X = (g·(P + C0) − G0) / (c − g) when c > g.
+ * P is cumulative LP pref paid, C0 is prior catch-up gross (LP + GP), and G0 is
+ * GP catch-up already paid. C0 omitted means $0, so a single run is unchanged.
+ * A 0% rate or a 0% target does not silently become 80/20.
+ */
+export function catchUpGrossCents(opts: {
+  lpPrefPaidCents: bigint;
+  gpPromoteSoFarCents: bigint;
+  priorCatchUpGrossCents?: bigint;
+  lpSplitBps: number;
+  gpSplitBps: number;
+  catchUpBps: number;
+}): bigint {
+  const lpBps = Math.max(0, Math.round(opts.lpSplitBps));
+  const gpBps = Math.max(0, Math.round(opts.gpSplitBps));
+  const total = lpBps + gpBps;
+  const rate = clampBps(opts.catchUpBps);
+  const pref = opts.lpPrefPaidCents > 0n ? opts.lpPrefPaidCents : 0n;
+  const already = opts.gpPromoteSoFarCents > 0n ? opts.gpPromoteSoFarCents : 0n;
+  const priorGross = opts.priorCatchUpGrossCents && opts.priorCatchUpGrossCents > 0n ? opts.priorCatchUpGrossCents : 0n;
+  if (pref + priorGross <= 0n || total <= 0 || gpBps <= 0 || rate <= 0) return 0n;
+  const denom = BigInt(rate) * BigInt(total) - BigInt(gpBps) * BigInt(BPS_DENOMINATOR);
+  if (denom <= 0n) return 0n;
+  const numer = (BigInt(gpBps) * (pref + priorGross) - already * BigInt(total)) * BigInt(BPS_DENOMINATOR);
+  if (numer <= 0n) return 0n;
+  return numer / denom;
+}
+
 export const WATERFALL_TEMPLATE_META: Record<
   WaterfallTemplateId,
   { label: string; short: string; practice: string }
@@ -315,7 +395,7 @@ function catchUpTier(): WaterfallTier {
   return {
     id: "catchup",
     kind: "CATCH_UP",
-    label: "GP catch-up (100% until promote share)",
+    label: "GP catch-up (100% to GP until 20% target)",
     hurdleIrrBps: null,
     lpSplitBps: 8_000,
     gpSplitBps: 2_000,
@@ -620,11 +700,21 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
         });
         continue;
       }
-      const lpBps = tier.lpSplitBps > 0 ? tier.lpSplitBps : 8_000;
-      const gpBps = tier.gpSplitBps > 0 ? tier.gpSplitBps : 2_000;
-      const target = lpBps > 0 ? (lpPrefPaid * BigInt(gpBps)) / BigInt(lpBps) : 0n;
-      const stillNeed = target > gpPromoteSoFar ? target - gpPromoteSoFar : 0n;
-      const { taken, remaining: next } = take(remaining, stillNeed);
+      const residual = residualPromoteSplit(config.tiers);
+      const lpBps = residual ? residual.lpSplitBps : Math.max(0, tier.lpSplitBps);
+      const gpBps = residual ? residual.gpSplitBps : Math.max(0, tier.gpSplitBps);
+      const priorPref = input.priorLpPrefPaidCents ?? 0n;
+      const priorCatchUp = input.priorCatchUpGpCents ?? 0n;
+      const priorCatchUpGross = input.priorCatchUpGrossCents ?? 0n;
+      const gross = catchUpGrossCents({
+        lpPrefPaidCents: lpPrefPaid + (priorPref > 0n ? priorPref : 0n),
+        gpPromoteSoFarCents: gpPromoteSoFar + (priorCatchUp > 0n ? priorCatchUp : 0n),
+        priorCatchUpGrossCents: priorCatchUpGross > 0n ? priorCatchUpGross : 0n,
+        lpSplitBps: lpBps,
+        gpSplitBps: gpBps,
+        catchUpBps: config.catchUpBps,
+      });
+      const { taken, remaining: next } = take(remaining, gross);
       remaining = next;
       const toGp = (taken * BigInt(clampBps(config.catchUpBps))) / BigInt(BPS_DENOMINATOR);
       const toLp = taken - toGp;
@@ -642,7 +732,7 @@ export function runWaterfall(input: WaterfallRunInput): WaterfallRunResult {
         gpCents: catchParties.gpCents,
         rcpCents: catchParties.rcpCents,
         coGpCents: catchParties.coGpCents,
-        note: `Catch-up target ${target.toString()}¢ = LP pref paid × GP/LP split. ${clampBps(config.catchUpBps) / 100}% of catch-up dollars to GP.`,
+        note: `${catchUpRowLabel(config.catchUpBps, lpBps, gpBps)}. Target follows the residual split. ${clampBps(config.catchUpBps) / 100}% of each catch-up dollar goes to the GP.`,
       });
       continue;
     }

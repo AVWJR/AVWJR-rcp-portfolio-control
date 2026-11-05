@@ -1,10 +1,16 @@
 import { ArchivedSpeBanner } from "@/components/archived-spe-banner";
 import { BrokerOverlayStrip } from "@/components/broker-overlay-strip";
 import { DashboardTiles } from "@/components/dashboard-tiles";
+import { MarketRanksTile } from "@/components/markets/market-ranks-tile";
 import { NoiConcentration } from "@/components/noi-concentration";
 import { ReapplyRentRollButton } from "@/components/reapply-rent-roll";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
+import { DistributionCharts } from "@/components/deals/distribution-charts";
+import { chartModelFromBoard } from "@/lib/distribution-chart-model";
+import { loadDistributionBoard, type DistributionBoard } from "@/lib/distribution-ledger";
+import { currentAccessRole } from "@/lib/access-server";
 import { buildDashboardForEntity, type OpCoDashboard, type PropertyDashboard } from "@/lib/dashboards";
+import { loadMarketRanksTile, type MarketTileModel } from "@/lib/markets/read";
 import { formatUsd } from "@rcp/ledger";
 import { formatRatioBps } from "@rcp/properties";
 import Link from "next/link";
@@ -41,10 +47,19 @@ export default async function EntityDashboardPage({
           year: ctx.year,
           month: ctx.month,
         });
+        const role = await currentAccessRole();
+        const marketTile: MarketTileModel = role === "principal" ? await loadMarketRanksTile() : { state: "locked" };
+        const distribution = ctx.entity.type === "SPE" ? await loadDistributionBoard(ctx.entity.id) : null;
         return dash.kind === "opco" ? (
-          <OpCoView ctxLabel={reportSubtitle(ctx)} dash={dash} />
+          <OpCoView ctxLabel={reportSubtitle(ctx)} dash={dash} marketTile={marketTile} />
         ) : (
-          <PropertyView ctxLabel={reportSubtitle(ctx)} dash={dash} archived={ctx.archived} />
+          <PropertyView
+            ctxLabel={reportSubtitle(ctx)}
+            dash={dash}
+            archived={ctx.archived}
+            distribution={distribution}
+            marketTile={marketTile}
+          />
         );
       }}
     </ReportShell>
@@ -55,10 +70,14 @@ function PropertyView({
   ctxLabel,
   dash,
   archived,
+  distribution,
+  marketTile,
 }: {
   ctxLabel: string;
   dash: PropertyDashboard;
   archived: boolean;
+  distribution: DistributionBoard | null;
+  marketTile: MarketTileModel;
 }) {
   const q = `entity=${dash.entityCode}&period=${dash.period}`;
   return (
@@ -93,6 +112,9 @@ function PropertyView({
           <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/waterfall?${q}`}>
             LP/GP waterfall
           </Link>
+          <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/distributions?${q}`}>
+            Distribution ledger
+          </Link>
           <Link className="text-navy-700 underline" href={`/deals/${dash.entityCode}/close?${q}`}>
             Month-end close
           </Link>
@@ -108,13 +130,25 @@ function PropertyView({
         </div>
       </div>
       {dash.unitCount === 0 ? <ReapplyRentRollButton entityCode={dash.entityCode} hasUnits={false} /> : null}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MarketRanksTile model={marketTile} />
+      </div>
       <BrokerOverlayStrip overlay={dash.brokerOverlay} />
+      {distribution ? <DistributionCharts model={chartModelFromBoard(distribution)} /> : null}
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} />
     </div>
   );
 }
 
-function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard }) {
+function OpCoView({
+  ctxLabel,
+  dash,
+  marketTile,
+}: {
+  ctxLabel: string;
+  dash: OpCoDashboard;
+  marketTile: MarketTileModel;
+}) {
   const q = `entity=${dash.entityCode}&period=${dash.period}&view=combined`;
   return (
     <div className="space-y-8">
@@ -147,6 +181,9 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
           </Link>
         </div>
       </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MarketRanksTile model={marketTile} />
+      </div>
       <DashboardTiles tiles={dash.tiles} entityCode={dash.entityCode} period={dash.period} view="combined" />
       <NoiConcentration rows={dash.concentration} period={dash.period} />
       <section className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
@@ -160,6 +197,7 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                 <th className="py-2 text-left">Strategy</th>
                 <th className="py-2 text-right">Period NOI</th>
                 <th className="py-2 text-right">Cash flow before debt service</th>
+                <th className="py-2 text-right">RCP distributions received</th>
                 <th className="py-2 text-right">Share</th>
               </tr>
             </thead>
@@ -185,6 +223,7 @@ function OpCoView({ ctxLabel, dash }: { ctxLabel: string; dash: OpCoDashboard })
                         <span className="ml-1 text-[10px] uppercase tracking-[0.08em] text-ink-500">look-through</span>
                       )}
                     </td>
+                    <td className="tabular py-2 text-right">{formatUsd(p.rcpDistributionsCents)}</td>
                     <td className="tabular py-2 text-right">{formatRatioBps(share?.shareBps ?? null)}</td>
                   </tr>
                 );

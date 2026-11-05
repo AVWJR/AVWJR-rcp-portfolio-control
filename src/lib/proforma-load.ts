@@ -5,7 +5,7 @@ import { loadPortfolioDebt } from "@/lib/debt-view";
 import { europeanPromoteOpen, loadLiveSpeWaterfalls, loadSpeWaterfall, type SpeWaterfallRecord } from "@/lib/waterfall";
 import type { DealProformaSeed } from "@/lib/proforma-types";
 
-async function periodCfadsForEntity(entityId: string, entityCode: string, year: number, month: number): Promise<bigint> {
+export async function periodCfadsForEntity(entityId: string, entityCode: string, year: number, month: number): Promise<bigint> {
   const pack = await buildOperatingPackage({ entityId, year, month, consolidated: false });
   const balances = rollupBalances(pack.scope.throughEnd);
   const endMap = new Map(balances.map((row) => [row.code, netByCode(balances, row.code)]));
@@ -36,8 +36,8 @@ function seedFromRecord(
     entityName: record.entityName,
     config: record.config,
     lpContributedCents: record.lpContributedCents.toString(),
-    unreturnedCapitalCents: record.unreturnedCapitalCents.toString(),
-    unpaidPrefCents: record.unpaidPrefCents.toString(),
+    unreturnedCapitalCents: record.unreturnedCapitalCents == null ? null : record.unreturnedCapitalCents.toString(),
+    unpaidPrefCents: record.unpaidPrefCents == null ? null : record.unpaidPrefCents.toString(),
     prefPaidToDateCents: record.prefPaidToDateCents.toString(),
     periodCfadsCents: periodCfadsCents.toString(),
     europeanPromoteOpen: gate,

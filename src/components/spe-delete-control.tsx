@@ -1,5 +1,5 @@
 import { SpeLifecycleDialog } from "@/components/spe-lifecycle-dialog";
-import { deleteImpactCopy, isPermanentDemoSpe, permanentDemoDeleteMessage } from "@/lib/archive";
+import { deleteImpactCopy, isPermanentDemoSpe, permanentDemoDeleteMessage } from "@/lib/archive-copy";
 
 export function SpeDeleteControl({
   code,

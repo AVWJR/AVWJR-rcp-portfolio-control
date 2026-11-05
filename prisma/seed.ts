@@ -15,6 +15,7 @@ import { prisma } from "../src/lib/prisma";
 import { replaceBudget } from "../src/lib/budgets";
 import { replaceRentRoll } from "../src/lib/rent-roll";
 import { seedCapexProjects, seedCloseDemo, seedLoansAndRolls } from "./seed-phase-c";
+import { seedMarketRanksIfReady } from "../src/lib/markets/seed";
 import { seedPhaseF } from "./seed-phase-f";
 
 function ny(year: number, month: number, day: number) {
@@ -461,6 +462,7 @@ export async function runSeed(options: { wipe?: boolean } = {}): Promise<SeedSum
   await seedCapexProjects(prisma, byCode, post);
   await seedCloseDemo(prisma, byCode);
   await seedPhaseF(prisma, byCode);
+  await seedMarketRanksIfReady();
 
   const summary: SeedSummary = {
     alreadySeeded: false,

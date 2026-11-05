@@ -1,3 +1,4 @@
+import { isOwnedSpe } from "./deal-status";
 import { prisma } from "./prisma";
 
 export const FALLBACK_PERIOD = "2026-08";
@@ -9,26 +10,26 @@ async function liveSpes(code: string): Promise<{ kind: "SPE" | "OPCO" | "HOLDCO"
     where: { code },
     include: {
       children: {
-        include: { children: { select: { id: true, code: true, name: true, type: true, lifecycleStatus: true } } },
+        include: {
+          children: {
+            select: { id: true, code: true, name: true, type: true, lifecycleStatus: true, dealStatus: true },
+          },
+        },
       },
     },
   });
   if (!entity) return { kind: "OTHER", spes: [] };
   const spes: LiveSpe[] = [];
   if (entity.type === "SPE") {
-    if (entity.lifecycleStatus !== "ARCHIVED") spes.push({ id: entity.id, code: entity.code, name: entity.name });
+    if (isOwnedSpe(entity)) spes.push({ id: entity.id, code: entity.code, name: entity.name });
   } else if (entity.type === "OPCO") {
     for (const child of entity.children) {
-      if (child.type === "SPE" && child.lifecycleStatus !== "ARCHIVED") {
-        spes.push({ id: child.id, code: child.code, name: child.name });
-      }
+      if (isOwnedSpe(child)) spes.push({ id: child.id, code: child.code, name: child.name });
     }
   } else if (entity.type === "HOLDCO") {
     for (const opco of entity.children) {
       for (const spe of opco.children) {
-        if (spe.type === "SPE" && spe.lifecycleStatus !== "ARCHIVED") {
-          spes.push({ id: spe.id, code: spe.code, name: spe.name });
-        }
+        if (isOwnedSpe(spe)) spes.push({ id: spe.id, code: spe.code, name: spe.name });
       }
     }
   }

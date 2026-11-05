@@ -2,7 +2,11 @@
 
 import {
   applyWaterfallTemplate,
+  catchUpRowLabel,
   formatUsd,
+  residualPromoteSplit,
+  resolveUnpaidPrefCents,
+  resolveUnreturnedCapitalCents,
   WATERFALL_TEMPLATE_IDS,
   WATERFALL_TEMPLATE_META,
   runWaterfall,
@@ -11,29 +15,32 @@ import {
   type WaterfallTemplateId,
   type WaterfallTier,
 } from "@rcp/ledger";
+import { DollarField } from "@/components/deals/dollar-field";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-function centsToDollarsInput(cents: bigint | string | number): string {
-  const n = typeof cents === "bigint" ? Number(cents) / 100 : Number(cents) / 100;
-  if (!Number.isFinite(n) || n === 0) return "";
-  return String(n);
-}
-
-function dollarsInputToCents(raw: string): bigint {
-  const t = raw.trim().replace(/[$,]/g, "");
-  if (!t) return 0n;
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 0) return 0n;
-  return BigInt(Math.round(n * 100));
-}
-
 type FormState = WaterfallConfig & {
   lpContributedCents: bigint;
-  unreturnedCapitalCents: bigint;
-  unpaidPrefCents: bigint;
+  unreturnedCapitalCents: bigint | null;
+  unpaidPrefCents: bigint | null;
   prefPaidToDateCents: bigint;
 };
+
+function lockCatchUpTier(state: FormState): FormState {
+  const residual = residualPromoteSplit(state.tiers);
+  if (!residual || !state.tiers.some((tier) => tier.kind === "CATCH_UP")) return state;
+  let changed = false;
+  const tiers = state.tiers.map((tier) => {
+    if (tier.kind !== "CATCH_UP") return tier;
+    const label = catchUpRowLabel(state.catchUpBps, residual.lpSplitBps, residual.gpSplitBps);
+    if (tier.lpSplitBps === residual.lpSplitBps && tier.gpSplitBps === residual.gpSplitBps && tier.label === label) {
+      return tier;
+    }
+    changed = true;
+    return { ...tier, lpSplitBps: residual.lpSplitBps, gpSplitBps: residual.gpSplitBps, label };
+  });
+  return changed ? { ...state, tiers } : state;
+}
 
 export function WaterfallForm({
   entityCode,
@@ -43,6 +50,7 @@ export function WaterfallForm({
   distributableCents,
   cashCents,
   europeanPromoteOpen,
+  ledgerSource = false,
 }: {
   entityCode: string;
   entityName: string;
@@ -51,9 +59,17 @@ export function WaterfallForm({
   distributableCents: string;
   cashCents: string;
   europeanPromoteOpen: boolean;
+  ledgerSource?: boolean;
 }) {
   const router = useRouter();
-  const [form, setForm] = useState<FormState>(initial);
+  const [form, setFormState] = useState<FormState>(() => lockCatchUpTier(initial));
+
+  function setForm(updater: FormState | ((prev: FormState) => FormState)) {
+    setFormState((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      return lockCatchUpTier(next);
+    });
+  }
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -66,8 +82,8 @@ export function WaterfallForm({
         config: form,
         distributableCents: cfads,
         lpContributedCents: form.lpContributedCents,
-        unreturnedCapitalCents: form.unreturnedCapitalCents > 0n ? form.unreturnedCapitalCents : form.lpContributedCents,
-        unpaidPrefCents: form.unpaidPrefCents,
+        unreturnedCapitalCents: resolveUnreturnedCapitalCents(form.unreturnedCapitalCents, form.lpContributedCents),
+        unpaidPrefCents: resolveUnpaidPrefCents(form.unpaidPrefCents),
         prefPaidToDateCents: form.prefPaidToDateCents,
         periodMonths: 1,
         europeanPromoteOpen,
@@ -81,8 +97,8 @@ export function WaterfallForm({
         config: form,
         distributableCents: cash,
         lpContributedCents: form.lpContributedCents,
-        unreturnedCapitalCents: form.unreturnedCapitalCents > 0n ? form.unreturnedCapitalCents : form.lpContributedCents,
-        unpaidPrefCents: form.unpaidPrefCents,
+        unreturnedCapitalCents: resolveUnreturnedCapitalCents(form.unreturnedCapitalCents, form.lpContributedCents),
+        unpaidPrefCents: resolveUnpaidPrefCents(form.unpaidPrefCents),
         prefPaidToDateCents: form.prefPaidToDateCents,
         periodMonths: 1,
         europeanPromoteOpen,
@@ -133,8 +149,8 @@ export function WaterfallForm({
         notes: form.notes,
         tiers: form.tiers,
         lpContributedCents: form.lpContributedCents.toString(),
-        unreturnedCapitalCents: form.unreturnedCapitalCents.toString(),
-        unpaidPrefCents: form.unpaidPrefCents.toString(),
+        unreturnedCapitalCents: form.unreturnedCapitalCents == null ? null : form.unreturnedCapitalCents.toString(),
+        unpaidPrefCents: form.unpaidPrefCents == null ? null : form.unpaidPrefCents.toString(),
         prefPaidToDateCents: form.prefPaidToDateCents.toString(),
       }),
     });
@@ -259,31 +275,44 @@ export function WaterfallForm({
           </label>
           <label className="text-sm text-ink-700">
             LP contributed capital ($)
-            <input
+            <DollarField
               className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
-              inputMode="decimal"
-              value={centsToDollarsInput(form.lpContributedCents)}
-              onChange={(e) => setForm((p) => ({ ...p, lpContributedCents: dollarsInputToCents(e.target.value) }))}
+              nullable={false}
+              value={form.lpContributedCents}
+              onValue={(next) => setForm((p) => ({ ...p, lpContributedCents: next ?? 0n }))}
             />
           </label>
           <label className="text-sm text-ink-700">
             Unreturned capital ($)
-            <input
-              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
-              inputMode="decimal"
-              placeholder="defaults to contributed"
-              value={centsToDollarsInput(form.unreturnedCapitalCents)}
-              onChange={(e) => setForm((p) => ({ ...p, unreturnedCapitalCents: dollarsInputToCents(e.target.value) }))}
+            <DollarField
+              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular disabled:bg-cream-100"
+              nullable
+              disabled={ledgerSource}
+              placeholder={ledgerSource ? undefined : "blank = use contributed"}
+              value={form.unreturnedCapitalCents}
+              onValue={(next) => setForm((p) => ({ ...p, unreturnedCapitalCents: next }))}
             />
+            <span className="mt-1 block text-xs text-ink-500">
+              {ledgerSource
+                ? "From the distribution ledger. This box is no longer typed by hand."
+                : "Leave blank to use LP contributed. A typed 0 stays 0."}
+            </span>
           </label>
           <label className="text-sm text-ink-700">
             LP pref unpaid ($)
-            <input
-              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
-              inputMode="decimal"
-              value={centsToDollarsInput(form.unpaidPrefCents)}
-              onChange={(e) => setForm((p) => ({ ...p, unpaidPrefCents: dollarsInputToCents(e.target.value) }))}
+            <DollarField
+              className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular disabled:bg-cream-100"
+              nullable
+              disabled={ledgerSource}
+              placeholder={ledgerSource ? undefined : "blank = none carried in"}
+              value={form.unpaidPrefCents}
+              onValue={(next) => setForm((p) => ({ ...p, unpaidPrefCents: next }))}
             />
+            <span className="mt-1 block text-xs text-ink-500">
+              {ledgerSource
+                ? "From the distribution ledger — preferred return still unpaid after posted distributions."
+                : "Leave blank for none carried in. A typed 0 stays 0."}
+            </span>
           </label>
         </div>
         <label className="mt-4 block text-sm text-ink-700">
@@ -315,7 +344,7 @@ export function WaterfallForm({
             />
           </label>
           <label className="text-sm text-ink-700">
-            Co-GP % of GP promote / catch-up / residual
+            Co-GP % of the GP’s promote, catch-up, and residual
             <input
               className="mt-1 w-full border border-cream-300 bg-cream-50 px-3 py-2 tabular"
               type="number"
@@ -348,8 +377,10 @@ export function WaterfallForm({
       <section className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
         <h2 className="font-display text-2xl text-navy-900">Tiers</h2>
         <p className="mt-1 text-sm text-ink-600">
-          Splits are LP / GP in percent (GP side is then split RCP vs Co-GP above). Multi-hurdle bands use dollar-pref
-          proxies of IRR — not XIRR.
+          ROC, pref, and residual splits are LP / GP in percent (the GP side is then split RCP vs Co-GP above). The
+          catch-up row is not that kind of split: its GP target follows the residual row, and the Catch-up % above is
+          the share of each catch-up dollar paid to the GP. A typed 0 stays 0 — it does not jump back to 80/20.
+          Multi-hurdle bands use dollar-pref proxies of IRR — not XIRR.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
@@ -363,15 +394,21 @@ export function WaterfallForm({
               </tr>
             </thead>
             <tbody>
-              {form.tiers.map((tier, index) => (
+              {form.tiers.map((tier, index) => {
+                const catchUp = tier.kind === "CATCH_UP";
+                return (
                 <tr key={tier.id} className="border-b border-cream-200">
                   <td className="py-2 text-ink-600">{tier.kind}</td>
                   <td className="py-2">
-                    <input
-                      className="w-full border border-cream-300 bg-cream-50 px-2 py-1"
-                      value={tier.label}
-                      onChange={(e) => patchTier(index, { label: e.target.value })}
-                    />
+                    {catchUp ? (
+                      <p className="px-2 py-1 text-ink-800">{tier.label}</p>
+                    ) : (
+                      <input
+                        className="w-full border border-cream-300 bg-cream-50 px-2 py-1"
+                        value={tier.label}
+                        onChange={(e) => patchTier(index, { label: e.target.value })}
+                      />
+                    )}
                   </td>
                   <td className="py-2 text-right">
                     <input
@@ -386,24 +423,43 @@ export function WaterfallForm({
                       }
                     />
                   </td>
-                  <td className="py-2 text-right">
-                    <input
-                      className="w-20 border border-cream-300 bg-cream-50 px-2 py-1 text-right tabular"
-                      type="number"
-                      value={(tier.lpSplitBps / 100).toString()}
-                      onChange={(e) => patchTier(index, { lpSplitBps: Math.round(Number(e.target.value) * 100) || 0 })}
-                    />
-                  </td>
-                  <td className="py-2 text-right">
-                    <input
-                      className="w-20 border border-cream-300 bg-cream-50 px-2 py-1 text-right tabular"
-                      type="number"
-                      value={(tier.gpSplitBps / 100).toString()}
-                      onChange={(e) => patchTier(index, { gpSplitBps: Math.round(Number(e.target.value) * 100) || 0 })}
-                    />
-                  </td>
+                  {catchUp ? (
+                    <td className="py-2 text-right text-ink-800" colSpan={2}>
+                      <p className="tabular">
+                        GP target share{" "}
+                        {tier.lpSplitBps + tier.gpSplitBps > 0
+                          ? `${((tier.gpSplitBps * 100) / (tier.lpSplitBps + tier.gpSplitBps)).toString()}%`
+                          : "0%"}
+                      </p>
+                      <p className="text-[10px] uppercase tracking-[0.08em] text-ink-500">
+                        Follows the residual row · not a split of this row
+                      </p>
+                    </td>
+                  ) : (
+                    <>
+                      <td className="py-2 text-right">
+                        <input
+                          className="w-20 border border-cream-300 bg-cream-50 px-2 py-1 text-right tabular"
+                          type="number"
+                          aria-label="LP percent"
+                          value={(tier.lpSplitBps / 100).toString()}
+                          onChange={(e) => patchTier(index, { lpSplitBps: Math.round(Number(e.target.value) * 100) || 0 })}
+                        />
+                      </td>
+                      <td className="py-2 text-right">
+                        <input
+                          className="w-20 border border-cream-300 bg-cream-50 px-2 py-1 text-right tabular"
+                          type="number"
+                          aria-label="GP percent"
+                          value={(tier.gpSplitBps / 100).toString()}
+                          onChange={(e) => patchTier(index, { gpSplitBps: Math.round(Number(e.target.value) * 100) || 0 })}
+                        />
+                      </td>
+                    </>
+                  )}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -443,8 +499,9 @@ export function WaterfallForm({
           {preview.coGpCents === 0n ? " · No Co-GP (two-party LP / GP)." : ""}
         </p>
         <p className="mt-1 text-sm text-ink-600">
-          If SPE cash were distributed today: Deal LP {formatUsd(cashPreview.lpCents)} · RCP{" "}
-          {formatUsd(cashPreview.rcpCents)} · Co-GP {formatUsd(cashPreview.coGpCents)} of {formatUsd(cash)}.
+          If SPE cash were distributed today — operating cash available, excludes reserves, escrow and tenant
+          deposits: Deal LP {formatUsd(cashPreview.lpCents)} · RCP {formatUsd(cashPreview.rcpCents)} · Co-GP{" "}
+          {formatUsd(cashPreview.coGpCents)} of {formatUsd(cash)}.
         </p>
         <ul className="mt-3 space-y-1 text-sm text-ink-700">
           {preview.steps.map((step) => (

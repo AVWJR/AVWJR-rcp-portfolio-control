@@ -1,10 +1,21 @@
 import { assertCan, resolveActor } from "@/lib/auth/actor";
+import {
+  PERMANENT_DEMO_SPE_CODES,
+  deleteImpactCopy,
+  isPermanentDemoSpe,
+  permanentDemoDeleteMessage,
+} from "@/lib/archive-copy";
+import { isOwnedSpe, ownedSpeWhere } from "@/lib/owned-spe";
 import { prisma } from "@/lib/prisma";
 
 export const ARCHIVE_ACTOR_PRINCIPAL = "principal";
+export const TYPE_SPE_CODE = "Type the SPE code to confirm.";
+export const CONFIRM_SPE_CODE_PREFIX = "Confirmation must match the SPE code";
+export const ALREADY_IN_ARCHIVE_SUFFIX = "is already in Deal Archive.";
+export const ALREADY_LIVE_DEAL_SUFFIX = "is already a live deal. Restore is only for archived SPEs.";
+export const ONLY_SPES = "Only SPEs can be deleted or restored.";
 
-/** Seeded property SPEs that stay on the live Deals list. */
-export const PERMANENT_DEMO_SPE_CODES = ["SPE-WBG", "SPE-CVC", "SPE-HCR"] as const;
+export { PERMANENT_DEMO_SPE_CODES, deleteImpactCopy, isPermanentDemoSpe, permanentDemoDeleteMessage };
 
 export class ArchiveValidationError extends Error {
   readonly field?: string;
@@ -32,15 +43,6 @@ export type SpeArchiveRow = {
   restoredBy: string | null;
 };
 
-export function isPermanentDemoSpe(code: string): boolean {
-  return (PERMANENT_DEMO_SPE_CODES as readonly string[]).includes(code.trim().toUpperCase());
-}
-
-export function permanentDemoDeleteMessage(code: string): string {
-  const spe = code.trim().toUpperCase();
-  return `${spe} is a permanent demo SPE. It cannot be deleted. It stays on the live Deals list and in the OpCo roll-up.`;
-}
-
 export function isArchivedSpe(entity: { type: string; lifecycleStatus?: string | null }): boolean {
   return entity.type === "SPE" && entity.lifecycleStatus === "ARCHIVED";
 }
@@ -49,24 +51,19 @@ export function isLiveSpe(entity: { type: string; lifecycleStatus?: string | nul
   return entity.type === "SPE" && entity.lifecycleStatus !== "ARCHIVED";
 }
 
+/** Owned SPEs only. Pipeline, Screened, Test, and Archived stay out of the live lists and the roll-up. */
 export function liveSpeWhere() {
-  return { type: "SPE" as const, lifecycleStatus: "LIVE" as const };
+  return ownedSpeWhere();
 }
 
-export function liveSpeChildren<T extends { type: string; lifecycleStatus?: string | null }>(children: T[]): T[] {
-  return children.filter((child) => child.type !== "SPE" || child.lifecycleStatus !== "ARCHIVED");
+export function liveSpeChildren<T extends { type: string; lifecycleStatus?: string | null; dealStatus?: string | null }>(
+  children: T[],
+): T[] {
+  return children.filter((child) => child.type !== "SPE" || isOwnedSpe(child));
 }
 
 export function confirmCodesMatch(provided: string, expected: string): boolean {
   return provided.trim().toUpperCase() === expected.trim().toUpperCase();
-}
-
-export function deleteImpactCopy(opts: { code: string; name: string }): string {
-  return (
-    `Deleting ${opts.name} (${opts.code}) takes it off the live Deals list and out of the OpCo combined roll-up. ` +
-    `It stays studyable under gold nav Deal Archive. Books, ledgers, and vault documents remain. ` +
-    `This is not a hard wipe. Restore later only from Deal Archive — not from Deals.`
-  );
 }
 
 /** @deprecated Use deleteImpactCopy — live UI says Delete; storage is still soft-archive. */
@@ -119,7 +116,7 @@ async function loadSpe(code: string) {
   }
   if (entity.type !== "SPE") {
     throw new ArchiveValidationError(
-      `${entity.code} is a ${entity.type}, not a property SPE. Only SPEs can be deleted or restored.`,
+      `${entity.code} is a ${entity.type}, not a property SPE. ${ONLY_SPES}`,
       "code",
     );
   }
@@ -128,11 +125,11 @@ async function loadSpe(code: string) {
 
 function assertConfirmCode(confirmCode: string | undefined, expected: string) {
   if (!confirmCode?.trim()) {
-    throw new ArchiveValidationError("Type the SPE code to confirm.", "confirmCode");
+    throw new ArchiveValidationError(TYPE_SPE_CODE, "confirmCode");
   }
   if (!confirmCodesMatch(confirmCode, expected)) {
     throw new ArchiveValidationError(
-      `Confirmation must match the SPE code ${expected} exactly (letters and numbers).`,
+      `${CONFIRM_SPE_CODE_PREFIX} ${expected} exactly (letters and numbers).`,
       "confirmCode",
     );
   }
@@ -156,7 +153,7 @@ export async function archiveSpe(opts: {
   }
   assertConfirmCode(opts.confirmCode, entity.code);
   if (entity.lifecycleStatus === "ARCHIVED") {
-    throw new ArchiveValidationError(`${entity.code} is already in Deal Archive.`, "code");
+    throw new ArchiveValidationError(`${entity.code} ${ALREADY_IN_ARCHIVE_SUFFIX}`, "code");
   }
   const updated = await prisma.entity.update({
     where: { id: entity.id },
@@ -180,7 +177,7 @@ export async function restoreSpe(opts: {
   const entity = await loadSpe(opts.code);
   assertConfirmCode(opts.confirmCode, entity.code);
   if (entity.lifecycleStatus !== "ARCHIVED") {
-    throw new ArchiveValidationError(`${entity.code} is already a live deal. Restore is only for archived SPEs.`, "code");
+    throw new ArchiveValidationError(`${entity.code} ${ALREADY_LIVE_DEAL_SUFFIX}`, "code");
   }
   const updated = await prisma.entity.update({
     where: { id: entity.id },

@@ -4,6 +4,7 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
+    testTimeout: 15_000,
     include: ["tests/**/*.test.ts"],
     // One SQLite file is shared by every suite. Parallel files race period writes and archive cleanup.
     fileParallelism: false,

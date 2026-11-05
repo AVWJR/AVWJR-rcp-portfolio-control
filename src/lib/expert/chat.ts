@@ -167,8 +167,8 @@ function attachFallbackSource(message: ExpertMessage, reason?: string): ExpertMe
   return { ...message, sources: [...sources, "Offline last resort after live Grok failed"] };
 }
 
-function systemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle): string {
-  return buildSystemForTurn(ctx, bundle);
+function systemForTurn(ctx: ExpertClientContext, bundle: OfflineBundle, userText = ""): string {
+  return buildSystemForTurn(ctx, bundle, userText);
 }
 
 function openCoachPrompt(): string {
@@ -192,6 +192,7 @@ async function answerWithGateway(
     getDealIntakeStatus,
     getEntitySummary,
     getKpiSnapshot,
+    getHowTo,
     getPeriodStatus,
     listNavTargets,
   } = await import("./tools");
@@ -227,6 +228,14 @@ async function answerWithGateway(
       description: "Allowed in-app routes for linkification.",
       inputSchema: z.object({}),
       execute: async () => listNavTargets(),
+    }),
+    getHowTo: tool({
+      description: "Read-only how-to registry. Returns click paths, facts, and exact guard messages. Never writes.",
+      inputSchema: z.object({
+        query: z.string().optional(),
+        id: z.string().optional(),
+      }),
+      execute: async ({ query, id }) => getHowTo({ query, id }),
     }),
     getDealIntakeStatus: tool({
       description: "Read an Add Deal wizard draft (status, SPE code, files, apply errors). Never invent an intake.",
@@ -265,7 +274,7 @@ async function answerWithGateway(
       const model = await resolveGatewayModel(candidate, apiKey);
       const result = streamText({
         model: model as never,
-        system: systemForTurn(ctx, bundle),
+        system: systemForTurn(ctx, bundle, userText),
         messages: [
           ...historyMessages(history),
           { role: "user" as const, content: userText || openCoachPrompt() },
@@ -284,7 +293,7 @@ async function answerWithGateway(
       if (!text) {
         const plain = await generateText({
           model: (await resolveGatewayModel(candidate, apiKey)) as never,
-          system: systemForTurn(ctx, bundle),
+          system: systemForTurn(ctx, bundle, userText),
           messages: [
             ...historyMessages(history),
             { role: "user" as const, content: userText || openCoachPrompt() },
@@ -299,7 +308,7 @@ async function answerWithGateway(
       try {
         const plain = await generateText({
           model: (await resolveGatewayModel(candidate, apiKey)) as never,
-          system: systemForTurn(ctx, bundle),
+          system: systemForTurn(ctx, bundle, userText),
           messages: [
             ...historyMessages(history),
             { role: "user" as const, content: userText || openCoachPrompt() },
@@ -332,7 +341,7 @@ async function answerWithXai(
 ): Promise<ExpertMessage | null> {
   if (!resolved.apiKey) return null;
   const messages: XaiChatMessage[] = [
-    { role: "system", content: systemForTurn(ctx, bundle) },
+    { role: "system", content: systemForTurn(ctx, bundle, userText) },
     ...historyMessages(history),
     { role: "user", content: userText || openCoachPrompt() },
   ];

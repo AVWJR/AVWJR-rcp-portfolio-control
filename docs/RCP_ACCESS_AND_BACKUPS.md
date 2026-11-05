@@ -14,7 +14,7 @@ Logins use **Auth.js** with email and password. The people, passwords, and roles
 | Controller | Post, override a soft-closed month, hard lock, and reopen. Cannot invite people. |
 | Preparer | Upload, map, and post while the month is open. Can soft-close and sign as preparer. Cannot override, hard lock, or reopen. |
 | Reviewer | Read, and sign as reviewer. |
-| LP viewer | Read dashboards, narratives, and packs for the deals you check. |
+| LP viewer | Read dashboards, narratives, and packs for the deals you check. Cannot open Library, Models, Market Ranks, Deal Archive, or Add Deal. |
 | Lender viewer | Same as LP viewer, for the deals you check. |
 
 A hard lock is refused until a preparer and a different reviewer have both signed. The close page shows who signed and when. **Download audit trail** on that page saves the same names.
@@ -42,7 +42,7 @@ Five wrong passwords for the same email, or from the same network address, pause
 
 Preview and production use the same Neon database. A preview build used to run `prisma db push` and could drop columns the live site still needs.
 
-Production builds still run `prisma db push`. That is how a merged change adds columns. Preview builds skip it. Leave `PREVIEW_DATABASE_URL` unset. Set it, and `PREVIEW_DIRECT_URL` if the unpooled host is different, only when that preview has its own database.
+Production builds still run `prisma db push`. That is how a merged change adds columns. Preview builds skip it. A Vercel build also skips the push when `VERCEL_ENV` is missing or set to anything other than `production`. Leave `PREVIEW_DATABASE_URL` unset. Set it, and `PREVIEW_DIRECT_URL` if the unpooled host is different, only when that preview has its own database. If that URL is the same database as production, the preview still skips the push. A laptop build (no `VERCEL`) still pushes, as before.
 
 ## Require tests before a merge (GitHub)
 

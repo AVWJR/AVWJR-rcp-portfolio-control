@@ -24,7 +24,7 @@ export const LIVE_DECK_MAX_SLIDES = 8;
 export const LIVE_KPI_MIN = 3;
 export const LIVE_KPI_MAX = 5;
 export const LIVE_VISUAL_MIN = 2;
-export const LIVE_VISUAL_MAX = 4;
+export const LIVE_VISUAL_MAX = 5;
 
 export type PackKpi = { label: string; value: string; hint: string; soWhat?: string };
 
@@ -154,6 +154,16 @@ export function chartSoWhat(id: ChartId, snap: PeriodSnapshot, suite: ChartSuite
       return suite.upbStack.footnote;
     case "close_control":
       return suite.closeControl.footnote;
+    case "dist_capital_returned":
+      return suite.distribution.capital.footnote;
+    case "dist_pref_over_time":
+      return suite.distribution.pref.footnote;
+    case "dist_by_party":
+      return suite.distribution.parties.footnote;
+    case "dist_tier_gauge":
+      return suite.distribution.tier.footnote;
+    case "dist_dpi":
+      return suite.distribution.dpi.footnote;
     default:
       return CHART_TITLES[id];
   }
@@ -449,9 +459,31 @@ export function execRisks(snap: PeriodSnapshot, audience: AudienceId, suite: Cha
 
 function appendixTables(snap: PeriodSnapshot, suite: ChartSuite, leftover: ChartId[]): PackAppendixTable[] {
   const tables: PackAppendixTable[] = [];
+  const actuals = snap.distributionActuals;
+  tables.push({
+    title: "Distribution ledger actuals (cash already paid)",
+    soWhat: actuals.hasEvents
+      ? `Posted cash: LP ${formatUsd(actuals.cumulativeLpCents)}, RCP ${formatUsd(actuals.cumulativeRcpCents)}, Co-GP ${formatUsd(actuals.cumulativeCoGpCents)}. This is cash already paid, separate from the illustrative current-period waterfall.`
+      : "Nothing posted yet, so the deal starts at $0 distributed. The waterfall table is an illustrative split of this period’s CFADS, not cash paid.",
+    headers: ["Item", "Amount"],
+    rows: [
+      ["Capital contributed", formatUsd(actuals.capitalContributedCents)],
+      ["Capital returned", formatUsd(actuals.capitalReturnedCents)],
+      ["Unreturned capital", formatUsd(actuals.unreturnedCapitalCents)],
+      ["Pref accrued", formatUsd(actuals.prefAccruedCents)],
+      ["Pref paid", formatUsd(actuals.prefPaidCents)],
+      ["Pref unpaid", formatUsd(actuals.prefUnpaidCents)],
+      ["Catch-up paid", formatUsd(actuals.catchUpPaidCents)],
+      ["Promote earned", formatUsd(actuals.promoteEarnedCents)],
+      ["Cumulative LP", formatUsd(actuals.cumulativeLpCents)],
+      ["Cumulative RCP", formatUsd(actuals.cumulativeRcpCents)],
+      ["Cumulative Co-GP", formatUsd(actuals.cumulativeCoGpCents)],
+      ["LP multiple to date", formatBpsAsMultiple(actuals.dpiBps)],
+    ],
+  });
   if (snap.waterfallApplied) {
     tables.push({
-      title: "Deal waterfall (same config as OpCo)",
+      title: "Deal waterfall (illustrative current period — not cash paid)",
       soWhat: waterfallSplitSentence(snap),
       headers: ["Slice", "Amount"],
       rows: [
@@ -524,6 +556,21 @@ function appendixCallouts(
       soWhat: chartSoWhat("close_control", snap, suite),
     });
   }
+  const handled = new Set<ChartId>([
+    "portfolio_heatmap",
+    "covenant_watchlist",
+    "t12_status",
+    "decision_posture",
+    "close_control",
+  ]);
+  for (const id of leftover) {
+    if (handled.has(id)) continue;
+    out.push({
+      title: CHART_TITLES[id],
+      body: chartSoWhat(id, snap, suite),
+      soWhat: chartSoWhat(id, snap, suite),
+    });
+  }
   return out;
 }
 
@@ -543,6 +590,7 @@ function commonDisclosures(snap: PeriodSnapshot): string[] {
     `LTV gated: ${snap.ltvReason}`,
     `Delinquency not available: ${snap.delinquencyReason}`,
     "CFADS is a distributions proxy, not a posted investor distribution. Saved deal waterfalls split CFADS into LP share vs GP/RCP; OpCo cash/CFADS and the Monthly Investor Pack use that same config. Default is 100% look-through.",
+    "Distribution ledger actuals are cash already paid. The deal waterfall table is an illustrative split of this period’s CFADS, not a posted distribution.",
     "No live PMS or bank feed. Charts reprint the same period snapshot as the narratives.",
     "Soft-archived SPEs are excluded from live financial packs and OpCo combined roll-up.",
   ];

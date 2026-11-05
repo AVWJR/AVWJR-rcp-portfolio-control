@@ -19,6 +19,7 @@ export async function createIntake(patch: DealIntakePatch = {}) {
       strategy: (patch.strategy as SpeStrategy | null) ?? null,
       parentOpCoCode: patch.parentOpCoCode ?? defaultOpCoCode(),
       sourcesJson: JSON.stringify(patch.sources ?? ["upload"]),
+      requestedDealStatus: patch.requestedDealStatus ?? null,
     },
     include: { files: true, entity: { select: { code: true, name: true } } },
   });
@@ -68,6 +69,8 @@ export async function updateIntake(id: string, patch: DealIntakePatch) {
       dscrThresholdBps: patch.dscrThresholdBps === undefined ? existing.dscrThresholdBps : patch.dscrThresholdBps,
       debtYieldThresholdBps:
         patch.debtYieldThresholdBps === undefined ? existing.debtYieldThresholdBps : patch.debtYieldThresholdBps,
+      requestedDealStatus:
+        patch.requestedDealStatus === undefined ? existing.requestedDealStatus : patch.requestedDealStatus,
       lastError: patch.lastError === undefined ? existing.lastError : patch.lastError,
       entityId: patch.entityId === undefined ? existing.entityId : patch.entityId,
     },
@@ -110,6 +113,7 @@ export function publicIntake(row: IntakeWithFiles) {
     loanMaturity: row.loanMaturity,
     dscrThresholdBps: row.dscrThresholdBps,
     debtYieldThresholdBps: row.debtYieldThresholdBps,
+    requestedDealStatus: row.requestedDealStatus,
     lastError: row.lastError,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

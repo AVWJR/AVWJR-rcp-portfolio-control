@@ -46,17 +46,70 @@ Same engine and Co-GP terms as live rollup / LP packs. Not historical books and 
 
 Engine: `packages/ledger/src/proforma.ts`. Tests: `tests/waterfall-engine.test.ts`, `tests/waterfall-proforma.test.ts`.
 
+## A typed 0 is zero
+
+Unreturned capital and LP pref unpaid follow one rule:
+
+- An **empty** box means “use the default.” For unreturned capital, that default is LP contributed capital. For LP pref unpaid, the default is nothing carried in (this period’s pref still accrues).
+- A **typed 0** means zero. Return of capital is already done, or unpaid pref carried in is zero. It does not fall back to contributed capital, and it does not disappear into a blank box when you reload.
+
+Older saves could not tell those two apart (both were stored as 0 and treated as empty). Open the deal, type 0 if that is what you mean, and save again. The screen then reloads 0 as 0 and an empty box as empty.
+
+The dollar columns on the waterfall row are still required numbers, so a preview build does not change the shared database. The empty-versus-zero choice is saved next to the tiers (`null` for blank, `"0"` for zero) and that is what the screen reads back.
+
+## If SPE cash were distributed today
+
+That sentence uses **operating cash available** (account 1010) only. It excludes replacement reserves (1020), escrow / impounds (1030), and tenant security deposits (1040). The label on the page says so. Total cash, which still includes those accounts, is shown separately and is not the distribution base.
+
+## Catch-up
+
+The catch-up row is **not** an 80/20 split of that row’s dollars. The 80/20 (or whatever you type on the residual / promote row) is the **GP’s target share** of profits above return of capital. The **Catch-up %** at the top of the deal is the share of each catch-up dollar that goes to the GP.
+
+- At **100%**, every catch-up dollar goes to the GP until the GP holds that target share.
+- At **50%**, half of each catch-up dollar goes to the GP and half to the LP, and the row continues until the GP still reaches the same target. It takes more dollars; it does not stop halfway to the target.
+- A **70/30** residual moves the target to **30%**. The catch-up row follows the residual row. You do not set a second split on the catch-up row.
+- A typed **0** stays 0. It does not jump back to 80/20.
+
+Formula, in whole cents (truncating division):
+
+- `P` = LP preferred return paid in this distribution
+- `g` = GP target share from the residual row = GP% / (LP% + GP%)
+- `c` = Catch-up % paid to the GP
+- When `c` is greater than `g`, catch-up dollars `X = (g × P) / (c − g)`
+- The GP receives `c × X`. The LP receives the rest of `X`.
+- The residual row then continues at `g`, so the GP’s share of profits above return of capital stays at `g`.
+
+Worked example (the engine’s $12,000,000 distribution on $10,000,000 capital, 8% pref for 12 months, $800,000 pref, $2,000,000 of profits above return of capital):
+
+| Catch-up % | Residual | GP at the end |
+| --- | --- | --- |
+| 100% | 80/20 | $400,000 (20%) |
+| 50% | 80/20 | $400,000 (20%) |
+| 100% | 70/30 | $600,000 (30%) |
+
 ## Five templates
 
 Grounded in CRE/REPE practice (deal-level pref + promote, institutional catch-up, multi-hurdle, American vs European). Click a chip to populate; every field stays editable.
 
 1. **Simple pref + promote (no catch-up)** — ROC → LP pref (default 8%) → residual 80% LP / 20% GP.
-2. **Institutional pref + 100% catch-up + promote** — ROC → LP pref → 100% GP catch-up until GP has its promote share of profits above ROC → 80/20 residual.
+2. **Institutional pref + 100% catch-up + promote** — ROC → LP pref → GP catch-up at the Catch-up % until the GP holds the residual row’s target share of profits above ROC → 80/20 residual. A catch-up below 100% still reaches that target.
 3. **Multi-hurdle IRR promote** — ROC → dollar-pref bands at 8%→20% GP, 12%→30%, 15%→40%. **Honest:** these are dollar-pref proxies of IRR hurdles, not XIRR.
 4. **American / deal-by-deal** — same deal-level hurdles as simple pref+promote; clawback/lookback is **flagged for later true-up** (this run does not reverse prior promote).
 5. **European / whole-fund style** — no GP promote from this SPE until portfolio/OpCo capital + pref are satisfied (or until LP contributed capital is entered — LP-protective). Residual then splits per promote %.
 
 Engine formulas: `packages/ledger/src/waterfall.ts` (`WATERFALL_FORMULAS`). Integer USD cents. Unit tests: `tests/waterfall-engine.test.ts` (fixed $12M on $10M / 8% / 12 months) and `tests/waterfall-rollup.test.ts`.
+
+## Principal click-test (SPE-WBG) — zero, operating cash, catch-up
+
+1. Gold nav **Deals**. Open **SPE-WBG**. Click **LP/GP waterfall**.
+2. Click **Simple pref + promote**. Enter LP contributed capital **$1,000,000**. Leave **Unreturned capital** empty. The preview should treat the full $1,000,000 as still invested.
+3. Type **0** in Unreturned capital. The box must stay **0**, not go blank. With this month’s distributable cash, return of capital is already done, so the split is the residual promote (not a paydown of the $1,000,000).
+4. Type **0** in LP pref unpaid. It must stay **0**.
+5. **Save waterfall**. Reload the page. Both zeros are still **0**.
+6. Clear Unreturned capital so the box is empty. Save and reload. The box stays empty, and the math again uses the $1,000,000 contributed capital. (When this month’s distributable cash is $18,900 at 8% simple monthly, an empty unreturned box gives Deal LP **$18,900.00**, RCP **$0.00**, and LP pref unpaid **$6,666.66**. Typed 0 and typed pref unpaid 0 give Deal LP **$15,120.00**, RCP **$3,780.00**, and pref unpaid **$0.00**.)
+7. Read **If SPE cash were distributed today**. The dollar amount in that sentence is **operating cash available** and the words say it excludes reserves, escrow, and tenant deposits. It should be lower than **Total cash** when those accounts have balances.
+8. Click **Institutional pref + 100% catch-up + promote**. Set **Catch-up %** to **50**. The catch-up row should read that **50%** of the row goes to the GP until a **20%** target, and the LP/GP boxes on that row should be locked to the residual row (labeled as the GP target, not as a split of the catch-up).
+9. Change the residual row to **70% LP / 30% GP**. The catch-up target should move to **30%**. Type **0** in Catch-up % if you want no catch-up dollars to the GP — it must stay 0, not snap back to 80/20.
 
 ## Principal click-test (SPE-HMTOS)
 

@@ -5,7 +5,7 @@ import {
   type PeriodCloseStatus,
 } from "@rcp/ledger";
 import { actingUserId } from "@/lib/auth/actor";
-import { prisma } from "./prisma";
+import { prisma, type Db } from "./prisma";
 
 export async function postJournal(input: {
   entityId: string;
@@ -16,10 +16,12 @@ export async function postJournal(input: {
   lines: JournalDraftLine[];
   allowControllerAdjustment?: boolean;
   reversesJournalId?: string;
+  db?: Db;
 }) {
   assertJournalBalanced(input.lines);
+  const db = input.db ?? prisma;
 
-  const period = await prisma.period.findUnique({ where: { id: input.periodId } });
+  const period = await db.period.findUnique({ where: { id: input.periodId } });
   if (!period || period.entityId !== input.entityId) {
     throw new Error("Period does not belong to entity");
   }
@@ -28,7 +30,7 @@ export async function postJournal(input: {
   });
   const postedByUserId = await actingUserId();
 
-  const accounts = await prisma.account.findMany({
+  const accounts = await db.account.findMany({
     where: { entityId: input.entityId, code: { in: input.lines.map((l) => l.accountCode) } },
   });
   const byCode = new Map(accounts.map((a) => [a.code, a]));
@@ -39,7 +41,7 @@ export async function postJournal(input: {
     }
   }
 
-  return prisma.journal.create({
+  return db.journal.create({
     data: {
       entityId: input.entityId,
       periodId: input.periodId,

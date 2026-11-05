@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { actingUserId } from "@/lib/auth/actor";
 import { isArchivedSpe } from "@/lib/archive";
+import { effectiveDealStatus, isOwnedSpe } from "@/lib/owned-spe";
 import { ensureMasterCoaCurrent } from "@/lib/entities";
 import { openPeriod } from "@/lib/deals/periods";
 import { parseRentRollSource } from "@/lib/deals/workbook";
-import { hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
+import { assertOwnedDealMayClose, hardLockPeriod, reopenPeriod, softClosePeriod } from "@/lib/period-close";
 import { assertTieOutsAllowLock } from "@/lib/close/guards";
 import { clearReviewerSignOff } from "@/lib/close/sign-off";
 import { putStoredFile } from "@/lib/file-store";
@@ -65,6 +66,20 @@ import {
   type CloseFileClass,
   type ParsedCloseLine,
 } from "./parse-file";
+
+export const CLOSE_ARCHIVED_UPLOAD =
+  "This SPE is soft-archived. Restore it from Deal Archive before uploading a month-end package.";
+export const CLOSE_HARD_LOCKED_UPLOAD =
+  "This month is hard-locked. Reopen it with a reason and a ticket before uploading a replacement.";
+export const CLOSE_SOFT_OVERRIDE =
+  "This month is soft-closed. Check the controller override and enter a reason before posting or reversing. Without that, the books stay as they are.";
+export const CLOSE_ARCHIVED_POST =
+  "This SPE is soft-archived. Restore it from Deal Archive before posting to the books.";
+export const CLOSE_NOT_OWNED_SUFFIX = "not Owned. Month-end close does not post journals for this deal.";
+export const CLOSE_NOT_OVERWRITTEN = "Closed months are not overwritten. Reopen with a reason and a ticket.";
+export const REVERSE_REASON_REQUIRED = "A reason is required to reverse operating journals.";
+export const UNMAPPED_SUSPENSE = "Unmapped lines are in suspense. Map every line before a hard lock.";
+export const DROP_AT_LEAST_ONE_FILE = "Drop at least one file.";
 
 function periodRank(year: number, month: number): number {
   return year * 12 + month;
@@ -167,11 +182,11 @@ export async function storeCloseUpload(opts: {
   const entity = await prisma.entity.findUnique({ where: { id: opts.entityId } });
   if (!entity) throw new Error("Unknown SPE.");
   if (isArchivedSpe(entity)) {
-    throw new Error("This SPE is soft-archived. Restore it from Deal Archive before uploading a month-end package.");
+    throw new Error(CLOSE_ARCHIVED_UPLOAD);
   }
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (period.status === "CLOSED") {
-    throw new PeriodLockedError("This month is hard-locked. Reopen it with a reason and a ticket before uploading a replacement.");
+    throw new PeriodLockedError(CLOSE_HARD_LOCKED_UPLOAD);
   }
   const classification = classifyCloseFile(opts.filename, opts.bytes);
   const parsed = parseCloseFile(opts.filename, opts.bytes, {
@@ -419,7 +434,7 @@ function softCloseOverrideReason(
   const reason = opts.reason?.trim() ?? "";
   if (!controllerOverrideAccepted(opts.controllerOverride) || !reason) {
     throw new Error(
-      "This month is soft-closed. Check the controller override and enter a reason before posting or reversing. Without that, the books stay as they are.",
+      CLOSE_SOFT_OVERRIDE,
     );
   }
   return reason;
@@ -447,9 +462,21 @@ export async function postCloseToBooks(opts: {
   reason?: string;
 }) {
   await ensureMasterCoaCurrent();
+  const booksEntity = await prisma.entity.findUnique({
+    where: { id: opts.entityId },
+    select: { type: true, code: true, lifecycleStatus: true, dealStatus: true },
+  });
+  if (booksEntity?.type === "SPE" && isArchivedSpe(booksEntity)) {
+    throw new Error(CLOSE_ARCHIVED_POST);
+  }
+  if (booksEntity?.type === "SPE" && !isOwnedSpe(booksEntity)) {
+    throw new Error(
+      `${booksEntity.code} is ${effectiveDealStatus(booksEntity)}, ${CLOSE_NOT_OWNED_SUFFIX}`,
+    );
+  }
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (period.status === "CLOSED") {
-    throw new PeriodLockedError("Closed months are not overwritten. Reopen with a reason and a ticket.");
+    throw new PeriodLockedError(CLOSE_NOT_OVERWRITTEN);
   }
   const overrideReason = softCloseOverrideReason(period.status, opts);
   const uploads = await prisma.monthEndUpload.findMany({
@@ -1134,10 +1161,10 @@ export async function reverseOperatingJournals(opts: {
   controllerOverride?: boolean | string;
 }) {
   const reason = opts.reason.trim();
-  if (!reason) throw new Error("A reason is required to reverse operating journals.");
+  if (!reason) throw new Error(REVERSE_REASON_REQUIRED);
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (period.status === "CLOSED") {
-    throw new PeriodLockedError("Closed months are not overwritten. Reopen with a reason and a ticket.");
+    throw new PeriodLockedError(CLOSE_NOT_OVERWRITTEN);
   }
   const overrideReason = softCloseOverrideReason(period.status, opts);
   const planned = await plannedOperatingReversals(opts.entityId, opts.year, opts.month);
@@ -1186,6 +1213,9 @@ export async function transitionClose(opts: {
   reason?: string;
   ticket?: string;
 }) {
+  if (opts.action !== "reopen") {
+    await assertOwnedDealMayClose(opts.entityId);
+  }
   const period = await openPeriod(opts.entityId, opts.year, opts.month);
   if (opts.action === "soft") {
     await softClosePeriod(period.id);
@@ -1197,7 +1227,7 @@ export async function transitionClose(opts: {
   }
   const workspace = await loadCloseWorkspace(opts.entityId, opts.year, opts.month);
   if (workspace.uploads.some((file) => file.unmapped.length > 0) || workspace.suspense > 0) {
-    throw new Error("Unmapped lines are in suspense. Map every line before a hard lock.");
+    throw new Error(UNMAPPED_SUSPENSE);
   }
   assertTieOutsAllowLock(workspace.tieOuts);
   await hardLockPeriod(period.id);

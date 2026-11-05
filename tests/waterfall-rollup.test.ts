@@ -1,5 +1,5 @@
 import { applyWaterfallTemplate, dollars, lookThroughConfig, runWaterfall } from "@rcp/ledger";
-import { europeanPromoteOpen, rollupWaterfallPools, type SpeWaterfallRecord } from "@/lib/waterfall";
+import { effectiveCapital, europeanPromoteOpen, rollupWaterfallPools, type SpeWaterfallRecord } from "@/lib/waterfall";
 import { describe, expect, it } from "vitest";
 
 function record(
@@ -48,10 +48,7 @@ describe("OpCo waterfall rollup uses GP/RCP share", () => {
     const direct = runWaterfall({
       config: spe.config,
       distributableCents: cfads,
-      lpContributedCents: spe.lpContributedCents,
-      unreturnedCapitalCents: spe.unreturnedCapitalCents,
-      unpaidPrefCents: 0n,
-      prefPaidToDateCents: 0n,
+      ...effectiveCapital(spe),
       periodMonths: 12,
     });
     expect(rolled.applied).toBe(true);

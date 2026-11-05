@@ -96,7 +96,7 @@ describe("pack build smoke", () => {
     }
   });
 
-  it("uses one KPI strip of 3–5 tiles and 2–4 live visuals with a so-what", () => {
+  it("uses one KPI strip of 3–5 tiles and 2–5 live visuals with a so-what", () => {
     const investor = buildPack(fixtureSnapshot(), "monthly_investor");
     expect(liveSpineKinds(investor.slides)).toEqual(PACK_SPINE);
     const kpi = investor.slides.find((s) => s.kind === "kpis");

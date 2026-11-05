@@ -1,0 +1,32 @@
+pillar,variable_id,what_it_measures_plain_english,source,in_score_today,weight_notes
+Demand,DEM-16,Short-term job growth (recent 3 months vs same 3 months a year earlier),BLS CES total nonfarm,yes,equal within Demand
+Demand,DEM-17,3-year annualized job growth,BLS CES total nonfarm,yes,equal within Demand
+Demand,DEM-20,Unemployment rate (12-month average),BLS LAUS,yes,equal within Demand; higher = worse
+Demand,DEM-21,Change in unemployment rate vs a year ago,BLS LAUS,yes,equal within Demand; rise = worse
+Demand,DEM-22,Labor-force growth (year over year),BLS LAUS,yes,equal within Demand
+Demand,DEM-14,Renter household income growth (2-year %),Census ACS 1-year B25119,yes,equal within Demand
+Demographics,DMG-14,Population growth (1-year %),Census PEP,yes,equal within Demographics
+Demographics,DMG-07,Population growth (3-year annualized),Census PEP,yes,equal within Demographics
+Demographics,DMG-15,Domestic migration rate,Census PEP,yes,equal within Demographics
+Demographics,DMG-16,International migration rate,Census PEP,yes,equal within Demographics
+Demographics,DMG-18,Household growth (2-year %),Census ACS 1-year B25003,yes,equal within Demographics
+Demographics,DMG-19,Renter-household growth (2-year %),Census ACS 1-year B25003,yes,equal within Demographics
+Supply,SUP-20,"Permits relative to jobs, adjusted for job growth (bounded)",Census BPS 5+ units + BLS CES,yes,100% of Supply pillar weight
+Supply,SUP-12,5+ permits as % of existing 5+ rental stock,Census BPS + ACS B25032,eligible but weight 0,backtest put all weight on SUP-20
+Supply,SUP-13,Related permit/pipeline normalization,Census BPS + ACS,eligible but weight 0,backtest put all weight on SUP-20
+Supply,SUP-16,Related permit/pipeline normalization,Census BPS,eligible but weight 0,backtest put all weight on SUP-20
+Affordability,AFF-12,Rent as share of renter income,Census ACS B25064 / B25119,yes,equal within Affordability; higher = worse
+Affordability,AFF-09,Share of renters with severe rent burden (≥50%),Census ACS B25070,yes,equal within Affordability; higher = worse
+Affordability,AFF-10,Home price to rent ratio,Census ACS B25077 / B25064,yes,equal within Affordability
+Affordability,AFF-11,Home price to household income,Census ACS B25077 / B19013,yes,equal within Affordability
+Affordability,AFF-15,Rent growth vs income growth (3-year gap),Census ACS B25064 / B25119,yes,equal within Affordability; rent outrunning income = worse
+Operating,OPS-12,3-year annualized median rent growth,Census ACS B25064,yes,equal within Operating
+Operating,OPS-17,Rental vacancy rate,Census ACS B25004 / B25003,yes,equal within Operating; higher = worse
+Operating,OPS-13,1-year rent growth,Census ACS B25064,yes,equal within Operating
+Operating,OPS-14,Newer-unit rent premium vs overall median rent,Census ACS B25113 / B25064,yes,equal within Operating
+Operating,OPS-20,Growth in 5+ rental stock,Census ACS B25032,yes,equal within Operating
+Capital markets,—,No public variables in v1,—,no,pillar weight 0
+Risk,—,No public variables in v1,—,no,pillar weight 0
+Not scored (commentary only),local media / brokerage,"Starts, completions, big projects, corporate moves, roads/transit",CRE Sentinel local-media pass,no,never changes score
+Paid (on hold),Yardi Matrix / MSCI etc.,Paid CRE data,vendor quotes on hold,no,you paused outreach Oct 3
+Queued for v1.1,QCEW wages; IRS income-weighted migration,Wage growth; income-weighted migration,BLS QCEW; IRS SOI,no,after v1 ships; own pre-registered test

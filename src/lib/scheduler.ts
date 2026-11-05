@@ -2,6 +2,8 @@ import { DEFAULT_SCHEDULED_JOBS } from "@rcp/documents";
 import { isPackId, type PackId } from "@rcp/reporting";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { isArchivedSpe } from "./archive";
+import { isOwnedSpe } from "./deal-status";
 import { buildEntityPack, exportPackBuffer } from "./pack-export";
 import { prisma } from "./prisma";
 
@@ -38,8 +40,11 @@ export async function runScheduledPack(opts: {
   const entity = await prisma.entity.findUnique({ where: { code: opts.entityCode } });
   if (!entity) throw new Error(`Unknown entity ${opts.entityCode}`);
   if (entity.type === "HOLDCO") throw new Error("HoldCo has no operating pack");
-  if (entity.type === "SPE" && entity.lifecycleStatus === "ARCHIVED") {
+  if (entity.type === "SPE" && isArchivedSpe(entity)) {
     throw new Error("Archived SPE is not in live financial packs. Restore from Deal Archive.");
+  }
+  if (entity.type === "SPE" && !isOwnedSpe(entity)) {
+    throw new Error(`${entity.code} is not Owned. Only Owned deals are included in live financial packs.`);
   }
 
   const def = DEFAULT_SCHEDULED_JOBS.find((j) => j.packId === packId && j.entityCode === opts.entityCode);

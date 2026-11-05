@@ -2,6 +2,7 @@
 /**
  * Vercel build schema step.
  * Production pushes. Preview does not, unless PREVIEW_DATABASE_URL is set.
+ * Any other Vercel environment skips the push.
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";

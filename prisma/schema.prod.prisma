@@ -94,6 +94,19 @@ enum EntityLifecycle {
   ARCHIVED
 }
 
+/// Library lifecycle. Separate from EntityLifecycle. Only OWNED SPEs feed the
+/// real OpCo books. prisma db push adds this column with @default(OWNED), so
+/// existing production rows become OWNED without a data migration. Read-time
+/// effectiveDealStatus() still treats lifecycleStatus ARCHIVED as Archived
+/// (the column stays OWNED on those rows) and treats a missing value as OWNED.
+enum DealStatus {
+  PIPELINE
+  SCREENED
+  OWNED
+  ARCHIVED
+  TEST
+}
+
 enum UnitStatus {
   OCCUPIED
   VACANT
@@ -121,6 +134,29 @@ model Entity {
   restoredAt       DateTime?
   restoredBy       String?
   restoredByUserId String?
+  /// See DealStatus. Default OWNED fills existing rows on db push.
+  dealStatus            DealStatus @default(OWNED)
+  streetAddress         String?
+  city                  String?
+  state                 String?
+  metro                 String?
+  msa                   String?
+  submarket             String?
+  propertyType          String?
+  vintageYear           Int?
+  assetClass            String?
+  unitCountOverride     Int?
+  purchasePriceCents    BigInt?
+  appraisedValueCents   BigInt?
+  businessPlan          String?
+  renovationBudgetCents BigInt?
+  holdPeriodYears       Int?
+  /// Blank until the owner types it. Never default a percent or a dollar amount.
+  amFeeBps              Int?
+  otherLpFeeCents       BigInt?
+  otherLpFeeNote        String?
+  /// OpCo G&A budget only. Blank until set. Not a deal-level assumption.
+  gaBudgetCents         BigInt?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -144,6 +180,14 @@ model Entity {
   leaseSnapshots   LeasePeriodSnapshot[]
   monthEndEvents   MonthEndEvent[]
   tieOutTolerances TieOutTolerance[]
+  distributionEvents DistributionEvent[]
+  distributionAudits DistributionAudit[]
+  analysisSnapshots  DealAnalysisSnapshot[]
+  statusEvents       DealStatusEvent[]
+  modelMemberships   PortfolioModelDeal[]
+  assetPlan          AssetPlan?
+
+  @@index([dealStatus])
 }
 
 /// Per-SPE LP/GP distribution waterfall. Missing row = 100% look-through
@@ -164,7 +208,9 @@ model SpeWaterfall {
   promoteBase            String   @default("DISTRIBUTABLE_CASH")
   lookbackClawback       Boolean  @default(false)
   lpContributedCents     BigInt   @default(0)
+  /// Required. Blank vs a typed 0 is stored in tiersJson.capital (null vs "0"). Preview builds must not alter this column.
   unreturnedCapitalCents BigInt   @default(0)
+  /// Required. Blank vs a typed 0 is stored in tiersJson.capital (null vs "0").
   unpaidPrefCents        BigInt   @default(0)
   prefPaidToDateCents    BigInt   @default(0)
   notes                  String?
@@ -592,6 +638,8 @@ model DealIntake {
   loanMaturity          DateTime?
   dscrThresholdBps      Int?
   debtYieldThresholdBps Int?
+  /// Null means Owned at create (today's Add Deal behavior).
+  requestedDealStatus   DealStatus?
   lastError             String?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
@@ -688,7 +736,7 @@ model MonthEndUpload {
   mimeType       String   @default("application/octet-stream")
   classification String
   byteSize       Int
-  sha256           String
+  sha256         String
   storagePath      String
   parsedJson       String   @default("{}")
   uploadedByUserId String?
@@ -740,6 +788,472 @@ model MonthEndEvent {
   createdAt   DateTime @default(now())
 
   @@index([entityId, year, month])
+}
+
+/// Posted distribution. Rows are insert-only. A correction is a new row
+/// whose reversesEventId points at the original. Amounts are USD cents.
+model DistributionEvent {
+  id                    String   @id @default(cuid())
+  entityId              String
+  entity                Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  eventDate             DateTime
+  year                  Int
+  month                 Int
+  periodLabel           String
+  grossCents            BigInt
+  /// OPERATING_CASH or CAPITAL_EVENT
+  source                String
+  memo                  String?
+  waterfallSnapshotJson String
+  actor                 String?
+  /// Monotonic per deal. The unique pair is the lock for concurrent posts.
+  sequence              Int
+  /// Set only on a reversing row. Unique so an event is reversed at most once.
+  reversesEventId       String?  @unique
+  reversesEvent         DistributionEvent?  @relation("DistributionReversal", fields: [reversesEventId], references: [id], onDelete: SetNull)
+  reversedBy            DistributionEvent?  @relation("DistributionReversal")
+  monthsAccrued         Int      @default(0)
+  capitalContributedCents BigInt
+  capitalReturnedCents    BigInt
+  unreturnedCapitalCents  BigInt
+  prefAccruedCents        BigInt
+  prefPaidCents           BigInt
+  prefUnpaidCents         BigInt
+  catchUpPaidCents        BigInt
+  catchUpTargetCents      BigInt
+  promoteEarnedCents      BigInt
+  cumulativeLpCents       BigInt
+  cumulativeRcpCents      BigInt
+  cumulativeCoGpCents     BigInt
+  tierTotalsJson          String   @default("{}")
+  createdAt               DateTime @default(now())
+
+  lines  DistributionAllocation[]
+  audits DistributionAudit[]
+
+  @@unique([entityId, sequence])
+  @@index([entityId, createdAt])
+}
+
+model DistributionAllocation {
+  id        String             @id @default(cuid())
+  eventId   String
+  event     DistributionEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tierKind  String
+  tierLabel String
+  lpCents   BigInt
+  rcpCents  BigInt
+  coGpCents BigInt
+  sortOrder Int
+
+  @@index([eventId])
+}
+
+/// Append-only log of each post and reversal. Not an edit of the event.
+model DistributionAudit {
+  id        String              @id @default(cuid())
+  entityId  String
+  entity    Entity              @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  eventId   String?
+  event     DistributionEvent?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  action    String
+  actor     String?
+  detail    String
+  createdAt DateTime            @default(now())
+
+  @@index([entityId, createdAt])
+}
+
+/// Dated underwriting ratios for one deal. New rows only — old snapshots stay.
+/// LP net IRR, LP cash yield, and RCP IRR stay null until fees and cash flows are on file.
+model DealAnalysisSnapshot {
+  id                  String   @id @default(cuid())
+  entityId            String
+  entity              Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  asOfDate            DateTime
+  periodLabel         String
+  recordedAt          DateTime @default(now())
+  recordedBy          String   @default("principal")
+  basisLabel          String
+  noiBasisLabel       String
+  sourceFiles         String   @default("[]")
+  dscrBps             Int?
+  debtYieldBps        Int?
+  cashOnCashBps       Int?
+  occupancyBps        Int?
+  expenseRatioBps     Int?
+  noiCents            BigInt?
+  annualizedNoiCents  BigInt?
+  capRateBps          Int?
+  ltvBps              Int?
+  pricePerUnitCents   BigInt?
+  prefRateBps         Int?
+  catchUpBps          Int?
+  promoteSplitLabel   String?
+  coGpOfPromoteBps    Int?
+  gpCoInvestBps       Int?
+  equityRequiredCents BigInt?
+  lpEquityCents       BigInt?
+  rcpShareBps         Int?
+  unitCount           Int?
+  /// Phase 2. Always null. Never a computed stand-in.
+  lpNetIrrBps         Int?
+  lpAvgCashYieldBps   Int?
+  lpYear1CashYieldBps Int?
+  rcpIrrBps           Int?
+
+  @@index([entityId, recordedAt])
+}
+
+/// Who changed a deal's Library status, when, and why.
+model DealStatusEvent {
+  id         String   @id @default(cuid())
+  entityId   String
+  entity     Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  fromStatus String
+  toStatus   String
+  reason     String
+  actor      String   @default("principal")
+  createdAt  DateTime @default(now())
+
+  @@index([entityId, createdAt])
+}
+
+/// Saved sentence-builder sets. Library search now; Models and the optimizer later.
+model CriteriaPreset {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  criteriaJson String   @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Editable Library lists. Seeded states and property types are inserted if missing.
+/// Metros are added when a deal saves one. Rows are never removed because of age.
+model LibraryPickItem {
+  id        String   @id @default(cuid())
+  kind      String
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([kind, label])
+  @@index([kind, sortOrder])
+}
+
+/// Named what-if list of deals. Read-only analysis.
+/// Never posts journals, never writes the distribution ledger, and never changes deal status.
+model PortfolioModel {
+  id                   String   @id @default(cuid())
+  name                 String
+  /// LIVE or TEST. Test deals belong only in TEST models.
+  kind                 String   @default("LIVE")
+  holdYears            Int      @default(5)
+  growthBps            Int      @default(0)
+  /// Exit cap rate in basis points. Null means no exit value was typed.
+  exitCapRateBps       Int?
+  /// Optional OpCo pref. Null rate or null capital means it is not modeled.
+  opcoPrefRateBps      Int?
+  opcoPrefCapitalCents BigInt?
+  opcoLpSplitBps       Int      @default(8000)
+  opcoGpSplitBps       Int      @default(2000)
+  criteriaJson         String   @default("[]")
+  copiedFromId         String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  deals                PortfolioModelDeal[]
+
+  @@index([kind])
+}
+
+/// One deal inside a Model. Deleting the row removes it from the Model only.
+model PortfolioModelDeal {
+  id                String         @id @default(cuid())
+  modelId           String
+  model             PortfolioModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  entityId          String
+  entity            Entity         @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sortOrder         Int            @default(0)
+  /// False while Pipeline. True for Screened and Owned. The optimizer is Phase 3.
+  optimizerEligible Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+
+  @@unique([modelId, entityId])
+  @@index([entityId])
+}
+
+/// One asset-management plan per deal. Header only. History lives on PlanEvent.
+model AssetPlan {
+  id                 String   @id @default(cuid())
+  entityId           String   @unique
+  entity             Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  /// OPEN until the first saved score. ANALYZED after that.
+  status             String   @default("OPEN")
+  lastAnalyzedAt     DateTime?
+  /// Visible method id. Phase 1 stores observations and does not blend them.
+  blendMethodVersion String   @default("phase1-no-blend-v1")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  observations    MarketObservation[]
+  recommendations PlanRecommendation[]
+  opportunities   IncomeOpportunity[]
+  events          PlanEvent[]
+}
+
+/// Insert-only market or PM comp observation. No update and no delete in the app.
+model MarketObservation {
+  id             String    @id @default(cuid())
+  planId         String
+  plan           AssetPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  sourceName     String
+  /// PM_COMP, PUBLIC, or ZORI.
+  sourceType     String
+  geography      String
+  floorplan      String?
+  beds           Int?
+  valueCents     BigInt?
+  rangeLowCents  BigInt?
+  rangeHighCents BigInt?
+  trendNote      String?
+  /// Public specials or concessions named by the source. Not a resident concession.
+  specialsNote   String?
+  vintageDate    DateTime?
+  asOfDate       DateTime
+  retrievedAt    DateTime
+  termsNote      String
+  createdAt      DateTime  @default(now())
+
+  @@index([planId, createdAt])
+}
+
+/// Current recommendation pointer. Supersede by inserting a PlanEvent. Never deleted here.
+model PlanRecommendation {
+  id               String    @id @default(cuid())
+  planId           String
+  plan             AssetPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  code             String
+  title            String
+  reason           String
+  impactCents      BigInt?
+  revpauDeltaCents BigInt?
+  confidence       String
+  /// OPEN or SUPERSEDED.
+  status           String    @default("OPEN")
+  sourceLabel      String
+  sourceAsOf       DateTime?
+  supersededAt     DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([planId, status])
+}
+
+enum IncomeOpportunityStatus {
+  IDEA
+  APPROVED
+  DECLINED
+  LIVE
+  MEASURED
+}
+
+/// Manual income idea. Status changes are also written to PlanEvent.
+model IncomeOpportunity {
+  id                   String                  @id @default(cuid())
+  planId               String
+  plan                 AssetPlan               @relation(fields: [planId], references: [id], onDelete: Cascade)
+  category             String
+  title                String
+  currentCaptureCents  BigInt?
+  fullRolloutCents     BigInt?
+  setupCostCents       BigInt?
+  ownerName            String?
+  steps                String?
+  legalNote            String?
+  status               IncomeOpportunityStatus @default(IDEA)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  @@index([planId, createdAt])
+}
+
+enum PlanEventKind {
+  PLAN_ANALYZED
+  WEEKLY_UPDATE
+  RECOMMENDATION_CREATED
+  RECOMMENDATION_SUPERSEDED
+  DECISION
+  ACTION
+  RESULT
+}
+
+/// Append-only tracking log. The app has no delete path for these rows.
+model PlanEvent {
+  id                   String        @id @default(cuid())
+  planId               String
+  plan                 AssetPlan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  kind                 PlanEventKind
+  actor                String
+  reason               String
+  subjectType          String
+  subjectId            String?
+  beforeJson           String?
+  afterJson            String?
+  ownerName            String?
+  dueDate              DateTime?
+  status               String?
+  completedAt          DateTime?
+  note                 String?
+  kpiBeforeJson        String?
+  kpiAfterJson         String?
+  expectedEffectCents  BigInt?
+  sourceAsOf           DateTime?
+  createdAt            DateTime      @default(now())
+
+  @@index([planId, createdAt])
+}
+
+// --- Market Ranks (free public data v1). Additive. Not ledger, journal, close, or budget. ---
+
+/// A data publisher or series. Paid rows may be registered later and stay inactive.
+model MktSource {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  publisher         String
+  url               String   @default("")
+  termsUrl          String   @default("")
+  /// public | manual_only | license_required | excluded
+  licenseBasis      String
+  automationAllowed Boolean  @default(false)
+  costNotes         String   @default("")
+  /// active | inactive | pending_license
+  status            String
+  paywalled         Boolean  @default(false)
+  notes             String   @default("")
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  variables         MktVariableSource[]
+
+  @@index([status, licenseBasis])
+}
+
+/// One model input. inScoreToday is true only when the approved source list says yes.
+model MktVariable {
+  id              String   @id
+  name            String
+  plainDefinition String
+  pillar          String
+  /// Short unit when the definition names one. Otherwise "data needed".
+  unit            String
+  /// higher_is_worse when the source list says so. Otherwise not_stated.
+  expectedSign    String
+  whyItMatters    String
+  inScoreToday    Boolean
+  /// The source-list cell, unchanged: yes, eligible but weight 0, or no.
+  inScoreLabel    String
+  /// Source cell from the approved list. An em dash means no source was named.
+  sourceLabel     String
+  weightNotes     String
+  sortOrder       Int      @default(0)
+  sources         MktVariableSource[]
+
+  @@index([pillar, sortOrder])
+}
+
+model MktVariableSource {
+  variableId String
+  sourceId   String
+  variable   MktVariable @relation(fields: [variableId], references: [id], onDelete: Cascade)
+  source     MktSource   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@id([variableId, sourceId])
+}
+
+/// One approved scoring method. Scores stay on the official version until a new one is approved.
+model MktModelVersion {
+  id                     String   @id
+  code                   String   @unique
+  name                   String
+  derivationPlainEnglish String
+  isOfficial             Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  weightSets             MktWeightSet[]
+  scoreRuns              MktScoreRun[]
+}
+
+/// Pillar weight or within-pillar weight. Fractions stay exact (numerator / denominator).
+model MktWeightSet {
+  id                String          @id
+  modelVersionId    String
+  modelVersion      MktModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  /// PILLAR or VARIABLE
+  scope             String
+  pillar            String
+  variableId        String?
+  weightNumerator   Int
+  weightDenominator Int
+  notes             String
+  sortOrder         Int             @default(0)
+
+  @@index([modelVersionId, sortOrder])
+}
+
+/// A point-in-time score run. Rows are kept. Nothing here is deleted because of age.
+model MktScoreRun {
+  id             String             @id
+  modelVersionId String
+  modelVersion   MktModelVersion    @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+  asOf           DateTime
+  isOfficial     Boolean            @default(false)
+  label          String
+  notes          String
+  createdAt      DateTime           @default(now())
+  scores         MktMetroScore[]
+  backtest       MktBacktestResult?
+
+  @@index([isOfficial])
+}
+
+model MktMetro {
+  cbsaCode String          @id
+  name     String
+  scores   MktMetroScore[]
+}
+
+/// Official viability, rank, and pillar subscores for one metro on one run.
+model MktMetroScore {
+  id               String      @id
+  runId            String
+  run              MktScoreRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  metroId          String
+  metro            MktMetro    @relation(fields: [metroId], references: [cbsaCode], onDelete: Cascade)
+  rank             Int
+  /// Viability Score × 10. 919 is 91.9. Never a guessed zero.
+  viabilityTenths  Int
+  band             String
+  tiedWithinBand   String
+  tiedCount        Int
+  /// Rank interval × 1000. 1000 is 1.
+  rankP5Milli      Int
+  rankP95Milli     Int
+  confidenceTenths Int
+  momentum         String
+  flags            String      @default("")
+  /// JSON of pillar name to the Phase 5 subscore string. Missing pillars are omitted, not zero.
+  pillarScoresJson String      @default("{}")
+  createdAt        DateTime    @default(now())
+
+  @@unique([runId, metroId])
+  @@index([runId, rank])
+}
+
+/// The one honest backtest limitation stored with the official run.
+model MktBacktestResult {
+  id                     String      @id
+  runId                  String      @unique
+  run                    MktScoreRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  limitationPlainEnglish String
+  createdAt              DateTime    @default(now())
 }
 
 /// Login account. Roles and deal scopes live next to the books. Additive.

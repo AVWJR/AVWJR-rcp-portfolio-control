@@ -2,6 +2,7 @@ import { AuthzError, assertCan, enforceAll } from "@/lib/auth/actor";
 import { closeActionCapabilities } from "@/lib/auth/roles";
 import { signPeriodPackage } from "@/lib/close/sign-off";
 import {
+  DROP_AT_LEAST_ONE_FILE,
   postCloseToBooks,
   rememberMap,
   reverseOperatingJournals,
@@ -125,7 +126,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
         return NextResponse.json({ ok: true });
       }
       if (body.action === "upload") {
-        if (!body.filename || body.text == null) throw new Error("Drop at least one file.");
+        if (!body.filename || body.text == null) throw new Error(DROP_AT_LEAST_ONE_FILE);
         const stored = await storeCloseUpload({
           entityId: entity.id,
           entityCode: code,
@@ -292,7 +293,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       return wantsHtml ? back() : NextResponse.json({ ok: true });
     }
     const files = form.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
-    if (!files.length) throw new Error("Drop at least one file.");
+    if (!files.length) throw new Error(DROP_AT_LEAST_ONE_FILE);
     const stored = [];
     for (const file of files) {
       const bytes = Buffer.from(await file.arrayBuffer());
