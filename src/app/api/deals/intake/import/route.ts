@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { applyCreateEntity, applyStructuredData } from "@/lib/deals/apply";
 import { autoIngestIntake } from "@/lib/deals/auto-ingest";
 import { reapplyRentRollForEntity } from "@/lib/deals/reapply";
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   try {
     const body = (await request.json()) as {
       intakeId?: string;

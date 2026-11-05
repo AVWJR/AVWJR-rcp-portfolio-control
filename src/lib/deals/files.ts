@@ -1,3 +1,4 @@
+import { actingUserId } from "@/lib/auth/actor";
 import { prisma } from "@/lib/prisma";
 import {
   blobStoragePath,
@@ -82,6 +83,7 @@ export async function storeIntakeFile(opts: {
       byteSize: opts.bytes.length,
       storagePath: "pending",
       remoteId: opts.remoteId ?? null,
+      uploadedByUserId: await actingUserId(),
       status: "uploading",
     },
   });

@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { addModelDeal, removeModelDeal } from "@/lib/models/store";
 import { NextResponse } from "next/server";
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {
@@ -19,6 +22,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {

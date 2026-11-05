@@ -37,6 +37,7 @@ export function Shell({
   consolidated,
   pathname,
   periodLabels,
+  showUsers,
 }: {
   children: ReactNode;
   entities: {
@@ -53,6 +54,7 @@ export function Shell({
   consolidated: boolean;
   pathname: string;
   periodLabels?: string[];
+  showUsers?: boolean;
 }) {
   const qs = (path: string) => {
     const params = new URLSearchParams({
@@ -121,6 +123,18 @@ export function Shell({
                 </Link>
               );
             })}
+            {showUsers ? (
+              <Link
+                href="/admin/users"
+                className={`px-3 py-1.5 ${
+                  pathname.startsWith("/admin/users")
+                    ? "bg-gold-500 text-navy-950"
+                    : "text-cream-200 hover:bg-navy-800 hover:text-gold-400"
+                }`}
+              >
+                Users
+              </Link>
+            ) : null}
           </nav>
           <EntitySwitcher
             entities={entities}

@@ -2,6 +2,8 @@
 
 Lightweight Principal vs partner modes. Not SSO. Not multi-tenant.
 
+Named accounts replace this gate. See [RCP_ACCESS_AND_BACKUPS.md](./RCP_ACCESS_AND_BACKUPS.md). Leave `LEGACY_PARTNER_TOKEN` unset: the share link works only until the first user is created, then everyone signs in at `/login`. Set `LEGACY_PARTNER_TOKEN=on` only if you still need the shared link after that. Set it to `off` to turn the shared link off immediately.
+
 ## When it is on
 
 Set either `PARTNER_VIEW_TOKEN` / `VIEWER_PASSWORD` or `PRINCIPAL_PASSWORD` (8+ characters) on Vercel. Anonymous visitors are **viewers**.

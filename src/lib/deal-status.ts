@@ -8,7 +8,8 @@
  * value on a LIVE SPE → Owned. No data migration.
  */
 
-import { isPermanentDemoSpe, permanentDemoDeleteMessage } from "@/lib/archive";
+import { isPermanentDemoSpe } from "@/lib/archive-copy";
+import { BROKER_T12_WILL_POST, ownedEntryCopy, ownedExitCopy, permanentDemoStatusMessage } from "@/lib/deal-status-copy";
 import { prisma } from "@/lib/prisma";
 import { BROKER_T12_SOURCE, postStoredBrokerT12Journals } from "@/lib/t12-overlay";
 import { effectiveDealStatus, isDealStatus, type DealStatusValue } from "@/lib/owned-spe";
@@ -36,33 +37,10 @@ export const DEAL_STATUS_CHOICES = "Choose Pipeline, Screened, Owned, or Test.";
 export const DEAL_STATUS_NOT_ARCHIVED =
   "Archived is the existing Deal Archive. Use Delete on the Deals list and type the SPE code. This screen does not archive or delete.";
 export const DEAL_STATUS_REASON = "Say why you are changing the status.";
-export const BROKER_T12_WILL_POST = "The saved broker T12 will be posted into the books.";
+export { BROKER_T12_WILL_POST, ownedEntryCopy, ownedExitCopy, permanentDemoStatusMessage } from "@/lib/deal-status-copy";
 
 export function dealStatusArchivedMessage(code: string): string {
   return `${code} is Archived. Restore it from Deal Archive if it should come back. Restoring does not delete anything.`;
-}
-
-export function ownedExitCopy(code: string, name: string): string {
-  return (
-    `Moving ${name} (${code}) out of Owned takes it out of the OpCo roll-up, month-end close, and the distribution ledger. ` +
-    `The books and files stay. Only Owned deals are in today's numbers. ` +
-    `Nothing is deleted.`
-  );
-}
-
-export function ownedEntryCopy(code: string, name: string): string {
-  return (
-    `Marking ${name} (${code}) Owned puts it into the real OpCo books, month-end close, and the distribution ledger. ` +
-    `${BROKER_T12_WILL_POST} ` +
-    `Confirm that RCP has closed on this deal.`
-  );
-}
-
-export function permanentDemoStatusMessage(code: string): string {
-  return (
-    `${permanentDemoDeleteMessage(code)} ` +
-    `Tagging it Test is left for the Phase 4 purge tool, because Test would take it out of the roll-up.`
-  );
 }
 
 export function booksLockStatusMessage(code: string): string {

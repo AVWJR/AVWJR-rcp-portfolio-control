@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { addPickItem, isPickKind, listPickItems, removePickItem } from "@/lib/library/pick-lists";
 import { NextResponse } from "next/server";
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   const items = await listPickItems();
@@ -15,6 +18,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {

@@ -48,9 +48,9 @@ function prepare() {
     provider === "postgresql" ? buildPostgresqlSchema(sqliteSource) : sqliteSource;
 
   fs.writeFileSync(activeSchemaPath, activeSource);
-  if (provider === "postgresql") {
-    fs.writeFileSync(prodSchemaPath, activeSource);
-  }
+  // Always refresh the committed PostgreSQL schema so local SQLite work
+  // cannot leave schema.prod.prisma behind the models in schema.prisma.
+  fs.writeFileSync(prodSchemaPath, buildPostgresqlSchema(sqliteSource));
 
   Object.assign(process.env, {
     DATABASE_URL: env.DATABASE_URL,

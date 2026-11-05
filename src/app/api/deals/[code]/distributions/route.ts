@@ -1,10 +1,12 @@
 import { currentAccessRole } from "@/lib/access-server";
+import { enforce, resolveActor } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import {
   DISTRIBUTION_DATE,
   DISTRIBUTION_PERIOD,
   DISTRIBUTION_SOURCE,
   DistributionLedgerError,
+  assertCanMutateDistributions,
   assertPreviewGrossMatches,
   distributionCsv,
   loadDistributionBoard,
@@ -34,11 +36,15 @@ async function speOr404(code: string) {
 }
 
 export async function GET(request: Request, context: { params: Promise<{ code: string }> }) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   const { code } = await context.params;
   const entity = await speOr404(code);
   if (!entity) return NextResponse.json({ error: `Unknown SPE ${code}` }, { status: 404 });
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   const board = await loadDistributionBoard(entity.id);
   if (!board) return NextResponse.json({ error: `Unknown SPE ${code}` }, { status: 404 });
   const url = new URL(request.url);
@@ -57,10 +63,17 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {
+    const signedIn = await resolveActor();
+    if (signedIn.kind !== "user") assertCanMutateDistributions(await currentAccessRole());
+    const denied = await enforce("waterfall.write");
+    if (denied) return denied;
     const { code } = await context.params;
     const entity = await speOr404(code);
     if (!entity) return NextResponse.json({ error: `Unknown SPE ${code}` }, { status: 404 });
-    const role = await currentAccessRole();
+    const scoped = await enforce("waterfall.write", entity.id);
+    if (scoped) return scoped;
+    const role = signedIn.kind === "user" ? "principal" : await currentAccessRole();
+    const actorLabel = signedIn.kind === "user" ? signedIn.email ?? signedIn.name ?? "signed-in" : role;
     const body = (await request.json()) as {
       confirm?: boolean;
       grossCents?: string | number;
@@ -106,7 +119,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       grossCents: gross,
       source: body.source,
       memo: body.memo?.trim() ? body.memo.trim().slice(0, 500) : null,
-      actor: role,
+      actor: actorLabel,
       role,
     });
     return NextResponse.json(serialize({ board }));
@@ -116,6 +129,8 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
 }
 
 export async function PATCH() {
+  const denied = await enforce("waterfall.write");
+  if (denied) return denied;
   const { rejectDistributionEdit } = await import("@/lib/distribution-ledger");
   try {
     rejectDistributionEdit();
@@ -125,6 +140,8 @@ export async function PATCH() {
 }
 
 export async function DELETE() {
+  const denied = await enforce("waterfall.write");
+  if (denied) return denied;
   const { rejectDistributionDelete } = await import("@/lib/distribution-ledger");
   try {
     rejectDistributionDelete();

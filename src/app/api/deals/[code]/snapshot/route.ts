@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { captureDealSnapshot } from "@/lib/library/snapshot";
 import { prisma } from "@/lib/prisma";
@@ -7,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request, context: { params: Promise<{ code: string }> }) {
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {
@@ -16,6 +19,8 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     if (!entity || entity.type !== "SPE") {
       return NextResponse.json({ error: `No property SPE found for ${code}.` }, { status: 404 });
     }
+    const scoped = await enforce("deals.write", entity.id);
+    if (scoped) return scoped;
     const match = /^(\d{4})-(\d{2})$/.exec(body.period ?? "2026-08");
     const year = match ? Number(match[1]) : 2026;
     const month = match ? Number(match[2]) : 8;

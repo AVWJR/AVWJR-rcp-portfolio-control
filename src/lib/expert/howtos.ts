@@ -1486,6 +1486,71 @@ export const EXPERT_HOWTOS: ExpertHowTo[] = [
     ],
     sourceRefs: ["src/app/markets/page.tsx:1", "src/lib/markets/policy.ts:1", "docs/market-ranks/methodology.md:1"],
   },
+  {
+    id: "auth.login",
+    feature: "Sign in",
+    routes: ["/login"],
+    navPath: "Sign in at /login",
+    keywords: [/sign in with email|create the owner account|owner email and password/i],
+    steps: [
+      "Open /login.",
+      "The first time, use the email saved as OWNER_EMAIL and a password of at least 10 characters, then click Create owner and sign in.",
+      "After that, use the same email and password and click Sign in.",
+    ],
+    facts: [
+      "Each person has their own email and password. Accounts live in this database.",
+      "The first account must match OWNER_EMAIL. AUTH_SECRET must be set or the login will not stick.",
+      "Five failed sign-ins for the same email or the same IP lock that bucket for 15 minutes.",
+      "The old shared partner link works only until the first account exists, unless LEGACY_PARTNER_TOKEN is on.",
+    ],
+    troubleshooting: [
+      {
+        symptom: "That email or password was not accepted.",
+        cause: "The email or password does not match an active account, or AUTH_SECRET is missing.",
+        fix: "Retype the email and password. If this is the first account, it must be OWNER_EMAIL. Confirm AUTH_SECRET is set and the app was redeployed.",
+      },
+      {
+        symptom: "Too many failed sign-in attempts. Wait 15 minutes and try again.",
+        cause: "Five failures locked that email or that IP.",
+        fix: "Wait 15 minutes. Do not keep retrying from the same computer.",
+      },
+    ],
+    sourceRefs: ["src/app/login/page.tsx:21", "src/auth.ts:15"],
+  },
+  {
+    id: "auth.users",
+    feature: "Users",
+    routes: ["/admin/users"],
+    apiRoutes: ["/api/admin/users"],
+    navPath: "Users — owner invites people",
+    keywords: [/invite a person|change a role|deactivate someone|users page/i],
+    steps: [
+      "Sign in as the owner and open Users.",
+      "Enter their email, a password of at least 10 characters, and a role, then invite them.",
+      "For an LP or lender, check the deals they may open.",
+      "Tell them the password. This app does not send email.",
+      "Deactivate a person to turn them off without deleting history.",
+    ],
+    facts: [
+      "Only a signed-in owner can invite people or change roles.",
+      "Roles are Owner, Controller, Preparer, Reviewer, LP viewer, and Lender viewer.",
+      "LP and lender viewers only see the deals you check. They cannot open Library, Models, Market Ranks, or Deal Archive.",
+      "A hard lock needs a reviewer who is not the preparer.",
+    ],
+    troubleshooting: [
+      {
+        symptom: "Only a signed-in owner can manage users.",
+        cause: "The request is not from an owner account.",
+        fix: "Sign in as the owner and use Users. The shared partner link cannot invite anyone.",
+      },
+      {
+        symptom: "One of those deal codes was not found.",
+        cause: "An LP or lender scope lists a deal code that is not in the books.",
+        fix: "Check the deal codes and invite again.",
+      },
+    ],
+    sourceRefs: ["src/app/admin/users/page.tsx:33", "src/app/api/admin/users/route.ts:26"],
+  },
 ];
 
 export function howToById(id: string): ExpertHowTo | undefined {

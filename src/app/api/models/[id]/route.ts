@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { deleteModel, loadModelProjection } from "@/lib/models/store";
 import { toModelView } from "@/lib/models/view";
@@ -7,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {
@@ -28,6 +31,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {

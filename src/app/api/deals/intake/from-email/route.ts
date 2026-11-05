@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { storeIntakeFile } from "@/lib/deals/files";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { getIntake, publicIntake } from "@/lib/deals/intake";
@@ -8,6 +9,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await enforce("read");
+  if (denied) return denied;
   if (!emailAttachmentProvider.isConfigured()) {
     return NextResponse.json({
       configured: false,
@@ -28,6 +31,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {

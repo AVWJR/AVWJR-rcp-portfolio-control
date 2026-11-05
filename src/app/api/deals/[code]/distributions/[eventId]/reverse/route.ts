@@ -1,6 +1,8 @@
 import { currentAccessRole } from "@/lib/access-server";
+import { enforce, resolveActor } from "@/lib/auth/actor";
 import {
   DistributionLedgerError,
+  assertCanMutateDistributions,
   reverseDistribution,
 } from "@/lib/distribution-ledger";
 import { prisma } from "@/lib/prisma";
@@ -17,12 +19,17 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     if (!entity || entity.type !== "SPE") {
       return NextResponse.json({ error: `Unknown SPE ${code}` }, { status: 404 });
     }
-    const role = await currentAccessRole();
+    const signedIn = await resolveActor();
+    if (signedIn.kind !== "user") assertCanMutateDistributions(await currentAccessRole());
+    const denied = await enforce("waterfall.write", entity.id);
+    if (denied) return denied;
+    const role = signedIn.kind === "user" ? "principal" : await currentAccessRole();
+    const actorLabel = signedIn.kind === "user" ? signedIn.email ?? signedIn.name ?? "signed-in" : role;
     const body = (await request.json().catch(() => ({}))) as { memo?: string };
     const board = await reverseDistribution({
       entityId: entity.id,
       eventId,
-      actor: role,
+      actor: actorLabel,
       role,
       memo: body.memo,
     });

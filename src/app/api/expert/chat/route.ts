@@ -1,4 +1,6 @@
-import { runExpertChat, streamExpertChat, validateChatBody } from "@/lib/expert/chat";
+import { canSeeEntity, enforce, resolveActor } from "@/lib/auth/actor";
+import { runExpertChat, resolveContext, streamExpertChat, validateChatBody } from "@/lib/expert/chat";
+import { prisma } from "@/lib/prisma";
 import { publicErrorMessage } from "@/lib/expert/ai-enabled";
 import { allowRequest, clientKey } from "@/lib/expert/rate-limit";
 import { encodeExpertStream, EXPERT_STREAM_CONTENT_TYPE } from "@/lib/expert/stream";
@@ -8,6 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   if (!allowRequest(`expert:${clientKey(request)}`)) {
     return NextResponse.json({ error: "Too many Expert requests. Wait a minute and retry." }, { status: 429 });
   }
@@ -22,6 +26,12 @@ export async function POST(request: Request) {
   const parsed = validateChatBody(raw);
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const actor = await resolveActor();
+  const ctx = resolveContext(parsed.value.context);
+  const subject = await prisma.entity.findUnique({ where: { code: ctx.entityCode } });
+  if (subject && !canSeeEntity(actor, subject.id)) {
+    return NextResponse.json({ error: "This account is not allowed to open that deal." }, { status: 403 });
   }
 
   try {

@@ -1,5 +1,6 @@
 "use server";
 
+import { assertCan } from "@/lib/auth/actor";
 import { placeProjectInService } from "@/lib/capex";
 import { dollars } from "@rcp/ledger";
 import { revalidatePath } from "next/cache";
@@ -9,6 +10,7 @@ export async function placeInServiceAction(formData: FormData) {
   const entityId = String(formData.get("entityId") ?? "");
   const periodId = String(formData.get("periodId") ?? "");
   const amount = Number(formData.get("amount") ?? "0");
+  await assertCan("ledger.post", entityId);
   await placeProjectInService({
     projectId,
     entityId,

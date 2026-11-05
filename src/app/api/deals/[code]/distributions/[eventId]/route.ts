@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { DistributionLedgerError, rejectDistributionDelete, rejectDistributionEdit } from "@/lib/distribution-ledger";
 import { NextResponse } from "next/server";
 
@@ -13,6 +14,8 @@ function fail(error: unknown) {
 }
 
 export async function PATCH() {
+  const denied = await enforce("waterfall.write");
+  if (denied) return denied;
   try {
     rejectDistributionEdit();
   } catch (error) {
@@ -21,6 +24,8 @@ export async function PATCH() {
 }
 
 export async function DELETE() {
+  const denied = await enforce("waterfall.write");
+  if (denied) return denied;
   try {
     rejectDistributionDelete();
   } catch (error) {

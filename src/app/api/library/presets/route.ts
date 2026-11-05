@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { parseCriteria } from "@/lib/library/criteria";
 import { deleteCriteriaPreset, listCriteriaPresets, loadCriteriaPreset, saveCriteriaPreset } from "@/lib/library/presets";
@@ -7,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   const presets = await listCriteriaPresets();
@@ -20,6 +23,8 @@ export async function POST(request: Request) {
   if (limited) return limited;
   try {
     const body = (await request.json().catch(() => ({}))) as { id?: string; name?: string; criteria?: unknown };
+    const denied = await enforce(body.id && !body.name ? "read" : "deals.write");
+    if (denied) return denied;
     if (body.id && !body.name) {
       const criteria = await loadCriteriaPreset(body.id);
       return NextResponse.json({ criteria });
@@ -32,6 +37,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const denied = await enforce("deals.write");
+  if (denied) return denied;
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {

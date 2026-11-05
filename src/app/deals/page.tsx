@@ -1,7 +1,8 @@
 import { ArchivedSpeBanner } from "@/components/archived-spe-banner";
 import { ReportShell, reportSubtitle, type ReportSearch } from "@/components/report-frame";
 import { SpeDeleteControl } from "@/components/spe-delete-control";
-import { currentAccessRole } from "@/lib/access-server";
+import { canSeeEntity, resolveActor } from "@/lib/auth/actor";
+import { roleAllows } from "@/lib/auth/roles";
 import { liveSpeWhere } from "@/lib/archive";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
@@ -37,7 +38,8 @@ async function DealIndex({
   viewingArchived: boolean;
   viewingCode: string;
 }) {
-  const role = await currentAccessRole();
+  const actor = await resolveActor();
+  const canWrite = actor.kind === "legacy-principal" || (actor.role ? roleAllows(actor.role, "deals.write") : false);
   const [spes, drafts] = await Promise.all([
     prisma.entity.findMany({
       where: liveSpeWhere(),
@@ -50,6 +52,7 @@ async function DealIndex({
       take: 8,
     }),
   ]);
+  const visibleSpes = spes.filter((spe) => canSeeEntity(actor, spe.id));
 
   return (
     <div className="space-y-8">
@@ -64,7 +67,7 @@ async function DealIndex({
             The status defaults to Owned. Set the LP/GP waterfall from each SPE card.
           </p>
         </div>
-        {role === "principal" ? (
+        {canWrite ? (
           <Link
             href={`/deals/new?period=${period}`}
             className="bg-gold-500 px-5 py-2 text-[12px] uppercase tracking-[0.14em] text-navy-950"
@@ -78,7 +81,7 @@ async function DealIndex({
 
       {viewingArchived ? <ArchivedSpeBanner code={viewingCode} period={period} /> : null}
 
-      {drafts.length && role === "principal" ? (
+      {drafts.length && canWrite ? (
         <div>
           <h2 className="font-display text-2xl text-navy-900">Saved drafts</h2>
           <ul className="mt-3 grid gap-3 md:grid-cols-2">
@@ -101,7 +104,7 @@ async function DealIndex({
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
-        {spes.map((spe) => (
+        {visibleSpes.map((spe) => (
           <article key={spe.code} className="border border-cream-300 bg-white px-5 py-4 shadow-ledger">
             <p className="text-[11px] uppercase tracking-[0.16em] text-gold-700">{spe.code}</p>
             <h2 className="font-display text-2xl text-navy-900">{spe.name}</h2>
@@ -152,7 +155,7 @@ async function DealIndex({
               <Link href={`/vault?entity=${spe.code}&period=${period}`} className="text-sm text-navy-800 underline">
                 Vault
               </Link>
-              {role === "principal" ? (
+              {canWrite ? (
                 <SpeDeleteControl
                   code={spe.code}
                   name={spe.name}

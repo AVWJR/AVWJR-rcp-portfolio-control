@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { dealErrorResponse, rateLimitDeals } from "@/lib/deals/http";
 import { INTAKE_MAX_BYTES } from "@/lib/deals/types";
 import { blobTokenRequiredMessage, fileTooLargeMessage } from "@/lib/deals/upload-client";
@@ -25,6 +26,8 @@ function payloadHint(body: HandleUploadBody): { filename?: string; byteSize?: nu
 export async function postBlobClientHandle(request: Request) {
   const limited = rateLimitDeals(request);
   if (limited) return limited;
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   if (!isBlobTokenConfigured()) {
     const hint = await request
       .clone()

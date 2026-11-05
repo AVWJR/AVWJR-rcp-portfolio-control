@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { resolveReportingPeriod } from "@/lib/period-default";
 import { buildAllStatements } from "@/lib/reports-server";
 import { prisma } from "@/lib/prisma";
@@ -8,6 +9,8 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ statement: string }> },
 ) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const { statement } = await context.params;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "RCP-OPCO";
@@ -18,6 +21,8 @@ export async function GET(
 
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
 
   const all = await buildAllStatements({
     entityId: entity.id,

@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { marketsGuard } from "@/lib/markets/guard";
 import { MarketsError } from "@/lib/markets/policy";
 import { loadMarketsBundle } from "@/lib/markets/read";
@@ -28,6 +29,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const denied = await marketsGuard();
   if (denied) return denied;
+  const write = await enforce("deals.write");
+  if (write) return write;
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const saved = await registerPaidSource(body);

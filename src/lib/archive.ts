@@ -1,3 +1,4 @@
+import { assertCan, resolveActor } from "@/lib/auth/actor";
 import {
   PERMANENT_DEMO_SPE_CODES,
   deleteImpactCopy,
@@ -134,11 +135,18 @@ function assertConfirmCode(confirmCode: string | undefined, expected: string) {
   }
 }
 
+async function archiveActor(capability: "archive.write") {
+  const actor = await resolveActor();
+  if (actor.kind !== "legacy-principal") await assertCan(capability);
+  return actor;
+}
+
 export async function archiveSpe(opts: {
   code: string;
   confirmCode?: string;
   actor?: string;
 }): Promise<SpeArchiveRow> {
+  const actor = await archiveActor("archive.write");
   const entity = await loadSpe(opts.code);
   if (isPermanentDemoSpe(entity.code)) {
     throw new ArchiveValidationError(permanentDemoDeleteMessage(entity.code), "code");
@@ -152,7 +160,8 @@ export async function archiveSpe(opts: {
     data: {
       lifecycleStatus: "ARCHIVED",
       archivedAt: new Date(),
-      archivedBy: opts.actor ?? ARCHIVE_ACTOR_PRINCIPAL,
+      archivedBy: actor.email ?? opts.actor ?? ARCHIVE_ACTOR_PRINCIPAL,
+      archivedByUserId: actor.userId,
     },
     include: { parent: true },
   });
@@ -164,6 +173,7 @@ export async function restoreSpe(opts: {
   confirmCode?: string;
   actor?: string;
 }): Promise<SpeArchiveRow> {
+  const actor = await archiveActor("archive.write");
   const entity = await loadSpe(opts.code);
   assertConfirmCode(opts.confirmCode, entity.code);
   if (entity.lifecycleStatus !== "ARCHIVED") {
@@ -174,7 +184,8 @@ export async function restoreSpe(opts: {
     data: {
       lifecycleStatus: "LIVE",
       restoredAt: new Date(),
-      restoredBy: opts.actor ?? ARCHIVE_ACTOR_PRINCIPAL,
+      restoredBy: actor.email ?? opts.actor ?? ARCHIVE_ACTOR_PRINCIPAL,
+      restoredByUserId: actor.userId,
     },
     include: { parent: true },
   });

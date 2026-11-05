@@ -1,3 +1,4 @@
+import { enforce } from "@/lib/auth/actor";
 import { MASTER_COA_BY_CODE } from "@rcp/ledger";
 import { parseBudgetCsv } from "@rcp/properties";
 import { resolveReportingPeriod } from "@/lib/period-default";
@@ -13,10 +14,14 @@ function parsePeriod(raw: string | null): { year: number; month: number } {
 }
 
 export async function GET(request: Request) {
+  const denied = await enforce("read");
+  if (denied) return denied;
   const url = new URL(request.url);
   const code = url.searchParams.get("entity") ?? "";
   const entity = await prisma.entity.findUnique({ where: { code } });
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
+  const scoped = await enforce("read", entity.id);
+  if (scoped) return scoped;
   const period = await resolveReportingPeriod(entity.code, url.searchParams.get("period"));
   const { year, month } = parsePeriod(period);
 
@@ -45,6 +50,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await enforce("upload.write");
+  if (denied) return denied;
   const contentType = request.headers.get("content-type") ?? "";
   let code = "";
   let csv = "";

@@ -1,6 +1,7 @@
 import { guessVaultKind, isVaultKind, safeVaultFilename, type VaultDocumentMeta, type VaultKind } from "@rcp/documents";
 import { INTAKE_MAX_BYTES, INTAKE_MAX_BYTES_LABEL } from "@/lib/deals/types";
 import { fileTooLargeMessage } from "@/lib/deals/upload-client";
+import { actingUserId } from "@/lib/auth/actor";
 import { blobStoragePath, deleteStoredFile, getStoredFile, isTrustedBlobUrl, putStoredFile } from "./file-store";
 import { prisma } from "./prisma";
 
@@ -56,6 +57,7 @@ export async function storeVaultDocument(opts: {
       storagePath: "pending",
       byteSize: opts.bytes.length,
       notes: opts.notes?.trim() || null,
+      uploadedByUserId: await actingUserId(),
     },
   });
   try {
@@ -101,6 +103,7 @@ export async function storeVaultDocumentFromBlob(opts: {
       storagePath: blobStoragePath(opts.blobUrl),
       byteSize: opts.byteSize > 0 ? opts.byteSize : 0,
       notes: opts.notes?.trim() || null,
+      uploadedByUserId: await actingUserId(),
     },
   });
 }

@@ -11,6 +11,7 @@ jobs:
     env:
       DATABASE_URL: file:./dev.db
       TZ: America/New_York
+      LEGACY_PARTNER_TOKEN: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,3 +28,38 @@ jobs:
         run: npm run typecheck
       - name: Test
         run: npm test
+
+  backup-drill:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pg_dump that matches the scratch server
+        env:
+          SOURCE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: bash scripts/install-matching-pg-client.sh
+      - name: Create scratch databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE rcp_drill_source;"
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE rcp_drill_target;"
+      - name: Backup and restore drill
+        env:
+          SOURCE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rcp_drill_source
+          TARGET_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rcp_drill_target
+          BACKUP_ENCRYPTION_KEY: ci-drill-passphrase
+        run: bash scripts/restore-drill.sh

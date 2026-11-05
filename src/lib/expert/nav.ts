@@ -14,6 +14,26 @@ export const PAGE_CATALOG: { pattern: string; test: RegExp; title: string; hints
     ],
   },
   {
+    pattern: "/login",
+    test: /^\/login$/,
+    title: "Sign in",
+    hints: [
+      "Each person signs in with their own email and password.",
+      "The first account must use OWNER_EMAIL. Password is at least 10 characters.",
+      "Five failed tries lock that email and that IP for 15 minutes.",
+    ],
+  },
+  {
+    pattern: "/admin/users",
+    test: /^\/admin\/users$/,
+    title: "Users",
+    hints: [
+      "Only the owner invites people and changes roles.",
+      "Tell them the password. This app does not send email.",
+      "LP and lender viewers only see the deals you check.",
+    ],
+  },
+  {
     pattern: "/markets/[cbsa]",
     test: /^\/markets\/\d+$/,
     title: "Metro score",

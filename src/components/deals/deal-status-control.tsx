@@ -1,6 +1,6 @@
 "use client";
 
-import { ownedEntryCopy, ownedExitCopy, permanentDemoStatusMessage } from "@/lib/deal-status";
+import { ownedEntryCopy, ownedExitCopy, permanentDemoStatusMessage } from "@/lib/deal-status-copy";
 import type { DealProfile } from "@/lib/library/facts";
 import { useState } from "react";
 import { useRouter } from "next/navigation";

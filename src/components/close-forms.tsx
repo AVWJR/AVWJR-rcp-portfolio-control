@@ -1,6 +1,6 @@
 "use client";
 
-import { checklistAction, hardLockAction, reopenAction, softCloseAction } from "@/app/actions/close";
+import { checklistAction, hardLockAction, reopenAction, signCloseAction, softCloseAction } from "@/app/actions/close";
 import { useFormStatus } from "react-dom";
 
 function Submit({ label }: { label: string }) {
@@ -48,6 +48,31 @@ export function ReopenForm({ periodId }: { periodId: string }) {
       </label>
       <Submit label="Reopen" />
     </form>
+  );
+}
+
+export function SignOffButtons({ periodId }: { periodId: string }) {
+  return (
+    <div className="space-y-3">
+      <form action={signCloseAction}>
+        <input type="hidden" name="periodId" value={periodId} />
+        <input type="hidden" name="kind" value="prepare" />
+        <Submit label="Sign as preparer" />
+      </form>
+      <form action={signCloseAction} className="flex flex-wrap items-end gap-2">
+        <input type="hidden" name="periodId" value={periodId} />
+        <input type="hidden" name="kind" value="review" />
+        <label className="text-[11px] uppercase tracking-[0.12em] text-ink-500">
+          Owner self-approval reason
+          <input
+            name="reason"
+            className="mt-1 block border border-cream-400 px-2 py-1 text-sm"
+            placeholder="Only if you prepared this close yourself"
+          />
+        </label>
+        <Submit label="Sign as reviewer" />
+      </form>
+    </div>
   );
 }
 

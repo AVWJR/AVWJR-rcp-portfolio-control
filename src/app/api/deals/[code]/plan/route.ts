@@ -1,4 +1,5 @@
 import { currentAccessRole } from "@/lib/access-server";
+import { enforce, resolveActor } from "@/lib/auth/actor";
 import {
   AssetPlanError,
   PLAN_ACTION,
@@ -25,11 +26,15 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
   const limited = rateLimitDeals(request);
   if (limited) return limited;
   try {
-    const role = await currentAccessRole();
-    assertCanMutatePlan(role);
+    const signedIn = await resolveActor();
+    if (signedIn.kind !== "user") assertCanMutatePlan(await currentAccessRole());
+    const denied = await enforce("deals.write");
+    if (denied) return denied;
     const { code } = await context.params;
     const entity = await prisma.entity.findUnique({ where: { code: code.toUpperCase() } });
     if (!entity || entity.type !== "SPE") return NextResponse.json({ error: `Unknown SPE ${code}` }, { status: 404 });
+    const scoped = await enforce("deals.write", entity.id);
+    if (scoped) return scoped;
     if (!isOwnedSpe(entity)) return NextResponse.json({ error: PLAN_NOT_OWNED }, { status: 409 });
     const body = (await request.json()) as Record<string, unknown>;
     assertNoResidentKeys(body);
@@ -38,7 +43,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       const raw = typeof body.period === "string" ? body.period : "";
       return NextResponse.json({ error: /^\d{4}-\d{2}$/.test(raw) ? PLAN_PERIOD_RANGE : PLAN_PERIOD }, { status: 400 });
     }
-    const actor = "principal";
+    const actor = signedIn.kind === "user" ? signedIn.email ?? signedIn.name ?? "signed-in" : "principal";
     if (body.action === "weekly") {
       const input = validateWeeklyUpdate(body);
       const saved = await saveWeeklyUpdate({ entityId: entity.id, year: period.year, month: period.month, actor, input });

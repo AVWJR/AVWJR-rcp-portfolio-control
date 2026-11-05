@@ -1,3 +1,4 @@
+import { canSeeEntity, resolveActor } from "@/lib/auth/actor";
 import { PeriodBanner } from "@/components/period-banner";
 import { resolveReportingPeriod, spesStillOpen } from "@/lib/period-default";
 import { Shell } from "@/components/shell";
@@ -102,12 +103,30 @@ export async function ReportShell({
     }
     throw error;
   }
+  const actor = await resolveActor();
+  const entities = actor.entityIds ? ctx.entities.filter((entity) => actor.entityIds?.includes(entity.id)) : ctx.entities;
+  if (!canSeeEntity(actor, ctx.entity.id)) {
+    return (
+      <Shell
+        entities={entities}
+        activeEntity={entities[0]?.code ?? ctx.entity.code}
+        year={ctx.year}
+        month={ctx.month}
+        consolidated={false}
+        pathname={pathname}
+        periodLabels={ctx.periodLabels}
+        showUsers={actor.role === "OWNER"}
+      >
+        <p className="text-sm text-ink-700">This account is not allowed to open {ctx.entity.code}.</p>
+      </Shell>
+    );
+  }
   return (
     <Shell
       entities={
         pathname === "/close"
-          ? ctx.entities.map((entity) => ({ ...entity, disabledReason: closePickerNote(entity) }))
-          : ctx.entities
+          ? entities.map((entity) => ({ ...entity, disabledReason: closePickerNote(entity) }))
+          : entities
       }
       activeEntity={ctx.entity.code}
       year={ctx.year}
@@ -115,6 +134,7 @@ export async function ReportShell({
       consolidated={ctx.consolidated}
       pathname={pathname}
       periodLabels={ctx.periodLabels}
+      showUsers={actor.role === "OWNER"}
     >
       <PeriodBanner
         status={ctx.statements.period.status}

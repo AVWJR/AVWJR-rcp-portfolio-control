@@ -1,3 +1,4 @@
+import { AuthzError } from "@/lib/auth/actor";
 import { ArchiveValidationError } from "@/lib/archive";
 import { DealStatusError } from "@/lib/deal-status";
 import { ModelError } from "@/lib/models/store";
@@ -33,6 +34,9 @@ export function dealErrorResponse(error: unknown) {
   }
   if (error instanceof ArchiveValidationError) {
     return NextResponse.json({ error: error.message, field: error.field }, { status: error.status });
+  }
+  if (error instanceof AuthzError) {
+    return NextResponse.json({ error: error.message }, { status: error.status });
   }
   if (error instanceof DealStatusError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
